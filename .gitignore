@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env.local
+.env*.local
+functions/venv/
+functions/.secret.local
+__pycache__/
+.pytest_cache/
+.firebase/
+*-debug.log

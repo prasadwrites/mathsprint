@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owns(data) { return signedIn() && data.ownerId == request.auth.uid; }
+
+    // Decks are written by the generate_deck function (admin access) or by the
+    // owner when adding the sample deck. Students can only see their own decks.
+    match /decks/{deckId} {
+      allow read, delete: if owns(resource.data);
+      allow create: if owns(request.resource.data);
+      allow update: if owns(resource.data) && request.resource.data.ownerId == resource.data.ownerId;
+
+      match /questions/{questionId} {
+        function deckPath() { return /databases/$(database)/documents/decks/$(deckId); }
+        allow read: if signedIn() && get(deckPath()).data.ownerId == request.auth.uid;
+        // getAfter, so a deck and its questions can be written in one batch.
+        allow write: if signedIn() && getAfter(deckPath()).data.ownerId == request.auth.uid;
+      }
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if owns(resource.data);
+      allow create: if owns(request.resource.data) && request.resource.data.status == "active";
+      // A finished session is a record; it can't be reopened or reassigned.
+      allow update: if owns(resource.data)
+        && resource.data.status == "active"
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.deckId == resource.data.deckId;
+    }
+
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+  }
+}
