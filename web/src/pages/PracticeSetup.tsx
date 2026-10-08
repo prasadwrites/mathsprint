@@ -1,96 +1,171 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useUser } from "../App";
-import TopBar from "../components/TopBar";
-import { getDeck, getQuestions, startSession } from "../lib/db";
+import TopBar, { Icon } from "../components/TopBar";
+import { getDeck, getQuestions, listSessions, startSession } from "../lib/db";
+import { missedLastTime, practisedIds, selectQuestions, type Selection } from "../lib/insights";
 import { formatClock } from "../lib/pace";
-import type { Deck, Question } from "../lib/types";
+import type { Deck, Mode, PracticeSession, Question } from "../lib/types";
 
-type Order = "first" | "random";
+const MODES: [Mode, string, string][] = [
+  ["learn", "Learn", "No clock. Take your time and focus on understanding."],
+  ["practice", "Practise", "Your own time limit, with pace feedback as you go."],
+  ["challenge", "Challenge", "One minute per question. Stricter pacing."],
+];
 
 export default function PracticeSetup() {
   const user = useUser();
   const navigate = useNavigate();
   const { deckId = "" } = useParams();
+  const [params] = useSearchParams();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [history, setHistory] = useState<PracticeSession[]>([]);
+  const [mode, setMode] = useState<Mode>("practice");
   const [n, setN] = useState(10);
   const [minutes, setMinutes] = useState(15);
-  const [order, setOrder] = useState<Order>("first");
+  const [selection, setSelection] = useState<Selection>((params.get("select") as Selection) || "first");
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    getDeck(deckId).then(setDeck);
-    getQuestions(deckId).then((qs) => {
+    Promise.all([getDeck(deckId), getQuestions(deckId), listSessions(user.uid, deckId)]).then(([d, qs, hs]) => {
+      setDeck(d);
+      setHistory(hs);
+      const preset = params.get("select") === "missed" ? missedLastTime(hs).length : 0;
+      const count = preset || Math.min(10, qs.length);
+      setN(count);
+      setMinutes(Math.min(30, Math.max(1, Math.round(count * 1.5))));
       setQuestions(qs);
-      setN(Math.min(10, qs.length));
-      setMinutes(Math.min(15, Math.max(1, qs.length * 1.5)));
     });
-  }, [deckId]);
+  }, [deckId, user.uid, params]);
 
-  if (!deck || !questions.length) return <div className="wrap"><span className="spinner" /></div>;
+  if (!deck || !questions.length) {
+    return (
+      <>
+        <TopBar back={{ to: `/decks/${deckId}`, label: "Deck" }} />
+        <main className="page"><span className="spinner" /></main>
+      </>
+    );
+  }
 
-  const count = Math.max(1, Math.min(questions.length, n || 1));
-  const perQ = (Math.max(0.5, minutes || 1) * 60) / count;
+  const allIds = questions.map((q) => q.id);
+  const seen = practisedIds(history);
+  const available: Record<Selection, number> = {
+    first: allIds.length,
+    random: allIds.length,
+    unpractised: allIds.filter((id) => !seen.has(id)).length,
+    missed: missedLastTime(history).length,
+  };
+  const pool = available[selection];
+  const count = Math.max(1, Math.min(pool || 1, n || 1));
+  const timeLimitSec = mode === "learn" ? 0 : mode === "challenge" ? count * 60 : Math.round(Math.max(0.5, minutes || 1) * 60);
+  const perQ = timeLimitSec / count;
 
   const start = async () => {
     setStarting(true);
-    let ids = questions.map((q) => q.id);
-    if (order === "random") ids = ids.map((id) => [Math.random(), id] as const).sort((a, b) => a[0] - b[0]).map(([, id]) => id);
     const sessionId = await startSession({
       uid: user.uid,
       deck,
-      questionIds: ids.slice(0, count),
-      timeLimitSec: Math.round(Math.max(0.5, minutes) * 60),
+      mode,
+      questionIds: selectQuestions(allIds, selection, count, history),
+      timeLimitSec,
     });
     navigate(`/sessions/${sessionId}`, { replace: true });
   };
 
+  const options: [Selection, string][] = [
+    ["first", `First ${count}, in order`],
+    ["random", `Random ${count}`],
+    ["unpractised", "Ones I haven't practised"],
+    ["missed", "Ones I got wrong last time"],
+  ];
+
   return (
-    <div className="wrap">
+    <>
       <TopBar back={{ to: `/decks/${deck.id}`, label: deck.title }} />
-      <form
-        className="stack"
-        onSubmit={(e) => {
-          e.preventDefault();
-          start();
-        }}
-      >
-        <h1>Practice settings</h1>
-        <div className="panel stack">
-          <div className="grid2">
-            <div>
-              <label htmlFor="n">Number of questions</label>
-              <input id="n" type="number" min={1} max={questions.length} value={n} onChange={(e) => setN(Number(e.target.value))} />
-            </div>
-            <div>
-              <label htmlFor="minutes">Time available (minutes)</label>
-              <input id="minutes" type="number" min={0.5} max={180} step={0.5} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
-            </div>
-          </div>
-          <p className="muted">
-            Target pace: <b className="mono">{formatClock(perQ)}</b> per question.
-          </p>
-          <div>
-            <label>Question selection</label>
-            <div className="seg">
-              {(
-                [
-                  ["first", `First ${count}`],
-                  ["random", `Random ${count}`],
-                ] as [Order, string][]
-              ).map(([v, l]) => (
-                <button key={v} type="button" aria-pressed={order === v} onClick={() => setOrder(v)}>
-                  {l}
-                </button>
+      <main className="page narrow">
+        <h1>Set up your practice</h1>
+        <form
+          className="stack layout-gap"
+          onSubmit={(e) => {
+            e.preventDefault();
+            start();
+          }}
+        >
+          <fieldset className="stack" style={{ border: "none", padding: 0, margin: 0, gap: 10 }}>
+            <legend className="eyebrow" style={{ marginBottom: 10 }}>Mode</legend>
+            <div className="modes">
+              {MODES.map(([m, name, desc]) => (
+                <label key={m} className="mode">
+                  <span className="name">
+                    <input type="radio" name="mode" value={m} checked={mode === m} onChange={() => setMode(m)} />
+                    {name}
+                  </span>
+                  <span className="desc">{desc}</span>
+                </label>
               ))}
             </div>
+          </fieldset>
+
+          <div className="panel stack">
+            <div className="grid2">
+              <div>
+                <label htmlFor="n">Number of questions</label>
+                <input id="n" type="number" min={1} max={pool || 1} value={n} onChange={(e) => setN(Number(e.target.value))} />
+                <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>
+                  This deck has {questions.length}
+                </p>
+              </div>
+              {mode === "practice" && (
+                <div>
+                  <label htmlFor="minutes">Time available (minutes)</label>
+                  <input id="minutes" type="number" min={0.5} max={180} step={0.5} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+                  <div className="quick" style={{ marginTop: 8 }} aria-label="Quick picks">
+                    {[10, 15, 20, 30].map((m) => (
+                      <button key={m} type="button" aria-pressed={minutes === m} onClick={() => setMinutes(m)}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            {mode !== "learn" ? (
+              <div className="target-box">
+                <Icon name="clock" size={22} />
+                <span>
+                  Target pace: <b className="mono" style={{ fontSize: 20 }}>{formatClock(perQ)}</b> per question
+                </span>
+                <span className="muted" style={{ fontSize: 14 }}>
+                  {mode === "challenge"
+                    ? `${formatClock(timeLimitSec)} in total.`
+                    : "You'll see whether you're ahead or behind this as you go."}
+                </span>
+              </div>
+            ) : (
+              <p className="muted">No clock in Learn mode. Your time per question is still recorded so you can see where you slowed down.</p>
+            )}
           </div>
-          <button className="btn-primary btn-big" type="submit" disabled={starting || !questions.length}>
-            {starting ? "Starting…" : "Start practice"}
-          </button>
-        </div>
-      </form>
-    </div>
+
+          <fieldset className="panel stack" style={{ margin: 0, gap: 4 }}>
+            <legend className="sr-only">Which questions</legend>
+            <h2 style={{ marginBottom: 8 }}>Which questions</h2>
+            {options.map(([v, label]) => (
+              <label key={v} className="radio">
+                <input type="radio" name="selection" value={v} checked={selection === v} disabled={!available[v]} onChange={() => setSelection(v)} />
+                {label}
+                {(v === "unpractised" || v === "missed") && <span className="count">({available[v]})</span>}
+              </label>
+            ))}
+          </fieldset>
+
+          <div>
+            <button className="btn btn-primary btn-big" type="submit" disabled={starting || !pool}>
+              <Icon name="play" /> {starting ? "Starting…" : "Start practice"}
+            </button>
+          </div>
+        </form>
+      </main>
+    </>
   );
 }

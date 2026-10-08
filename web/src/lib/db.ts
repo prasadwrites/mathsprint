@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { Deck, Difficulty, EndReason, PracticeSession, Question } from "./types";
+import type { ConceptStat, Deck, Difficulty, EndReason, Mode, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 
@@ -71,6 +71,7 @@ export async function addSampleDeck(uid: string): Promise<string> {
 export async function startSession(opts: {
   uid: string;
   deck: Deck;
+  mode: Mode;
   questionIds: string[];
   timeLimitSec: number;
 }): Promise<string> {
@@ -78,6 +79,7 @@ export async function startSession(opts: {
     ownerId: opts.uid,
     deckId: opts.deck.id,
     deckTitle: opts.deck.title,
+    mode: opts.mode,
     questionIds: opts.questionIds,
     timeLimitSec: opts.timeLimitSec,
     startedAtMs: Date.now(),
@@ -95,9 +97,10 @@ export async function getSession(id: string): Promise<PracticeSession | null> {
   return d.exists() ? ({ id: d.id, ...d.data() } as PracticeSession) : null;
 }
 
-export async function listSessions(uid: string): Promise<PracticeSession[]> {
+export async function listSessions(uid: string, deckId?: string): Promise<PracticeSession[]> {
   const snap = await getDocs(query(collection(db, "sessions"), where("ownerId", "==", uid), where("status", "==", "completed")));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PracticeSession);
+  const all = snap.docs.map((d) => ({ mode: "practice", ...d.data(), id: d.id }) as PracticeSession);
+  return deckId ? all.filter((s) => s.deckId === deckId) : all;
 }
 
 export function saveAnswer(sessionId: string, index: number, answer: string) {
@@ -125,6 +128,17 @@ export async function finishSession(s: PracticeSession, questions: Question[], r
   if (timings[s.currentIndex] && timings[s.currentIndex].answeredAt == null) {
     timings[s.currentIndex] = { ...timings[s.currentIndex], answeredAt: Math.round(usedSec * 1000) };
   }
+  // Per-concept totals for the questions the student reached, used for weak-topic suggestions.
+  const conceptStats: Record<string, ConceptStat> = {};
+  s.questionIds.forEach((qid, i) => {
+    const q = byId.get(qid);
+    const t = timings[i];
+    if (!q || i > s.currentIndex || !t) return;
+    const c = (conceptStats[q.concept] ??= { attempted: 0, correct: 0, seconds: 0 });
+    c.attempted += 1;
+    c.correct += results[i] ? 1 : 0;
+    c.seconds += Math.max(0, ((t.answeredAt ?? usedSec * 1000) - t.startedAt) / 1000);
+  });
   await updateDoc(doc(db, "sessions", s.id), {
     status: "completed",
     endReason: reason,
@@ -132,6 +146,7 @@ export async function finishSession(s: PracticeSession, questions: Question[], r
     score,
     accuracy: score / s.questionIds.length,
     results,
+    conceptStats,
     timings,
     answers: s.answers,
     completedAt: serverTimestamp(),

@@ -30,7 +30,11 @@ The signature screen (`web/src/pages/Practice.tsx`, logic in `web/src/lib/pace.t
 - Each question shows its own time against the target per-question time.
 - Answers save to Firestore as you type (and to local storage), and every question's start and submit time is recorded, so a refresh resumes exactly where the student was.
 
-Results show score, the timing verdict, time per question against the target, the concept that took longest, and every question with its worked solution.
+Practice has three modes, chosen on the setup screen: **Learn** (no clock; time per question is still recorded), **Practise** (the student's own limit, with quick picks of 10/15/20/30 minutes) and **Challenge** (one minute per question). Students can take the first N, a random N, the questions they haven't practised yet, or the ones they got wrong last time.
+
+Results show score, the timing verdict, time per question against the target, the concept that took longest, and every question with its worked solution and the "I don't understand this" explainer. From there the student can retry just the questions they missed, or build a new deck on their weakest concept.
+
+The dashboard adds overall progress (questions, accuracy, time, average pace against target) and a "Practise next" list of the weakest concepts across sessions (`web/src/lib/insights.ts`), which can be turned into a new deck in one click.
 
 ### Data model
 
@@ -38,7 +42,7 @@ Results show score, the timing verdict, time per question against the target, th
 | --- | --- |
 | `decks/{id}` | ownerId, title, topic, level, difficulty, topics, questionCount, source, createdAt |
 | `decks/{id}/questions/{id}` | order, prompt, math, type (numeric/choice), choices, answerValues, answerChoice, answerDisplay, tolerance, concept, difficulty, steps[{description, expression}], check, verified |
-| `sessions/{id}` | ownerId, deckId, questionIds, timeLimitSec, startedAtMs, currentIndex, answers{i}, timings{i: {startedAt, answeredAt}} (ms from start), status, endReason, usedSec, score, accuracy, results{i} |
+| `sessions/{id}` | ownerId, deckId, deckTitle, mode (learn/practice/challenge), questionIds, timeLimitSec (0 in learn mode), startedAtMs, currentIndex, answers{i}, timings{i: {startedAt, answeredAt}} (ms from start), status, endReason, usedSec, score, accuracy, results{i}, conceptStats{concept: {attempted, correct, seconds}} |
 
 Security rules (`firestore.rules`) keep every deck and session private to its owner and make finished sessions read-only.
 
@@ -77,4 +81,4 @@ cd functions && venv/bin/python -m pytest tests          # SymPy checks and the 
 
 ## Not in MVP 1 yet
 
-From the design plan's Version 2 and 3: progress dashboard by topic, weak-topic detection and targeted decks, "questions I got wrong" selection, editing questions, adaptive difficulty, and Learning / Challenge modes.
+From the design plan's Version 2 and 3: editing questions in a deck, adaptive difficulty, and per-topic progress charts over time.

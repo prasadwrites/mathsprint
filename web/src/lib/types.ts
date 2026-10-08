@@ -43,11 +43,21 @@ export interface QuestionTiming {
 
 export type EndReason = "finished" | "timeout" | "quit";
 
+/** learn: no clock. practice: the student's own limit. challenge: one minute per question. */
+export type Mode = "learn" | "practice" | "challenge";
+
+export interface ConceptStat {
+  attempted: number;
+  correct: number;
+  seconds: number;
+}
+
 export interface PracticeSession {
   id: string;
   ownerId: string;
   deckId: string;
   deckTitle: string;
+  mode: Mode;
   questionIds: string[];
   timeLimitSec: number;
   startedAtMs: number;
@@ -60,4 +70,5 @@ export interface PracticeSession {
   score?: number;
   accuracy?: number;
   results?: Record<string, boolean>;
+  conceptStats?: Record<string, ConceptStat>;
 }
