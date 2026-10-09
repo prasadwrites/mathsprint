@@ -6,9 +6,12 @@ explain_step   - Claude re-explains one solution step in the style the student p
 
 from __future__ import annotations
 
+import os
+
 from firebase_admin import firestore, initialize_app
 from firebase_functions import https_fn, options
 
+from access import access_code_ok
 from generator import DeckRequest, GenerationError, explain_step as _explain, generate_deck as _generate
 
 initialize_app()
@@ -27,10 +30,12 @@ def _clean(text, limit: int) -> str:
     return str(text or "").strip()[:limit]
 
 
-@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=540, memory=options.MemoryOption.GB_1)
+@https_fn.on_call(secrets=["ANTHROPIC_API_KEY", "DECK_ACCESS_CODE"], timeout_sec=540, memory=options.MemoryOption.GB_1)
 def generate_deck(req: https_fn.CallableRequest) -> dict:
     uid = _require_user(req)
     data = req.data or {}
+    if not access_code_ok(data.get("accessCode"), os.environ.get("DECK_ACCESS_CODE")):
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.PERMISSION_DENIED, "That access code isn't right.")
     topic = _clean(data.get("topic"), 200)
     if not topic:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Tell me what to practise.")

@@ -41,6 +41,7 @@ export interface GenerateInput {
   difficulty: Difficulty;
   level: string;
   notes: string;
+  accessCode: string;
 }
 
 export async function generateDeck(input: GenerateInput) {

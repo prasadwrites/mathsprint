@@ -4,6 +4,25 @@ import TopBar, { Icon } from "../components/TopBar";
 import { generateDeck } from "../lib/db";
 import type { Difficulty } from "../lib/types";
 
+const CODE_KEY = "ms.accessCode";
+
+function storedCode() {
+  try {
+    return localStorage.getItem(CODE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeCode(code: string | null) {
+  try {
+    if (code) localStorage.setItem(CODE_KEY, code);
+    else localStorage.removeItem(CODE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 const steps = (count: number) => [
   `Writing ${count} questions with Claude`,
   "Writing step-by-step solutions",
@@ -21,6 +40,7 @@ export default function CreateDeck() {
   const [difficulty, setDifficulty] = useState<Difficulty>("Medium");
   const [level, setLevel] = useState("");
   const [notes, setNotes] = useState(params.get("notes") ?? "");
+  const [accessCode, setAccessCode] = useState(storedCode);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
@@ -38,9 +58,11 @@ export default function CreateDeck() {
     setBusy(true);
     setError("");
     try {
-      const res = await generateDeck({ topic, count, difficulty, level: level || "High school", notes });
+      const res = await generateDeck({ topic, count, difficulty, level: level || "High school", notes, accessCode: accessCode.trim() });
+      storeCode(accessCode.trim());
       navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
     } catch (e) {
+      if ((e as { code?: string }).code === "functions/permission-denied") storeCode(null);
       setError((e as Error).message || "The deck couldn't be generated. Try again.");
       setBusy(false);
     }
@@ -132,6 +154,22 @@ export default function CreateDeck() {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                   />
+                </div>
+                <div>
+                  <label htmlFor="access">Access code</label>
+                  <input
+                    id="access"
+                    type="password"
+                    autoComplete="off"
+                    required
+                    placeholder="Ask the person who runs MathSprint"
+                    value={accessCode}
+                    onChange={(e) => setAccessCode(e.target.value)}
+                    style={{ maxWidth: 320 }}
+                  />
+                  <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>
+                    Building decks uses AI credit, so it needs a code. This browser remembers it after the first deck.
+                  </p>
                 </div>
                 <div className="row">
                   <button className="btn btn-primary btn-big" type="submit" disabled={busy}>

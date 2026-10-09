@@ -54,6 +54,7 @@ You need Node 20+, Python 3.12, the Firebase CLI (`npm i -g firebase-tools`), a 
 2. In the Firebase console, enable **Authentication** (Google and Email/Password providers) and create a **Firestore** database.
 3. Copy `web/.env.example` to `web/.env.local` and fill in the web app config from Project settings.
 4. Store the Claude key as a secret: `firebase functions:secrets:set ANTHROPIC_API_KEY`
+   Then set the access code people must enter to build a deck: `firebase functions:secrets:set DECK_ACCESS_CODE`. Change it any time by running the same command and redeploying the functions.
 5. Install:
    ```bash
    npm --prefix web install
@@ -64,7 +65,7 @@ You need Node 20+, Python 3.12, the Firebase CLI (`npm i -g firebase-tools`), a 
 ### Run locally with the emulators
 
 ```bash
-echo "ANTHROPIC_API_KEY=sk-ant-..." > functions/.secret.local   # only needed for deck generation
+printf "ANTHROPIC_API_KEY=sk-ant-...\nDECK_ACCESS_CODE=local-code\n" > functions/.secret.local   # only needed for deck generation
 firebase emulators:start --project demo-mathsprint
 # in another terminal, with VITE_USE_EMULATORS=true in web/.env.local
 npm --prefix web run dev
