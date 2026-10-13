@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { missedLastTime, paceSummary, practisedIds, selectQuestions, weakestConcepts } from "./insights";
+import { missedLastTime, paceSummary, practicedIds, selectQuestions, weakestConcepts } from "./insights";
 import type { PracticeSession } from "./types";
 
 const session = (over: Partial<PracticeSession>): PracticeSession => ({
@@ -26,14 +26,14 @@ describe("question selection", () => {
   const newer = session({ startedAtMs: 2, questionIds: ["c", "d", "e"], timings: { 0: t, 1: t }, results: { 0: true, 1: false, 2: false } });
 
   it("counts only questions the student opened", () => {
-    expect([...practisedIds([older, newer])].sort()).toEqual(["a", "b", "c", "d"]);
+    expect([...practicedIds([older, newer])].sort()).toEqual(["a", "b", "c", "d"]);
   });
   it("uses the most recent session for missed questions, including ones not reached", () => {
     expect(missedLastTime([older, newer])).toEqual(["d", "e"]);
   });
   it("selects by mode and respects the count", () => {
     expect(selectQuestions(ids, "first", 3, [])).toEqual(["a", "b", "c"]);
-    expect(selectQuestions(ids, "unpractised", 5, [older, newer])).toEqual(["e"]);
+    expect(selectQuestions(ids, "unpracticed", 5, [older, newer])).toEqual(["e"]);
     expect(selectQuestions(ids, "missed", 5, [older, newer])).toEqual(["d", "e"]);
     const shuffled = selectQuestions(ids, "random", 5, [], () => 0.5);
     expect([...shuffled].sort()).toEqual(ids);

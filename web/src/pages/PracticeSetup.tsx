@@ -3,13 +3,13 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useUser } from "../App";
 import TopBar, { Icon } from "../components/TopBar";
 import { getDeck, getQuestions, listSessions, startSession } from "../lib/db";
-import { missedLastTime, practisedIds, selectQuestions, type Selection } from "../lib/insights";
+import { missedLastTime, practicedIds, selectQuestions, type Selection } from "../lib/insights";
 import { formatClock } from "../lib/pace";
 import type { Deck, Mode, PracticeSession, Question } from "../lib/types";
 
 const MODES: [Mode, string, string][] = [
   ["learn", "Learn", "No clock. Take your time and focus on understanding."],
-  ["practice", "Practise", "Your own time limit, with pace feedback as you go."],
+  ["practice", "Practice", "Your own time limit, with pace feedback as you go."],
   ["challenge", "Challenge", "One minute per question. Stricter pacing."],
 ];
 
@@ -49,11 +49,11 @@ export default function PracticeSetup() {
   }
 
   const allIds = questions.map((q) => q.id);
-  const seen = practisedIds(history);
+  const seen = practicedIds(history);
   const available: Record<Selection, number> = {
     first: allIds.length,
     random: allIds.length,
-    unpractised: allIds.filter((id) => !seen.has(id)).length,
+    unpracticed: allIds.filter((id) => !seen.has(id)).length,
     missed: missedLastTime(history).length,
   };
   const pool = available[selection];
@@ -76,7 +76,7 @@ export default function PracticeSetup() {
   const options: [Selection, string][] = [
     ["first", `First ${count}, in order`],
     ["random", `Random ${count}`],
-    ["unpractised", "Ones I haven't practised"],
+    ["unpracticed", "Ones I haven't practiced"],
     ["missed", "Ones I got wrong last time"],
   ];
 
@@ -154,7 +154,7 @@ export default function PracticeSetup() {
               <label key={v} className="radio">
                 <input type="radio" name="selection" value={v} checked={selection === v} disabled={!available[v]} onChange={() => setSelection(v)} />
                 {label}
-                {(v === "unpractised" || v === "missed") && <span className="count">({available[v]})</span>}
+                {(v === "unpracticed" || v === "missed") && <span className="count">({available[v]})</span>}
               </label>
             ))}
           </fieldset>

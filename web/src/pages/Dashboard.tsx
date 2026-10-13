@@ -48,7 +48,7 @@ export default function Dashboard() {
       <TopBar />
       <main className="page">
         <section className="stack">
-          <h1 style={{ fontSize: "clamp(30px, 5vw, 40px)" }}>What do you want to practise?</h1>
+          <h1 style={{ fontSize: "clamp(30px, 5vw, 40px)" }}>What do you want to practice?</h1>
           <form
             className="create-form"
             onSubmit={(e) => {
@@ -58,7 +58,7 @@ export default function Dashboard() {
           >
             <div>
               <label htmlFor="topic">Create a practice deck with AI</label>
-              <input id="topic" type="text" placeholder="Try “quadratic word problems” or “SAT linear equations”" value={topic} onChange={(e) => setTopic(e.target.value)} />
+              <input id="topic" type="text" placeholder="Try “SAT linear equations” or “Calc II integration by parts”" value={topic} onChange={(e) => setTopic(e.target.value)} />
             </div>
             <button className="btn btn-primary btn-big" type="submit">
               <Icon name="sparkle" /> Build my deck
@@ -110,7 +110,7 @@ export default function Dashboard() {
                     </div>
                     <div className="row">
                       <Link className="btn btn-primary" style={{ flexGrow: 1 }} to={`/decks/${d.id}/practice`}>
-                        Practise
+                        Practice
                       </Link>
                       <Link className="btn" to={`/decks/${d.id}`}>
                         Review
@@ -162,7 +162,7 @@ export default function Dashboard() {
           </div>
           <div className="panel stack">
             <div className="row spread">
-              <h2>Practise next</h2>
+              <h2>Practice next</h2>
               <Chip>From your sessions</Chip>
             </div>
             {weak.length ? (

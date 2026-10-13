@@ -38,7 +38,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.PERMISSION_DENIED, "That access code isn't right.")
     topic = _clean(data.get("topic"), 200)
     if not topic:
-        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Tell me what to practise.")
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Tell me what to practice.")
     try:
         count = max(3, min(25, int(data.get("count", 10))))
     except (TypeError, ValueError):
@@ -48,7 +48,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         topic=topic,
         count=count,
         difficulty=difficulty,
-        level=_clean(data.get("level"), 80) or "High school",
+        level=_clean(data.get("level"), 80) or "High school or college",
         notes=_clean(data.get("notes"), 600),
     )
 

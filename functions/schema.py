@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class SolutionStep(BaseModel):
     description: str = Field(description="One short sentence explaining what this step does and why.")
-    expression: str = Field(description="The maths after this step, in readable Unicode (x², √, −).")
+    expression: str = Field(description="The math after this step, in readable Unicode (x², √, −).")
 
 
 class Check(BaseModel):

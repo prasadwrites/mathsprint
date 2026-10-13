@@ -58,7 +58,7 @@ export default function CreateDeck() {
     setBusy(true);
     setError("");
     try {
-      const res = await generateDeck({ topic, count, difficulty, level: level || "High school", notes, accessCode: accessCode.trim() });
+      const res = await generateDeck({ topic, count, difficulty, level: level || "High school or college", notes, accessCode: accessCode.trim() });
       storeCode(accessCode.trim());
       navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
     } catch (e) {
@@ -78,7 +78,7 @@ export default function CreateDeck() {
         <div className="two-col">
           <div className="main stack">
             <div className="panel chat">
-              <div className="bubble bot">What would you like to practise?</div>
+              <div className="bubble bot">What would you like to practice?</div>
               {asked ? (
                 <>
                   <div className="bubble me">{topic}</div>
@@ -96,7 +96,7 @@ export default function CreateDeck() {
                     id="topic"
                     type="text"
                     autoFocus
-                    placeholder="e.g. Quadratic equations"
+                    placeholder="e.g. Related rates"
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                     style={{ flex: 1, minWidth: 0 }}
@@ -131,7 +131,7 @@ export default function CreateDeck() {
                   </div>
                   <div>
                     <label htmlFor="level">Grade or level</label>
-                    <input id="level" type="text" placeholder="e.g. Algebra II" value={level} onChange={(e) => setLevel(e.target.value)} />
+                    <input id="level" type="text" placeholder="e.g. AP Calculus BC or Calculus II" value={level} onChange={(e) => setLevel(e.target.value)} />
                   </div>
                 </div>
                 <div>
@@ -193,7 +193,7 @@ export default function CreateDeck() {
               <h2>{busy ? "Generating" : "Every answer gets checked"}</h2>
             </div>
             <p className="muted">
-              Claude writes the questions. A maths engine solves each one again on its own, and anything that disagrees is rewritten before you see it.
+              Claude writes the questions. A math engine solves each one again on its own, and anything that disagrees is rewritten before you see it.
             </p>
             <ul className="checklist">
               {STEPS.map((s, i) => {

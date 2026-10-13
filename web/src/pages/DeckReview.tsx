@@ -87,7 +87,7 @@ export default function DeckReview() {
         <div className="panel">
           <div className="row spread">
             <h2>Questions</h2>
-            <span className="muted">Answers stay hidden until after you practise</span>
+            <span className="muted">Answers stay hidden until after you practice</span>
           </div>
           <ul className="qlist" style={{ marginTop: 12 }}>
             {questions.map((q, i) => (

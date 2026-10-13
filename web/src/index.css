@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 
-/* Tokens match the MathSprint design canvas. Semantic colours are darkened for 4.5:1 text contrast. */
+/* Tokens match the MathSprint design canvas. Semantic colors are darkened for 4.5:1 text contrast. */
 :root {
   --bg: #f3f5f8;
   --surface: #ffffff;

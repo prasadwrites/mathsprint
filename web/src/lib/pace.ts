@@ -36,7 +36,7 @@ export function pressureTint(remaining: number): Tint {
 export function pressureBackground(remaining: number): string {
   const { hue, sat, alpha } = pressureTint(remaining);
   const c = (a: number) => `hsla(${hue.toFixed(0)}, ${sat.toFixed(0)}%, 50%, ${a.toFixed(3)})`;
-  // A light wash in the centre and a stronger glow at the edges keeps the question readable.
+  // A light wash in the center and a stronger glow at the edges keeps the question readable.
   return `radial-gradient(ellipse at center, ${c(alpha * 0.35)} 35%, ${c(alpha * 1.4)} 100%)`;
 }
 

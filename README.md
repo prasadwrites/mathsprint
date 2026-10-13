@@ -1,6 +1,6 @@
 # MathSprint
 
-AI-powered maths practice with timed learning. Students create a practice deck with Claude, practise one question at a time against the clock, and get results that cover both accuracy and pace.
+AI-powered math practice for high school and college students with timed learning. Students create a practice deck with Claude, practice one question at a time against the clock, and get results that cover both accuracy and pace.
 
 This is MVP 1: the six core screens (Dashboard, AI Deck Creator, Deck Review, Practice Setup, Timed Practice, Results & Solutions) on Firebase.
 
@@ -30,11 +30,11 @@ The signature screen (`web/src/pages/Practice.tsx`, logic in `web/src/lib/pace.t
 - Each question shows its own time against the target per-question time.
 - Answers save to Firestore as you type (and to local storage), and every question's start and submit time is recorded, so a refresh resumes exactly where the student was.
 
-Practice has three modes, chosen on the setup screen: **Learn** (no clock; time per question is still recorded), **Practise** (the student's own limit, with quick picks of 10/15/20/30 minutes) and **Challenge** (one minute per question). Students can take the first N, a random N, the questions they haven't practised yet, or the ones they got wrong last time.
+Practice has three modes, chosen on the setup screen: **Learn** (no clock; time per question is still recorded), **Practice** (the student's own limit, with quick picks of 10/15/20/30 minutes) and **Challenge** (one minute per question). Students can take the first N, a random N, the questions they haven't practiced yet, or the ones they got wrong last time.
 
 Results show score, the timing verdict, time per question against the target, the concept that took longest, and every question with its worked solution and the "I don't understand this" explainer. From there the student can retry just the questions they missed, or build a new deck on their weakest concept.
 
-The dashboard adds overall progress (questions, accuracy, time, average pace against target) and a "Practise next" list of the weakest concepts across sessions (`web/src/lib/insights.ts`), which can be turned into a new deck in one click.
+The dashboard adds overall progress (questions, accuracy, time, average pace against target) and a "Practice next" list of the weakest concepts across sessions (`web/src/lib/insights.ts`), which can be turned into a new deck in one click.
 
 ### Data model
 

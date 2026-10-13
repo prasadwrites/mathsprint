@@ -1,10 +1,10 @@
 import { opened } from "./timing";
 import type { ConceptStat, PracticeSession } from "./types";
 
-export type Selection = "first" | "random" | "unpractised" | "missed";
+export type Selection = "first" | "random" | "unpracticed" | "missed";
 
 /** Questions the student opened in any finished session of this deck. */
-export function practisedIds(sessions: PracticeSession[]): Set<string> {
+export function practicedIds(sessions: PracticeSession[]): Set<string> {
   const seen = new Set<string>();
   for (const s of sessions) {
     s.questionIds.forEach((id, i) => {
@@ -29,8 +29,8 @@ export function selectQuestions(
   random: () => number = Math.random,
 ): string[] {
   let ids = allIds;
-  if (selection === "unpractised") {
-    const seen = practisedIds(history);
+  if (selection === "unpracticed") {
+    const seen = practicedIds(history);
     ids = allIds.filter((id) => !seen.has(id));
   } else if (selection === "missed") {
     const missed = new Set(missedLastTime(history));

@@ -29,7 +29,7 @@ export const SAMPLE_DECK = {
       step("Solve each factor.", "x = 1/2 or x = 3"),
     ]),
     num("Solve for x:", "x² − 9 = 0", [3, -3], "x = 3, −3", "Difference of squares", [
-      step("Recognise a difference of squares.", "(x − 3)(x + 3) = 0"),
+      step("Recognize a difference of squares.", "(x − 3)(x + 3) = 0"),
       step("Solve each factor.", "x = 3 or x = −3"),
     ]),
     choice("Which is the discriminant of this quadratic?", "x² + 2x + 5", ["−16", "24", "16", "−4"], "−16", -16, "Discriminant", [
@@ -38,7 +38,7 @@ export const SAMPLE_DECK = {
       step("A negative discriminant means there are no real roots.", "Δ < 0"),
     ]),
     num("Solve for x:", "x² + 4x + 4 = 0", [-2], "x = −2", "Perfect squares", [
-      step("Recognise a perfect square trinomial.", "(x + 2)² = 0"),
+      step("Recognize a perfect square trinomial.", "(x + 2)² = 0"),
       step("Take the square root of both sides.", "x + 2 = 0"),
       step("Solve.", "x = −2 (a repeated root)"),
     ]),

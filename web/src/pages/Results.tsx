@@ -9,7 +9,7 @@ import type { Deck, PracticeSession, Question } from "../lib/types";
 const STYLES: [string, string][] = [
   ["simple", "Simpler"],
   ["detailed", "Smaller steps"],
-  ["younger", "Like I'm in 8th grade"],
+  ["younger", "Like I'm new to this"],
   ["another", "Another method"],
 ];
 
@@ -140,7 +140,7 @@ export default function Results() {
     : {
         tone: correct / N >= 0.7 ? "good" : "warn",
         title: correct / N >= 0.7 ? "Solid understanding" : "Worth another look",
-        detail: `Learn mode, so no clock. You averaged ${formatClock(avg)} a question. Try Practise mode next to work on pace.`,
+        detail: `Learn mode, so no clock. You averaged ${formatClock(avg)} a question. Try Practice mode next to work on pace.`,
       };
 
   // Where the time went, by concept, and whether any of it was missed.

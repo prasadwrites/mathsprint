@@ -31,8 +31,8 @@ export default function Login() {
     <div className="wrap" style={{ maxWidth: 440 }}>
       <div className="stack" style={{ paddingTop: "10vh" }}>
         <Brand />
-        <h1>Timed maths practice that coaches your pace.</h1>
-        <p className="muted">Create a deck on any topic, practise against the clock, and see exactly where your time went.</p>
+        <h1>Timed math practice for high school and college students.</h1>
+        <p className="muted">Create a deck on any topic, practice against the clock, and see exactly where your time went.</p>
         <button className="btn-primary btn-big" onClick={() => run(() => signInWithPopup(auth, googleProvider))}>
           Continue with Google
         </button>

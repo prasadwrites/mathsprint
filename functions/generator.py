@@ -16,7 +16,7 @@ MAX_REPAIR_ROUNDS = 2
 
 log = logging.getLogger(__name__)
 
-SYSTEM = """You write maths practice questions for students.
+SYSTEM = """You write math practice questions for high school and college students in the US.
 
 Every question needs a `check`: the same problem restated in SymPy syntax so a
 program can verify your answer. Use ** for powers and * for multiplication.
@@ -147,7 +147,7 @@ def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -
 EXPLAIN_STYLES = {
     "simple": "Explain it simply, in two or three short sentences.",
     "detailed": "Break it into smaller steps than the original solution, one idea per step.",
-    "younger": "Explain it as you would to an 8th-grade student, with a concrete everyday comparison.",
+    "younger": "Explain it as you would to someone seeing this topic for the first time, with a concrete everyday comparison.",
     "another": "Show a different method that reaches the same result.",
 }
 
@@ -167,7 +167,7 @@ def explain_step(question: dict, step_index: int | None, style: str, client: ant
         "Worked solution:\n"
         + "\n".join(f"{i + 1}. {s['description']}  {s['expression']}" for i, s in enumerate(steps))
         + f"\n\n{focus}\n{EXPLAIN_STYLES.get(style, EXPLAIN_STYLES['simple'])}\n"
-        "Write plain text with Unicode maths. No headings."
+        "Write plain text with Unicode math. No headings."
     )
     response = client.beta.messages.create(
         model=MODEL,
