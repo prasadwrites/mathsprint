@@ -39,6 +39,8 @@ export interface Deck {
 export interface QuestionTiming {
   startedAt: number;
   answeredAt?: number;
+  /** Total time across all visits; absent on sessions recorded before students could revisit questions. */
+  spentMs?: number;
 }
 
 export type EndReason = "finished" | "timeout" | "quit";
@@ -61,7 +63,10 @@ export interface PracticeSession {
   questionIds: string[];
   timeLimitSec: number;
   startedAtMs: number;
+  /** The question on screen. Students can move back and forth, so this is not a count of finished questions. */
   currentIndex: number;
+  /** When the visit to the current question began. */
+  visitStartedAt?: number;
   answers: Record<string, string>;
   timings: Record<string, QuestionTiming>;
   status: "active" | "completed";

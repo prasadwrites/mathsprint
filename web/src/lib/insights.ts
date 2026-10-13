@@ -1,13 +1,14 @@
+import { opened } from "./timing";
 import type { ConceptStat, PracticeSession } from "./types";
 
 export type Selection = "first" | "random" | "unpractised" | "missed";
 
-/** Questions the student has reached in any finished session of this deck. */
+/** Questions the student opened in any finished session of this deck. */
 export function practisedIds(sessions: PracticeSession[]): Set<string> {
   const seen = new Set<string>();
   for (const s of sessions) {
     s.questionIds.forEach((id, i) => {
-      if (i <= s.currentIndex) seen.add(id);
+      if (opened(s, i)) seen.add(id);
     });
   }
   return seen;

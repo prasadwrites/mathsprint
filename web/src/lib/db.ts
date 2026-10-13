@@ -17,6 +17,7 @@ import { db, functions } from "./firebase";
 import type { ConceptStat, Deck, Difficulty, EndReason, Mode, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
+import { moveTo, opened, secondsOn } from "./timing";
 
 const toDate = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
 
@@ -87,7 +88,8 @@ export async function startSession(opts: {
     startedAt: serverTimestamp(),
     currentIndex: 0,
     answers: {},
-    timings: { 0: { startedAt: 0 } },
+    timings: { 0: { startedAt: 0, spentMs: 0 } },
+    visitStartedAt: 0,
     status: "active",
   });
   return ref.id;
@@ -108,13 +110,9 @@ export function saveAnswer(sessionId: string, index: number, answer: string) {
   return updateDoc(doc(db, "sessions", sessionId), { [`answers.${index}`]: answer });
 }
 
-/** Records the moment a question was submitted and the next one started. */
-export function advance(sessionId: string, index: number, atMs: number) {
-  return updateDoc(doc(db, "sessions", sessionId), {
-    [`timings.${index}.answeredAt`]: atMs,
-    [`timings.${index + 1}`]: { startedAt: atMs },
-    currentIndex: index + 1,
-  });
+/** Saves a move between questions (forwards, backwards or a jump). */
+export function saveNavigation(sessionId: string, nav: Pick<PracticeSession, "timings" | "currentIndex" | "visitStartedAt">) {
+  return updateDoc(doc(db, "sessions", sessionId), { ...nav });
 }
 
 export async function finishSession(s: PracticeSession, questions: Question[], reason: EndReason, usedSec: number) {
@@ -125,20 +123,18 @@ export async function finishSession(s: PracticeSession, questions: Question[], r
     results[i] = q ? isCorrect(q, s.answers[i]) : false;
   });
   const score = Object.values(results).filter(Boolean).length;
-  const timings = { ...s.timings };
-  if (timings[s.currentIndex] && timings[s.currentIndex].answeredAt == null) {
-    timings[s.currentIndex] = { ...timings[s.currentIndex], answeredAt: Math.round(usedSec * 1000) };
-  }
-  // Per-concept totals for the questions the student reached, used for weak-topic suggestions.
+  // Close the visit in progress so every question's time is final.
+  const closed = { ...s, ...moveTo(s, s.currentIndex, Math.round(usedSec * 1000)), status: "completed" as const };
+  const { timings } = closed;
+  // Per-concept totals for the questions the student opened, used for weak-topic suggestions.
   const conceptStats: Record<string, ConceptStat> = {};
   s.questionIds.forEach((qid, i) => {
     const q = byId.get(qid);
-    const t = timings[i];
-    if (!q || i > s.currentIndex || !t) return;
+    if (!q || !opened(closed, i)) return;
     const c = (conceptStats[q.concept] ??= { attempted: 0, correct: 0, seconds: 0 });
     c.attempted += 1;
     c.correct += results[i] ? 1 : 0;
-    c.seconds += Math.max(0, ((t.answeredAt ?? usedSec * 1000) - t.startedAt) / 1000);
+    c.seconds += secondsOn(closed, i, 0) ?? 0;
   });
   await updateDoc(doc(db, "sessions", s.id), {
     status: "completed",

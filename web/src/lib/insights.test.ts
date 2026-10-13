@@ -21,10 +21,11 @@ const session = (over: Partial<PracticeSession>): PracticeSession => ({
 const ids = ["a", "b", "c", "d", "e"];
 
 describe("question selection", () => {
-  const older = session({ startedAtMs: 1, questionIds: ["a", "b"], currentIndex: 1, results: { 0: false, 1: true } });
-  const newer = session({ startedAtMs: 2, questionIds: ["c", "d", "e"], currentIndex: 1, results: { 0: true, 1: false, 2: false } });
+  const t = { startedAt: 0, spentMs: 1000 };
+  const older = session({ startedAtMs: 1, questionIds: ["a", "b"], timings: { 0: t, 1: t }, results: { 0: false, 1: true } });
+  const newer = session({ startedAtMs: 2, questionIds: ["c", "d", "e"], timings: { 0: t, 1: t }, results: { 0: true, 1: false, 2: false } });
 
-  it("counts only questions the student reached", () => {
+  it("counts only questions the student opened", () => {
     expect([...practisedIds([older, newer])].sort()).toEqual(["a", "b", "c", "d"]);
   });
   it("uses the most recent session for missed questions, including ones not reached", () => {

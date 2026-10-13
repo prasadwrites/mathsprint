@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { explainStep, getDeck, getQuestions, getSession } from "../lib/db";
 import { formatClock, verdict, type Verdict } from "../lib/pace";
+import { opened, secondsOn } from "../lib/timing";
 import type { Deck, PracticeSession, Question } from "../lib/types";
 
 const STYLES: [string, string][] = [
@@ -113,9 +114,8 @@ export default function Results() {
   const timed = s.timeLimitSec > 0;
   const used = s.usedSec ?? s.timeLimitSec;
   const items = questions.map((q, i) => {
-    const t = s.timings[i];
-    const reached = i <= s.currentIndex;
-    const time = reached && t ? Math.max(0, ((t.answeredAt ?? used * 1000) - t.startedAt) / 1000) : null;
+    const reached = opened(s, i);
+    const time = secondsOn(s, i, used * 1000);
     return { q, i, answer: s.answers[i] ?? "", ok: !!s.results?.[i], reached, time };
   });
   const answered = items.filter((x) => x.answer).length;

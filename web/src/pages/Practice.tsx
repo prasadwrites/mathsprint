@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Chip, Icon } from "../components/TopBar";
-import { advance, finishSession, getQuestions, getSession, saveAnswer } from "../lib/db";
+import { finishSession, getQuestions, getSession, saveAnswer, saveNavigation } from "../lib/db";
 import { formatClock, pace, pressureBackground, stage } from "../lib/pace";
+import { moveTo, secondsOn } from "../lib/timing";
 import type { EndReason, PracticeSession, Question } from "../lib/types";
 
 const TICK_MS = 250;
@@ -91,10 +92,11 @@ export default function Practice() {
   const answer = session.answers[i] ?? "";
   const last = i === N - 1;
   const perQ = timed ? total / N : 0;
-  const p = timed ? pace(elapsedSec, total, N, i) : null;
+  const done = questions.filter((_, k) => (session.answers[k] ?? "").trim()).length;
+  const p = timed ? pace(elapsedSec, total, N, done) : null;
   const prefix = answerPrefix(q);
   const st = stage(remaining);
-  const onQuestion = elapsedSec - (session.timings[i]?.startedAt ?? 0) / 1000;
+  const onQuestion = secondsOn(session, i, now - session.startedAtMs) ?? 0;
 
   const setAnswer = (value: string) => {
     const answers = { ...session.answers, [i]: value };
@@ -109,17 +111,17 @@ export default function Practice() {
     saveTimer.current = window.setTimeout(() => saveAnswer(session.id, i, value).then(() => setSaved(true)), 500);
   };
 
-  const next = async () => {
+  // Any question can be revisited; time on each one adds up across visits.
+  const goTo = (to: number) => {
+    if (to === i || to < 0 || to >= N) return;
     window.clearTimeout(saveTimer.current);
-    if (last) return end("finished");
-    const at = Date.now() - session.startedAtMs;
-    await Promise.all([saveAnswer(session.id, i, answer), advance(session.id, i, at)]);
-    setSession({
-      ...session,
-      currentIndex: i + 1,
-      timings: { ...session.timings, [i]: { ...session.timings[i], answeredAt: at }, [i + 1]: { startedAt: at } },
-    });
+    const nav = moveTo(session, to, Date.now() - session.startedAtMs);
+    setSession({ ...session, ...nav });
+    saveAnswer(session.id, i, answer);
+    saveNavigation(session.id, nav);
   };
+
+  const next = () => (last ? end("finished") : goTo(i + 1));
 
   return (
     <>
@@ -153,8 +155,8 @@ export default function Practice() {
               )}
             </div>
           </div>
-          <div className="track" aria-label={p ? `${i} of ${N} done; target is ${p.expected.toFixed(1)}` : `${i} of ${N} done`}>
-            <div className="fill" style={{ width: `${(i / N) * 100}%` }} />
+          <div className="track" aria-label={p ? `${done} of ${N} answered; target is ${p.expected.toFixed(1)}` : `${done} of ${N} answered`}>
+            <div className="fill" style={{ width: `${(done / N) * 100}%` }} />
             {p && <div className="target" style={{ left: `calc(${(p.expected / N) * 100}% - 1px)` }} />}
           </div>
           {p && (
@@ -164,6 +166,21 @@ export default function Practice() {
             </div>
           )}
         </div>
+
+        <nav className="qpicker" aria-label="Questions">
+          {questions.map((_, k) => (
+            <button
+              key={k}
+              type="button"
+              className={(session.answers[k] ?? "").trim() ? "answered" : ""}
+              aria-current={k === i ? "step" : undefined}
+              aria-label={`Question ${k + 1}${(session.answers[k] ?? "").trim() ? ", answered" : ""}`}
+              onClick={() => goTo(k)}
+            >
+              {k + 1}
+            </button>
+          ))}
+        </nav>
 
         <div className="panel qcard">
           <div className="qtext">{q.prompt}</div>
@@ -205,8 +222,11 @@ export default function Practice() {
               This question <b className={`mono ${timed && onQuestion > perQ ? "over" : ""}`}>{formatClock(onQuestion)}</b>
               {timed && <> / target {formatClock(perQ)}</>}
             </div>
-            <div className="row">
-              <span className="saved">{saved && answer ? "Saved" : ""}</span>
+            <div className="row practice-nav">
+              <span className="saved">{saved && answer ? "Saved" : last && done < N ? `${N - done} unanswered` : ""}</span>
+              <button className="btn btn-big" onClick={() => goTo(i - 1)} disabled={i === 0}>
+                Previous
+              </button>
               <button className="btn btn-primary btn-big practice-next" onClick={next}>
                 {last ? (
                   <>
@@ -226,7 +246,7 @@ export default function Practice() {
             End session early
           </button>
           <span className="muted" style={{ fontSize: 13 }}>
-            Answers save automatically, so a refresh won't lose your place
+            Go back to any question with the numbers above. Answers save automatically
           </span>
         </div>
       </main>
