@@ -99,6 +99,11 @@ export async function adminReplyUpgrade(args: { id: string; reply: string; appro
   await httpsCallable<typeof args, { ok: boolean }>(functions, "admin_reply_upgrade")(args);
 }
 
+/** A student writes back on one of their requests. */
+export async function replyUpgrade(id: string, text: string) {
+  await httpsCallable<{ id: string; text: string }, { ok: boolean }>(functions, "reply_upgrade")({ id, text });
+}
+
 /** Adds a ready-made deck so a new student can try practice before generating their own. */
 export async function addSampleDeck(uid: string): Promise<string> {
   const deckRef = doc(collection(db, "decks"));
