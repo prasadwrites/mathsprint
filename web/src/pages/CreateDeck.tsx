@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import TopBar, { Icon } from "../components/TopBar";
+import { useAccount } from "../App";
+import TopBar, { Chip, Icon } from "../components/TopBar";
 import { generateDeck } from "../lib/db";
 import type { Difficulty } from "../lib/types";
 
@@ -33,6 +34,12 @@ const steps = (count: number) => [
 
 export default function CreateDeck() {
   const navigate = useNavigate();
+  const { account, refresh } = useAccount();
+  // Until the account loads, assume the free plan; the server checks the real limits either way.
+  const maxQuestions = account?.maxQuestions ?? 20;
+  const outOfDecks = !!account && !account.isAdmin && account.decksCreated >= account.maxDecks;
+  const suspended = account?.status === "suspended";
+  const needsCode = !account?.isAdmin;
   const [params] = useSearchParams();
   const [topic, setTopic] = useState(params.get("topic") ?? "");
   const [asked, setAsked] = useState(!!params.get("topic"));
@@ -58,17 +65,19 @@ export default function CreateDeck() {
     setBusy(true);
     setError("");
     try {
-      const res = await generateDeck({ topic, count, difficulty, level: level || "High school or college", notes, accessCode: accessCode.trim() });
-      storeCode(accessCode.trim());
+      const res = await generateDeck({ topic, count: clamp(count), difficulty, level: level || "High school or college", notes, accessCode: needsCode ? accessCode.trim() : "" });
+      if (needsCode) storeCode(accessCode.trim());
+      refresh();
       navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
     } catch (e) {
-      if ((e as { code?: string }).code === "functions/permission-denied") storeCode(null);
+      if ((e as Error).message === "That access code isn't right.") storeCode(null);
+      refresh();
       setError((e as Error).message || "The deck couldn't be generated. Try again.");
       setBusy(false);
     }
   };
 
-  const clamp = (n: number) => Math.max(3, Math.min(25, n || 3));
+  const clamp = (n: number) => Math.max(3, Math.min(maxQuestions, n || 3));
 
   return (
     <>
@@ -123,11 +132,15 @@ export default function CreateDeck() {
                       <button type="button" aria-label="Fewer questions" onClick={() => setCount(clamp(count - 1))}>
                         −
                       </button>
-                      <input id="count" type="number" min={3} max={25} value={count} onChange={(e) => setCount(Number(e.target.value))} onBlur={() => setCount(clamp(count))} />
+                      <input id="count" type="number" min={3} max={maxQuestions} value={count} onChange={(e) => setCount(Number(e.target.value))} onBlur={() => setCount(clamp(count))} />
                       <button type="button" aria-label="More questions" onClick={() => setCount(clamp(count + 1))}>
                         +
                       </button>
                     </div>
+                    <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>
+                      Up to {maxQuestions}
+                      {account && !account.isAdmin && ` on the ${account.planLabel} plan`}
+                    </p>
                   </div>
                   <div>
                     <label htmlFor="level">Grade or level</label>
@@ -155,28 +168,43 @@ export default function CreateDeck() {
                     onChange={(e) => setNotes(e.target.value)}
                   />
                 </div>
+                {needsCode && (
                 <div>
                   <label htmlFor="access">Access code</label>
                   <input
                     id="access"
                     type="password"
                     autoComplete="off"
-                    required
+                    required={needsCode}
                     placeholder="Ask the person who runs MathSprint"
                     value={accessCode}
                     onChange={(e) => setAccessCode(e.target.value)}
                     style={{ maxWidth: 320 }}
                   />
                   <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>
-                    Building decks uses AI credit, so it needs a code. This browser remembers it after the first deck.
+                    {account?.hasOwnCode
+                      ? "Use the code you were given for your account. This browser remembers it after the first deck."
+                      : "Building decks uses AI credit, so it needs a code. This browser remembers it after the first deck."}
                   </p>
                 </div>
+                )}
+                {account && !account.isAdmin && (
+                  <div className="row" style={{ gap: 8 }}>
+                    <Chip tone={outOfDecks ? "bad" : undefined}>{account.planLabel}</Chip>
+                    <span className="muted" style={{ fontSize: 14 }}>
+                      {outOfDecks
+                        ? `You've used all ${account.maxDecks} decks on your plan. Ask the person who runs MathSprint about upgrading.`
+                        : `${account.decksCreated} of ${account.maxDecks} decks used.`}
+                    </span>
+                  </div>
+                )}
+                {suspended && <p className="error">Your account is suspended. Contact the person who runs MathSprint.</p>}
                 <div className="row">
-                  <button className="btn btn-primary btn-big" type="submit" disabled={busy}>
+                  <button className="btn btn-primary btn-big" type="submit" disabled={busy || outOfDecks || suspended}>
                     <Icon name="sparkle" /> {busy ? "Generating…" : "Generate deck"}
                   </button>
                   {busy ? (
-                    <span className="muted">Usually under a minute for 10 questions</span>
+                    <span className="muted">{count > 20 ? "Big decks are written in parts and can take several minutes" : "Usually under a minute for 10 questions"}</span>
                   ) : (
                     <button type="button" className="btn-link" onClick={() => setAsked(false)}>
                       Change topic

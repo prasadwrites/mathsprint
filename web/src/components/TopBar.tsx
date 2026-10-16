@@ -1,7 +1,7 @@
 import { signOut } from "firebase/auth";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useUser } from "../App";
+import { useAccount, useUser } from "../App";
 import { auth } from "../lib/firebase";
 
 export function Brand({ small }: { small?: boolean }) {
@@ -37,6 +37,7 @@ export function Icon({ name, size = 18 }: { name: "back" | "sparkle" | "play" | 
 
 function ProfileMenu() {
   const user = useUser();
+  const { account } = useAccount();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -54,6 +55,17 @@ function ProfileMenu() {
       {open && (
         <div className="menu" role="menu">
           <div className="who">{user.displayName || user.email}</div>
+          {account && (
+            <div className="who">
+              <Chip>{account.isAdmin ? "Admin" : account.planLabel}</Chip>{" "}
+              {!account.isAdmin && `${account.decksCreated} of ${account.maxDecks} decks used`}
+            </div>
+          )}
+          {account?.isAdmin && (
+            <Link role="menuitem" className="menu-link" to="/admin" onClick={() => setOpen(false)}>
+              Manage accounts
+            </Link>
+          )}
           <button role="menuitem" onClick={() => signOut(auth)}>
             Sign out
           </button>

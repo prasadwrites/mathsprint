@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, replace
 
 import anthropic
 
@@ -13,6 +14,10 @@ from validator import check_question
 
 MODEL = "claude-opus-5-5"
 MAX_REPAIR_ROUNDS = 2
+# Big decks (Pro plans allow up to 200 questions) are written in parts that run side by side,
+# so each Claude call stays well inside its output limit and the whole deck inside the function timeout.
+BATCH_SIZE = 20
+PARALLEL_BATCHES = 5
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +50,8 @@ class DeckRequest:
     difficulty: str  # Easy | Medium | Hard | Mixed
     level: str
     notes: str = ""
+    part: int = 1
+    parts: int = 1
 
 
 @dataclass
@@ -85,6 +92,13 @@ def _initial_prompt(req: DeckRequest) -> str:
         f"Level: {req.level}. Difficulty: {mix}.",
         "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
     ]
+    if req.parts > 1:
+        lines.append(
+            f"This is part {req.part} of {req.parts} of a larger deck written in parallel. "
+            "To avoid repeating the other parts, lean toward the sub-skills and question styles that fall "
+            f"around position {req.part} of {req.parts} when the topic is split into that many areas, "
+            "and vary the numbers and contexts."
+        )
     if req.notes.strip():
         lines.append(f"Student's extra instructions: {req.notes.strip()}")
     return "\n".join(lines)
@@ -110,6 +124,41 @@ def _difficulty_ok(req: DeckRequest, q: GeneratedQuestion) -> bool:
 
 def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -> DeckResult:
     client = client or anthropic.Anthropic()
+    if req.count <= BATCH_SIZE:
+        return _generate_part(req, client)
+
+    sizes = [BATCH_SIZE] * (req.count // BATCH_SIZE) + ([req.count % BATCH_SIZE] if req.count % BATCH_SIZE else [])
+    parts = [replace(req, count=n, part=i + 1, parts=len(sizes)) for i, n in enumerate(sizes)]
+
+    def run(part: DeckRequest) -> DeckResult | Exception:
+        try:
+            return _generate_part(part, client)
+        except (GenerationError, anthropic.APIError) as e:
+            log.warning("part %d of %d failed: %s", part.part, part.parts, e)
+            return e
+
+    with ThreadPoolExecutor(max_workers=PARALLEL_BATCHES) as pool:
+        results = list(pool.map(run, parts))
+
+    # A part that fails costs only its questions; the deck fails only if every part did.
+    done = [r for r in results if isinstance(r, DeckResult)]
+    if not done:
+        first = results[0]
+        if isinstance(first, GenerationError):
+            raise first
+        raise GenerationError("Claude couldn't be reached. Try again in a moment.") from first
+    first = done[0].deck
+    topics = list(dict.fromkeys(t for r in done for t in r.deck.topics))[:5]
+    deck = GeneratedDeck(title=first.title, topics=topics, questions=[q for r in done for q in r.deck.questions])
+    return DeckResult(
+        deck=deck,
+        dropped=req.count - len(deck.questions),
+        repairs=sum(r.repairs for r in done),
+        failures=[f for r in done for f in r.failures],
+    )
+
+
+def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
     draft = _ask(client, _initial_prompt(req))
 
     good: list[GeneratedQuestion] = []

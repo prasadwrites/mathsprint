@@ -77,3 +77,34 @@ export interface PracticeSession {
   results?: Record<string, boolean>;
   conceptStats?: Record<string, ConceptStat>;
 }
+
+export type PlanId = "free" | "pro" | "promax";
+
+/** The signed-in student's own account, from the get_account function. */
+export interface AccountSummary {
+  plan: PlanId;
+  planLabel: string;
+  status: "active" | "suspended";
+  decksCreated: number;
+  maxDecks: number;
+  maxQuestions: number;
+  isAdmin: boolean;
+  /** True when the admin gave this account its own access code. */
+  hasOwnCode: boolean;
+}
+
+/** One row on the admin accounts page. Times are milliseconds since the epoch. */
+export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode"> {
+  uid: string;
+  email: string;
+  displayName: string;
+  accessCode: string | null;
+  createdAt: number | null;
+  lastSignInAt: number | null;
+}
+
+export interface PlanLimits {
+  label: string;
+  max_decks: number;
+  max_questions: number;
+}

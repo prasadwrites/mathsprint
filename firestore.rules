@@ -3,20 +3,34 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function owns(data) { return signedIn() && data.ownerId == request.auth.uid; }
+    // Suspended accounts lose access to their data too, not just deck generation.
+    function active() {
+      let account = /databases/$(database)/documents/accounts/$(request.auth.uid);
+      return !exists(account) || get(account).data.status != "suspended";
+    }
+    function owns(data) { return signedIn() && data.ownerId == request.auth.uid && active(); }
+    function isAdmin() {
+      return signedIn() && request.auth.token.email == "prasad.writes@gmail.com" && request.auth.token.email_verified == true;
+    }
 
-    // Decks are written by the generate_deck function (admin access) or by the
-    // owner when adding the sample deck. Students can only see their own decks.
+    // AI decks are written only by the generate_deck function (admin access), which
+    // enforces the plan's limits. Students can add the sample deck themselves and
+    // can only see their own decks.
     match /decks/{deckId} {
       allow read, delete: if owns(resource.data);
-      allow create: if owns(request.resource.data);
-      allow update: if owns(resource.data) && request.resource.data.ownerId == resource.data.ownerId;
+      allow create: if owns(request.resource.data) && request.resource.data.source == "sample";
+      allow update: if owns(resource.data)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.source == resource.data.source;
 
       match /questions/{questionId} {
         function deckPath() { return /databases/$(database)/documents/decks/$(deckId); }
-        allow read: if signedIn() && get(deckPath()).data.ownerId == request.auth.uid;
-        // getAfter, so a deck and its questions can be written in one batch.
-        allow write: if signedIn() && getAfter(deckPath()).data.ownerId == request.auth.uid;
+        allow read: if signedIn() && get(deckPath()).data.ownerId == request.auth.uid && active();
+        // getAfter, so a deck and its questions can be written in one batch. Only sample
+        // decks are written from the app; AI decks come from the function.
+        allow write: if signedIn() && active()
+          && getAfter(deckPath()).data.ownerId == request.auth.uid
+          && getAfter(deckPath()).data.source == "sample";
       }
     }
 
@@ -32,6 +46,17 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Plan, usage and status. Only Cloud Functions change these.
+    match /accounts/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+
+    // Per-account access codes. Read and written only through the admin functions.
+    match /accessCodes/{uid} {
+      allow read, write: if false;
     }
   }
 }
