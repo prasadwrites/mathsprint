@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, AdminAccount, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, AdminAccount, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -79,6 +79,24 @@ export interface AccountUpdate {
 
 export async function adminUpdateAccount(update: AccountUpdate) {
   await httpsCallable<AccountUpdate, { ok: boolean }>(functions, "admin_update_account")(update);
+}
+
+/** Permanently deletes an account's sign-in, decks, practice history and settings. */
+export async function adminDeleteAccount(uid: string) {
+  return (await httpsCallable<{ uid: string }, { ok: boolean; decks: number; sessions: number }>(functions, "admin_delete_account", { timeout: 300_000 })({ uid })).data;
+}
+
+export async function requestUpgrade(plan: PlanId, message: string) {
+  await httpsCallable<{ plan: PlanId; message: string }, { id: string }>(functions, "request_upgrade")({ plan, message });
+}
+
+/** Students get their own requests (markRead clears the reply notification); the admin gets all of them. */
+export async function listUpgradeRequests(markRead = false) {
+  return (await httpsCallable<{ markRead: boolean }, { requests: UpgradeRequest[] }>(functions, "list_upgrade_requests")({ markRead })).data.requests;
+}
+
+export async function adminReplyUpgrade(args: { id: string; reply: string; approve: boolean }) {
+  await httpsCallable<typeof args, { ok: boolean }>(functions, "admin_reply_upgrade")(args);
 }
 
 /** Adds a ready-made deck so a new student can try practice before generating their own. */

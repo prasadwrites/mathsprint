@@ -105,3 +105,20 @@ def clean_update(data: dict) -> dict:
     if data.get("resetDecks"):
         out["decksCreated"] = 0
     return out
+
+
+PLAN_ORDER = list(PLANS)  # free < pro < promax
+MAX_MESSAGE = 1000
+
+
+def check_upgrade_request(current_plan: str, requested_plan: str, has_pending: bool, admin: bool) -> None:
+    """Raises AccessDenied (with a message for the student) if this upgrade request can't be made."""
+    if admin:
+        raise AccessDenied("The admin account has no limits to upgrade.")
+    if requested_plan not in PLANS:
+        raise AccessDenied("Pick a plan to upgrade to.")
+    current = current_plan if current_plan in PLANS else DEFAULT_PLAN
+    if PLAN_ORDER.index(requested_plan) <= PLAN_ORDER.index(current):
+        raise AccessDenied(f"You're already on {PLANS[current].label}. Pick a bigger plan.")
+    if has_pending:
+        raise AccessDenied("You already have a request waiting. You'll see the reply here.")

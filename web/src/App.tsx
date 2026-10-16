@@ -12,6 +12,7 @@ import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import PracticeSetup from "./pages/PracticeSetup";
 import Results from "./pages/Results";
+import Upgrade from "./pages/Upgrade";
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
@@ -19,6 +20,18 @@ export const useUser = () => useContext(UserContext)!;
 /** null while loading, or if the account couldn't be read (the server still enforces every limit). */
 const AccountContext = createContext<{ account: AccountSummary | null; refresh: () => void }>({ account: null, refresh: () => {} });
 export const useAccount = () => useContext(AccountContext);
+
+const ADMIN_EMAIL = "prasad.writes@gmail.com";
+/** Decides only what the admin sees. Every admin action is checked again by the functions. */
+export function useIsAdmin() {
+  const user = useUser();
+  const { account } = useAccount();
+  return !!account?.isAdmin || (user.emailVerified && user.email?.toLowerCase() === ADMIN_EMAIL);
+}
+
+function AdminOnly() {
+  return useIsAdmin() ? <Accounts /> : <Navigate to="/" replace />;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
@@ -54,7 +67,8 @@ export default function App() {
         <Route path="/decks/:deckId/practice" element={<PracticeSetup />} />
         <Route path="/sessions/:sessionId" element={<Practice />} />
         <Route path="/sessions/:sessionId/results" element={<Results />} />
-        {account?.isAdmin && <Route path="/admin" element={<Accounts />} />}
+        <Route path="/admin" element={<AdminOnly />} />
+        <Route path="/upgrade" element={<Upgrade />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </AccountContext.Provider>

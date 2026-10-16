@@ -91,10 +91,28 @@ export interface AccountSummary {
   isAdmin: boolean;
   /** True when the admin gave this account its own access code. */
   hasOwnCode: boolean;
+  /** Admin: requests waiting for a reply. Students: their open request and unread replies. */
+  upgrade?: { waiting?: number; pendingPlan?: PlanId | null; unreadReplies?: number };
+}
+
+export interface UpgradeRequest {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  currentPlan: PlanId;
+  requestedPlan: PlanId;
+  message: string;
+  status: "pending" | "replied";
+  reply: string;
+  approved: boolean;
+  userRead: boolean;
+  createdAt: number | null;
+  repliedAt: number | null;
 }
 
 /** One row on the admin accounts page. Times are milliseconds since the epoch. */
-export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode"> {
+export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgrade"> {
   uid: string;
   email: string;
   displayName: string;
@@ -108,3 +126,10 @@ export interface PlanLimits {
   max_decks: number;
   max_questions: number;
 }
+
+/** Mirrors PLANS in functions/accounts.py, for showing the choices. The server enforces the limits. */
+export const PLANS: { id: PlanId; label: string; decks: number; questions: number }[] = [
+  { id: "free", label: "Free", decks: 5, questions: 20 },
+  { id: "pro", label: "Pro", decks: 50, questions: 120 },
+  { id: "promax", label: "Pro Max", decks: 100, questions: 200 },
+];

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAccount } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { generateDeck } from "../lib/db";
@@ -193,9 +193,14 @@ export default function CreateDeck() {
                     <Chip tone={outOfDecks ? "bad" : undefined}>{account.planLabel}</Chip>
                     <span className="muted" style={{ fontSize: 14 }}>
                       {outOfDecks
-                        ? `You've used all ${account.maxDecks} decks on your plan. Ask the person who runs MathSprint about upgrading.`
+                        ? `You've used all ${account.maxDecks} decks on your plan.`
                         : `${account.decksCreated} of ${account.maxDecks} decks used.`}
                     </span>
+                    {account.plan !== "promax" && (
+                      <Link to="/upgrade" style={{ fontWeight: 700, fontSize: 14 }}>
+                        {account.upgrade?.pendingPlan ? "Upgrade requested" : "Request an upgrade"}
+                      </Link>
+                    )}
                   </div>
                 )}
                 {suspended && <p className="error">Your account is suspended. Contact the person who runs MathSprint.</p>}
