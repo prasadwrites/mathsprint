@@ -18,6 +18,8 @@ export default function Login() {
       setError(
         code.includes("invalid-credential") || code.includes("wrong-password")
           ? "That email and password don't match. Check them and try again."
+          : code.includes("user-disabled")
+            ? "This account has been suspended. Contact the person who runs MathSprint."
           : code.includes("email-already-in-use")
             ? "An account already uses this email. Sign in instead."
             : code.includes("weak-password")

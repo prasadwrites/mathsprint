@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { ConceptStat, Deck, Difficulty, EndReason, Mode, PracticeSession, Question } from "./types";
+import type { AccountSummary, AdminAccount, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -49,7 +49,8 @@ export async function generateDeck(input: GenerateInput) {
   const call = httpsCallable<GenerateInput, { deckId: string; questionCount: number; dropped: number }>(
     functions,
     "generate_deck",
-    { timeout: 540_000 },
+    // Pro Max decks of 200 questions are written in parts and can take several minutes.
+    { timeout: 1_800_000 },
   );
   return (await call(input)).data;
 }
@@ -57,6 +58,27 @@ export async function generateDeck(input: GenerateInput) {
 export async function explainStep(args: { deckId: string; questionId: string; step: number | null; style: string }) {
   const call = httpsCallable<typeof args, { explanation: string }>(functions, "explain_step");
   return (await call(args)).data.explanation;
+}
+
+export async function getAccount() {
+  return (await httpsCallable<void, AccountSummary>(functions, "get_account")()).data;
+}
+
+export async function adminListAccounts() {
+  return (await httpsCallable<void, { accounts: AdminAccount[]; plans: Record<PlanId, PlanLimits> }>(functions, "admin_list_accounts")()).data;
+}
+
+/** accessCode: a code to set, "generate" for a random one, or null to go back to the shared code. */
+export interface AccountUpdate {
+  uid: string;
+  plan?: PlanId;
+  status?: "active" | "suspended";
+  accessCode?: string | null;
+  resetDecks?: boolean;
+}
+
+export async function adminUpdateAccount(update: AccountUpdate) {
+  await httpsCallable<AccountUpdate, { ok: boolean }>(functions, "admin_update_account")(update);
 }
 
 /** Adds a ready-made deck so a new student can try practice before generating their own. */

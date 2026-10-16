@@ -15,7 +15,26 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               generate_deck          Claude writes the deck → SymPy checks every answer
                                      → Claude rewrites anything that failed (2 rounds) → saved
               explain_step           "I don't understand this": Claude re-explains a step
+              get_account            the student's plan, usage and status
+              admin_list_accounts    admin only: every sign-in with plan, usage, status, access code
+              admin_update_account   admin only: change plan, suspend/reactivate, set access code, reset count
 ```
+
+### Accounts and plans
+
+The admin is `prasad.writes@gmail.com` (only when Firebase has verified the email, which Google sign-in always does). The admin opens **Manage accounts** from the profile menu to see every account, change its plan, give it its own access code, reset its deck count, or suspend it.
+
+| Plan | Decks | Questions per deck |
+| --- | --- | --- |
+| Free (default) | 5 | 20 |
+| Pro | 50 | 120 |
+| Pro Max | 100 | 200 |
+
+Everything is enforced server-side. `generate_deck` checks the plan and takes one deck from it in a Firestore transaction before calling Claude, and gives it back if generation fails. Decks count when created, so deleting one doesn't free a slot (the admin can reset the count). The admin account has no limits and needs no access code.
+
+An account's own access code replaces the shared `DECK_ACCESS_CODE` for that person; accounts without one keep using the shared code. Suspending an account disables its sign-in, revokes its open sessions, and makes Firestore rules refuse its reads and writes until it is reactivated.
+
+Decks over 20 questions are written in parts of 20 that run in parallel (`functions/generator.py`), so a 200-question deck stays inside Claude's output limit and the function timeout.
 
 ### Answer checking
 
@@ -42,9 +61,11 @@ The dashboard adds overall progress (questions, accuracy, time, average pace aga
 | --- | --- |
 | `decks/{id}` | ownerId, title, topic, level, difficulty, topics, questionCount, source, createdAt |
 | `decks/{id}/questions/{id}` | order, prompt, math, type (numeric/choice), choices, answerValues, answerChoice, answerDisplay, tolerance, concept, difficulty, steps[{description, expression}], check, verified |
+| `accounts/{uid}` | email, displayName, plan (free/pro/promax), status (active/suspended), decksCreated, createdAt. Written only by functions |
+| `accessCodes/{uid}` | code. Read and written only by functions |
 | `sessions/{id}` | ownerId, deckId, deckTitle, mode (learn/practice/challenge), questionIds, timeLimitSec (0 in learn mode), startedAtMs, currentIndex, answers{i}, timings{i: {startedAt, answeredAt}} (ms from start), status, endReason, usedSec, score, accuracy, results{i}, conceptStats{concept: {attempted, correct, seconds}} |
 
-Security rules (`firestore.rules`) keep every deck and session private to its owner and make finished sessions read-only.
+Security rules (`firestore.rules`) keep every deck and session private to its owner, make finished sessions read-only, only let the app write sample decks (AI decks come from the function), and lock out suspended accounts.
 
 ## Setup
 

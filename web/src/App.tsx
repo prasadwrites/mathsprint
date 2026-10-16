@@ -1,7 +1,10 @@
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { getAccount } from "./lib/db";
 import { auth } from "./lib/firebase";
+import type { AccountSummary } from "./lib/types";
+import Accounts from "./pages/Accounts";
 import CreateDeck from "./pages/CreateDeck";
 import Dashboard from "./pages/Dashboard";
 import DeckReview from "./pages/DeckReview";
@@ -13,9 +16,24 @@ import Results from "./pages/Results";
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
 
+/** null while loading, or if the account couldn't be read (the server still enforces every limit). */
+const AccountContext = createContext<{ account: AccountSummary | null; refresh: () => void }>({ account: null, refresh: () => {} });
+export const useAccount = () => useContext(AccountContext);
+
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [account, setAccount] = useState<AccountSummary | null>(null);
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+
+  const refresh = useCallback(() => {
+    getAccount()
+      .then(setAccount)
+      .catch(() => setAccount(null));
+  }, []);
+  useEffect(() => {
+    setAccount(null);
+    if (user) refresh();
+  }, [user, refresh]);
 
   if (user === undefined) {
     return (
@@ -28,6 +46,7 @@ export default function App() {
 
   return (
     <UserContext.Provider value={user}>
+      <AccountContext.Provider value={{ account, refresh }}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/create" element={<CreateDeck />} />
@@ -35,8 +54,10 @@ export default function App() {
         <Route path="/decks/:deckId/practice" element={<PracticeSetup />} />
         <Route path="/sessions/:sessionId" element={<Practice />} />
         <Route path="/sessions/:sessionId/results" element={<Results />} />
+        {account?.isAdmin && <Route path="/admin" element={<Accounts />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </AccountContext.Provider>
     </UserContext.Provider>
   );
 }
