@@ -1,7 +1,7 @@
 import { signOut } from "firebase/auth";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useAccount, useUser } from "../App";
+import { useAccount, useIsAdmin, useUser } from "../App";
 import { auth } from "../lib/firebase";
 
 export function Brand({ small }: { small?: boolean }) {
@@ -38,6 +38,7 @@ export function Icon({ name, size = 18 }: { name: "back" | "sparkle" | "play" | 
 function ProfileMenu() {
   const user = useUser();
   const { account } = useAccount();
+  const admin = useIsAdmin();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -61,7 +62,7 @@ function ProfileMenu() {
               {!account.isAdmin && `${account.decksCreated} of ${account.maxDecks} decks used`}
             </div>
           )}
-          {account?.isAdmin && (
+          {admin && (
             <Link role="menuitem" className="menu-link" to="/admin" onClick={() => setOpen(false)}>
               Manage accounts
             </Link>
@@ -79,6 +80,7 @@ function ProfileMenu() {
 export default function TopBar({ back }: { back?: { to: string; label: string } }) {
   const { pathname, hash } = useLocation();
   const current = (h: string) => (pathname === "/" && hash === h ? "page" : undefined);
+  const admin = useIsAdmin();
   return (
     <header className="appbar">
       <div className="appbar-inner">
@@ -97,6 +99,7 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
               <Link to="/" aria-current={current("")}>Home</Link>
               <Link to="/#decks" aria-current={current("#decks")}>My decks</Link>
               <Link to="/#progress" aria-current={current("#progress")}>Progress</Link>
+              {admin && <Link to="/admin">Accounts</Link>}
             </nav>
             <ProfileMenu />
           </>
