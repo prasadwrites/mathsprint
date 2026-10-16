@@ -18,11 +18,12 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               get_account            the student's plan, usage and status
               admin_list_accounts    admin only: every sign-in with plan, usage, status, access code
               admin_update_account   admin only: change plan, suspend/reactivate, set access code, reset count
+              admin_delete_account   admin only: delete a sign-in with its decks, sessions and settings
 ```
 
 ### Accounts and plans
 
-The admin is `prasad.writes@gmail.com` (only when Firebase has verified the email, which Google sign-in always does). The admin opens **Manage accounts** from the profile menu to see every account, change its plan, give it its own access code, reset its deck count, or suspend it.
+The admin is `prasad.writes@gmail.com` (only when Firebase has verified the email, which Google sign-in always does). The admin opens **Manage accounts** from the profile menu to see every account, change its plan, give it its own access code, reset its deck count, suspend it, or delete it. Deleting asks the admin to type the account's email first, then removes the sign-in, decks, practice history and access code for good.
 
 | Plan | Decks | Questions per deck |
 | --- | --- | --- |

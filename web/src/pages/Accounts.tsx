@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TopBar, { Chip } from "../components/TopBar";
-import { adminListAccounts, adminUpdateAccount, type AccountUpdate } from "../lib/db";
+import { adminDeleteAccount, adminListAccounts, adminUpdateAccount, type AccountUpdate } from "../lib/db";
 import type { AdminAccount, PlanId, PlanLimits } from "../lib/types";
 
 const PLAN_ORDER: PlanId[] = ["free", "pro", "promax"];
 
 const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "never");
 
-function AccountRow({ a, plans, onChange }: { a: AdminAccount; plans: Record<PlanId, PlanLimits>; onChange: (u: Omit<AccountUpdate, "uid">) => Promise<void> }) {
+function AccountRow({
+  a,
+  plans,
+  onChange,
+  onDelete,
+}: {
+  a: AdminAccount;
+  plans: Record<PlanId, PlanLimits>;
+  onChange: (u: Omit<AccountUpdate, "uid">) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [typed, setTyped] = useState("");
+  // The admin types the email (or DELETE for accounts without one) so a stray click can't delete anyone.
+  const confirmWord = a.email || "DELETE";
   const [editing, setEditing] = useState(false);
   const [code, setCode] = useState("");
   const suspended = a.status === "suspended";
@@ -131,7 +145,55 @@ function AccountRow({ a, plans, onChange }: { a: AdminAccount; plans: Record<Pla
               Suspend
             </button>
           ))}
+        {!a.isAdmin && !deleting && (
+          <button type="button" className="btn-small btn-danger" disabled={busy} onClick={() => setDeleting(true)}>
+            Delete
+          </button>
+        )}
       </div>
+
+      {deleting && (
+        <form
+          className="confirm-delete"
+          role="alertdialog"
+          aria-label={`Delete ${a.email || "this account"}`}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (typed.trim() !== confirmWord) return;
+            setBusy(true);
+            try {
+              await onDelete();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <p>
+            <b>Delete {a.email || "this account"} permanently?</b> This removes their sign-in, their decks, practice history and access
+            code. It can't be undone. To block someone for now, suspend them instead.
+          </p>
+          <label htmlFor={`confirm-${a.uid}`} className="small" style={{ fontWeight: 400 }}>
+            Type <b className="mono">{confirmWord}</b> to confirm
+          </label>
+          <div className="row" style={{ gap: 8 }}>
+            <input id={`confirm-${a.uid}`} type="text" autoComplete="off" autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} style={{ flex: "1 1 220px", width: "auto" }} />
+            <button type="submit" className="btn-small btn-danger-solid" disabled={busy || typed.trim() !== confirmWord}>
+              {busy ? "Deleting…" : "Delete forever"}
+            </button>
+            <button
+              type="button"
+              className="btn-small"
+              disabled={busy}
+              onClick={() => {
+                setDeleting(false);
+                setTyped("");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
     </li>
   );
 }
@@ -142,6 +204,7 @@ export default function Accounts() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | PlanId | "suspended">("all");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -163,6 +226,17 @@ export default function Accounts() {
       await load();
     } catch (e) {
       setError((e as Error).message || "That change didn't save. Try again.");
+    }
+  };
+
+  const remove = async (a: AdminAccount) => {
+    try {
+      await adminDeleteAccount(a.uid);
+      setAccounts((list) => list?.filter((x) => x.uid !== a.uid) ?? null);
+      setNotice(`Deleted ${a.email || "the account"}.`);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message || "The account couldn't be deleted. Try again.");
     }
   };
 
@@ -212,6 +286,11 @@ export default function Accounts() {
             </div>
           </div>
           {error && <p className="error">{error}</p>}
+          {notice && !error && (
+            <p className="muted" role="status">
+              {notice}
+            </p>
+          )}
           {accounts === null && !error ? (
             <span className="spinner" />
           ) : shown.length === 0 ? (
@@ -220,7 +299,7 @@ export default function Accounts() {
             plans && (
               <ul className="acct-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {shown.map((a) => (
-                  <AccountRow key={a.uid} a={a} plans={plans} onChange={(u) => update(a.uid, u)} />
+                  <AccountRow key={a.uid} a={a} plans={plans} onChange={(u) => update(a.uid, u)} onDelete={() => remove(a)} />
                 ))}
               </ul>
             )

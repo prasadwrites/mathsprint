@@ -81,6 +81,11 @@ export async function adminUpdateAccount(update: AccountUpdate) {
   await httpsCallable<AccountUpdate, { ok: boolean }>(functions, "admin_update_account")(update);
 }
 
+/** Permanently deletes an account's sign-in, decks, practice history and settings. */
+export async function adminDeleteAccount(uid: string) {
+  return (await httpsCallable<{ uid: string }, { ok: boolean; decks: number; sessions: number }>(functions, "admin_delete_account", { timeout: 300_000 })({ uid })).data;
+}
+
 /** Adds a ready-made deck so a new student can try practice before generating their own. */
 export async function addSampleDeck(uid: string): Promise<string> {
   const deckRef = doc(collection(db, "decks"));

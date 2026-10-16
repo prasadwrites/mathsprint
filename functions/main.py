@@ -5,6 +5,7 @@ explain_step          - Claude re-explains one solution step in the style the st
 get_account           - The signed-in student's plan, usage and status (creates the account on first call).
 admin_list_accounts   - Admin only: every sign-in with its plan, usage, status and access code.
 admin_update_account  - Admin only: change one account's plan, status or access code, or reset its deck count.
+admin_delete_account  - Admin only: delete an account's sign-in, decks, practice history and settings for good.
 """
 
 from __future__ import annotations
@@ -266,3 +267,35 @@ def admin_update_account(req: https_fn.CallableRequest) -> dict:
                 raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Use a code of at least 6 characters.")
             code_ref.set({"code": code, "updatedAt": firestore.SERVER_TIMESTAMP})
     return {"ok": True}
+
+
+@https_fn.on_call(timeout_sec=300)
+def admin_delete_account(req: https_fn.CallableRequest) -> dict:
+    admin_uid = _require_admin(req)
+    uid = _clean((req.data or {}).get("uid"), 128)
+    if not uid:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Pick an account.")
+    if uid == admin_uid:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "You can't delete your own account.")
+    try:
+        user = auth.get_user(uid)
+        if accounts.is_admin({"email": user.email, "email_verified": user.email_verified}):
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "The admin account can't be deleted.")
+    except auth.UserNotFoundError:
+        user = None  # Sign-in already gone; still clean up whatever data is left.
+
+    db = firestore.client()
+    # Remove the sign-in first so the person can't keep writing while their data is deleted.
+    if user is not None:
+        auth.delete_user(uid)
+    decks = list(db.collection("decks").where("ownerId", "==", uid).stream())
+    for deck in decks:
+        db.recursive_delete(deck.reference)  # the deck and its questions
+    sessions = list(db.collection("sessions").where("ownerId", "==", uid).stream())
+    writer = db.bulk_writer()
+    for s in sessions:
+        writer.delete(s.reference)
+    for ref in (_account_ref(db, uid), db.collection("accessCodes").document(uid), db.collection("users").document(uid)):
+        writer.delete(ref)
+    writer.close()
+    return {"ok": True, "decks": len(decks), "sessions": len(sessions)}

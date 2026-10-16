@@ -270,3 +270,6 @@ a { color: var(--accent); }
   .acct { grid-template-columns: 1fr; gap: 12px; }
   .acct .actions { justify-content: flex-start; }
 }
+.btn-danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn-danger-solid:disabled { opacity: .5; cursor: not-allowed; }
+.confirm-delete { grid-column: 1 / -1; background: var(--bad-soft); border: 1px solid color-mix(in srgb, var(--bad) 40%, var(--line)); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
