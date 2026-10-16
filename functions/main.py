@@ -6,6 +6,9 @@ get_account           - The signed-in student's plan, usage and status (creates 
 admin_list_accounts   - Admin only: every sign-in with its plan, usage, status and access code.
 admin_update_account  - Admin only: change one account's plan, status or access code, or reset its deck count.
 admin_delete_account  - Admin only: delete an account's sign-in, decks, practice history and settings for good.
+request_upgrade       - A student asks the admin for a bigger plan, with an optional note.
+list_upgrade_requests - The student's own requests and replies, or every request for the admin.
+admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
 """
 
 from __future__ import annotations
@@ -193,7 +196,21 @@ def get_account(req: https_fn.CallableRequest) -> dict:
     if fresh:
         _account_ref(db, req.auth.uid).set(fresh, merge=True)
     has_code = db.collection("accessCodes").document(req.auth.uid).get().exists
-    return {**accounts.summary(account, accounts.is_admin(token)), "hasOwnCode": has_code}
+    admin = accounts.is_admin(token)
+    requests = db.collection("upgradeRequests")
+    if admin:
+        upgrade = {"waiting": _count(requests.where("status", "==", "pending"))}
+    else:
+        mine = [d.to_dict() for d in requests.where("uid", "==", req.auth.uid).stream()]
+        upgrade = {
+            "pendingPlan": next((r["requestedPlan"] for r in mine if r.get("status") == "pending"), None),
+            "unreadReplies": sum(1 for r in mine if r.get("status") == "replied" and not r.get("userRead")),
+        }
+    return {**accounts.summary(account, admin), "hasOwnCode": has_code, "upgrade": upgrade}
+
+
+def _count(query) -> int:
+    return int(query.count().get()[0][0].value)
 
 
 def _ms(dt) -> int | None:
@@ -295,7 +312,109 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
     writer = db.bulk_writer()
     for s in sessions:
         writer.delete(s.reference)
+    for r in db.collection("upgradeRequests").where("uid", "==", uid).stream():
+        writer.delete(r.reference)
     for ref in (_account_ref(db, uid), db.collection("accessCodes").document(uid), db.collection("users").document(uid)):
         writer.delete(ref)
     writer.close()
     return {"ok": True, "decks": len(decks), "sessions": len(sessions)}
+
+
+def _request_row(doc) -> dict:
+    r = doc.to_dict()
+    return {
+        "id": doc.id,
+        "uid": r.get("uid"),
+        "email": r.get("email", ""),
+        "displayName": r.get("displayName", ""),
+        "currentPlan": r.get("currentPlan"),
+        "requestedPlan": r.get("requestedPlan"),
+        "message": r.get("message", ""),
+        "status": r.get("status"),
+        "reply": r.get("reply", ""),
+        "approved": bool(r.get("approved")),
+        "userRead": bool(r.get("userRead")),
+        "createdAt": _ms(r.get("createdAt")),
+        "repliedAt": _ms(r.get("repliedAt")),
+    }
+
+
+@https_fn.on_call()
+def request_upgrade(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    data = req.data or {}
+    db = firestore.client()
+    account = _load_account(db, req)
+    if account.get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    requests = db.collection("upgradeRequests")
+    has_pending = _count(requests.where("uid", "==", uid).where("status", "==", "pending")) > 0
+    plan = data.get("plan")
+    try:
+        accounts.check_upgrade_request(account.get("plan", accounts.DEFAULT_PLAN), plan, has_pending, accounts.is_admin(req.auth.token))
+    except AccessDenied as e:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
+    token = req.auth.token or {}
+    ref = requests.document()
+    ref.set({
+        "uid": uid,
+        "email": token.get("email") or account.get("email", ""),
+        "displayName": token.get("name") or account.get("displayName", ""),
+        "currentPlan": account.get("plan", accounts.DEFAULT_PLAN),
+        "requestedPlan": plan,
+        "message": _clean(data.get("message"), accounts.MAX_MESSAGE),
+        "status": "pending",
+        "userRead": False,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"id": ref.id}
+
+
+@https_fn.on_call()
+def list_upgrade_requests(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    db = firestore.client()
+    requests = db.collection("upgradeRequests")
+    if accounts.is_admin(req.auth.token):
+        docs = list(requests.order_by("createdAt", direction=firestore.Query.DESCENDING).limit(200).stream())
+    else:
+        docs = list(requests.where("uid", "==", uid).stream())
+        # Opening the list is how a student reads the admin's replies.
+        if (req.data or {}).get("markRead"):
+            for d in docs:
+                if d.get("status") == "replied" and not d.to_dict().get("userRead"):
+                    d.reference.update({"userRead": True})
+    rows = sorted((_request_row(d) for d in docs), key=lambda r: -(r["createdAt"] or 0))
+    return {"requests": rows}
+
+
+@https_fn.on_call()
+def admin_reply_upgrade(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    data = req.data or {}
+    request_id = _clean(data.get("id"), 128)
+    reply = _clean(data.get("reply"), accounts.MAX_MESSAGE)
+    approve = bool(data.get("approve"))
+    if not request_id:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Pick a request.")
+    if not reply and not approve:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Write a reply first.")
+    db = firestore.client()
+    ref = db.collection("upgradeRequests").document(request_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "That request no longer exists.")
+    r = snap.to_dict()
+    if approve:
+        account_ref = _account_ref(db, r["uid"])
+        if not account_ref.get().exists:
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "That account no longer exists.")
+        account_ref.update({"plan": r["requestedPlan"], "updatedAt": firestore.SERVER_TIMESTAMP})
+    ref.update({
+        "status": "replied",
+        "reply": reply,
+        "approved": approve,
+        "userRead": False,
+        "repliedAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"ok": True}

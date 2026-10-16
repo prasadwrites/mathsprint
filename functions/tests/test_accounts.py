@@ -80,3 +80,20 @@ def test_clean_update_keeps_only_valid_fields():
         clean_update({"plan": "ultra"})
     with pytest.raises(ValueError):
         clean_update({"status": "deleted"})
+
+
+def test_upgrade_requests_must_go_up_one_at_a_time():
+    from accounts import check_upgrade_request
+
+    check_upgrade_request("free", "pro", has_pending=False, admin=False)
+    check_upgrade_request("free", "promax", has_pending=False, admin=False)
+    check_upgrade_request("pro", "promax", has_pending=False, admin=False)
+    for current, wanted in [("pro", "pro"), ("promax", "pro"), ("pro", "free")]:
+        with pytest.raises(AccessDenied, match="already on"):
+            check_upgrade_request(current, wanted, has_pending=False, admin=False)
+    with pytest.raises(AccessDenied, match="waiting"):
+        check_upgrade_request("free", "pro", has_pending=True, admin=False)
+    with pytest.raises(AccessDenied):
+        check_upgrade_request("free", "gold", has_pending=False, admin=False)
+    with pytest.raises(AccessDenied):
+        check_upgrade_request("free", "pro", has_pending=False, admin=True)

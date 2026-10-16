@@ -54,6 +54,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Upgrade requests and the admin's replies. Read and written only through functions.
+    match /upgradeRequests/{requestId} {
+      allow read, write: if false;
+    }
+
     // Per-account access codes. Read and written only through the admin functions.
     match /accessCodes/{uid} {
       allow read, write: if false;

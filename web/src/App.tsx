@@ -12,6 +12,7 @@ import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import PracticeSetup from "./pages/PracticeSetup";
 import Results from "./pages/Results";
+import Upgrade from "./pages/Upgrade";
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="/sessions/:sessionId" element={<Practice />} />
         <Route path="/sessions/:sessionId/results" element={<Results />} />
         <Route path="/admin" element={<AdminOnly />} />
+        <Route path="/upgrade" element={<Upgrade />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </AccountContext.Provider>

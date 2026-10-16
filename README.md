@@ -19,11 +19,14 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               admin_list_accounts    admin only: every sign-in with plan, usage, status, access code
               admin_update_account   admin only: change plan, suspend/reactivate, set access code, reset count
               admin_delete_account   admin only: delete a sign-in with its decks, sessions and settings
+              request_upgrade        a student asks for a bigger plan, with an optional note
+              list_upgrade_requests  the student's own requests, or every request for the admin
+              admin_reply_upgrade    admin only: reply to a request, optionally upgrading the plan
 ```
 
 ### Accounts and plans
 
-The admin is `prasad.writes@gmail.com` (only when Firebase has verified the email, which Google sign-in always does). The admin opens **Manage accounts** from the profile menu to see every account, change its plan, give it its own access code, reset its deck count, suspend it, or delete it. Deleting asks the admin to type the account's email first, then removes the sign-in, decks, practice history and access code for good.
+The admin is `prasad.writes@gmail.com` (only when Firebase has verified the email, which Google sign-in always does). The admin opens **Accounts** from the top bar to see every account, change its plan, give it its own access code, reset its deck count, suspend it, or delete it. Deleting asks the admin to type the account's email first, then removes the sign-in, decks, practice history and access code for good.
 
 | Plan | Decks | Questions per deck |
 | --- | --- | --- |
@@ -34,6 +37,10 @@ The admin is `prasad.writes@gmail.com` (only when Firebase has verified the emai
 Everything is enforced server-side. `generate_deck` checks the plan and takes one deck from it in a Firestore transaction before calling Claude, and gives it back if generation fails. Decks count when created, so deleting one doesn't free a slot (the admin can reset the count). The admin account has no limits and needs no access code.
 
 An account's own access code replaces the shared `DECK_ACCESS_CODE` for that person; accounts without one keep using the shared code. Suspending an account disables its sign-in, revokes its open sessions, and makes Firestore rules refuse its reads and writes until it is reactivated.
+
+### Upgrade requests
+
+Students ask for a bigger plan from **Request an upgrade** in the profile menu (or the link on Create deck). They can have one request waiting at a time. When the admin signs in, the home page shows how many requests are waiting and the **Accounts** link carries a count. On the Accounts page the admin can **Upgrade and reply** (changes the plan) or **Reply without upgrading**. The student then sees a dot on their avatar and a banner on the home page, and reads the reply on the Upgrade page. Requests live in `upgradeRequests/{id}`, which only the Cloud Functions can read or write.
 
 Decks over 20 questions are written in parts of 20 that run in parallel (`functions/generator.py`), so a 200-question deck stays inside Claude's output limit and the function timeout.
 

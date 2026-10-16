@@ -39,6 +39,7 @@ function ProfileMenu() {
   const user = useUser();
   const { account } = useAccount();
   const admin = useIsAdmin();
+  const unread = account?.upgrade?.unreadReplies ?? 0;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -50,8 +51,14 @@ function ProfileMenu() {
   const initial = (user.displayName || user.email || "?").trim()[0]?.toUpperCase();
   return (
     <div ref={ref}>
-      <button className="avatar" aria-label="Profile and settings" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button
+        className="avatar"
+        aria-label={unread ? "Profile and settings, new reply" : "Profile and settings"}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
         {initial}
+        {unread > 0 && <span className="dot" aria-hidden />}
       </button>
       {open && (
         <div className="menu" role="menu">
@@ -61,6 +68,11 @@ function ProfileMenu() {
               <Chip>{account.isAdmin ? "Admin" : account.planLabel}</Chip>{" "}
               {!account.isAdmin && `${account.decksCreated} of ${account.maxDecks} decks used`}
             </div>
+          )}
+          {!admin && (
+            <Link role="menuitem" className="menu-link" to="/upgrade" onClick={() => setOpen(false)}>
+              Request an upgrade {!!account?.upgrade?.unreadReplies && <span className="badge">{account.upgrade.unreadReplies}</span>}
+            </Link>
           )}
           {admin && (
             <Link role="menuitem" className="menu-link" to="/admin" onClick={() => setOpen(false)}>
@@ -81,6 +93,7 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
   const { pathname, hash } = useLocation();
   const current = (h: string) => (pathname === "/" && hash === h ? "page" : undefined);
   const admin = useIsAdmin();
+  const waiting = useAccount().account?.upgrade?.waiting ?? 0;
   return (
     <header className="appbar">
       <div className="appbar-inner">
@@ -99,7 +112,11 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
               <Link to="/" aria-current={current("")}>Home</Link>
               <Link to="/#decks" aria-current={current("#decks")}>My decks</Link>
               <Link to="/#progress" aria-current={current("#progress")}>Progress</Link>
-              {admin && <Link to="/admin">Accounts</Link>}
+              {admin && (
+                <Link to="/admin" aria-current={pathname === "/admin" ? "page" : undefined}>
+                  Accounts {!!waiting && <span className="badge" aria-label={`${waiting} upgrade requests waiting`}>{waiting}</span>}
+                </Link>
+              )}
             </nav>
             <ProfileMenu />
           </>

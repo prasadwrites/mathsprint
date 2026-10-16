@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useUser } from "../App";
+import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { addSampleDeck, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
@@ -17,6 +17,9 @@ function formatHours(sec: number) {
 
 export default function Dashboard() {
   const user = useUser();
+  const { account } = useAccount();
+  const waiting = account?.isAdmin ? account.upgrade?.waiting ?? 0 : 0;
+  const unread = account?.upgrade?.unreadReplies ?? 0;
   const navigate = useNavigate();
   const { hash } = useLocation();
   const [decks, setDecks] = useState<Deck[] | null>(null);
@@ -47,6 +50,20 @@ export default function Dashboard() {
     <>
       <TopBar />
       <main className="page">
+        {waiting > 0 && (
+          <Link className="notice" to="/admin#requests">
+            <b>
+              {waiting} upgrade {waiting === 1 ? "request is" : "requests are"} waiting for you.
+            </b>
+            <span>Review and reply →</span>
+          </Link>
+        )}
+        {unread > 0 && (
+          <Link className="notice" to="/upgrade">
+            <b>You have a reply about your upgrade request.</b>
+            <span>Read it →</span>
+          </Link>
+        )}
         <section className="stack">
           <h1 style={{ fontSize: "clamp(30px, 5vw, 40px)" }}>What do you want to practice?</h1>
           <form
