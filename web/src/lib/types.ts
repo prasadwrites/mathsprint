@@ -109,6 +109,17 @@ export interface UpgradeRequest {
   userRead: boolean;
   createdAt: number | null;
   repliedAt: number | null;
+  updatedAt: number | null;
+  /** Every message on the request, oldest first. */
+  thread: RequestMessage[];
+}
+
+export interface RequestMessage {
+  from: "student" | "admin";
+  text: string;
+  at: number | null;
+  /** Set on the admin message that upgraded the plan. */
+  approved?: boolean;
 }
 
 /** One row on the admin accounts page. Times are milliseconds since the epoch. */

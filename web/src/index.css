@@ -290,3 +290,7 @@ a { color: var(--accent); }
 .request .small, .requests .small { font-size: 13px; color: var(--muted); }
 .quote { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; white-space: pre-wrap; }
 .reply { background: var(--chip); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; white-space: pre-wrap; }
+.conversation { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 85%; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 12px; white-space: pre-wrap; background: var(--chip); align-self: flex-start; }
+.msg.mine { align-self: flex-end; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.msg p { margin: 0; }

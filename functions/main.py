@@ -9,11 +9,13 @@ admin_delete_account  - Admin only: delete an account's sign-in, decks, practice
 request_upgrade       - A student asks the admin for a bigger plan, with an optional note.
 list_upgrade_requests - The student's own requests and replies, or every request for the admin.
 admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
+reply_upgrade         - A student writes back on one of their requests, which puts it back in the admin's queue.
 """
 
 from __future__ import annotations
 
 import os
+import time
 
 from firebase_admin import auth, firestore, initialize_app
 from firebase_functions import https_fn, options
@@ -203,10 +205,31 @@ def get_account(req: https_fn.CallableRequest) -> dict:
     else:
         mine = [d.to_dict() for d in requests.where("uid", "==", req.auth.uid).stream()]
         upgrade = {
-            "pendingPlan": next((r["requestedPlan"] for r in mine if r.get("status") == "pending"), None),
+            "pendingPlan": next((r["requestedPlan"] for r in mine if _awaiting_plan(r)), None),
             "unreadReplies": sum(1 for r in mine if r.get("status") == "replied" and not r.get("userRead")),
         }
     return {**accounts.summary(account, admin), "hasOwnCode": has_code, "upgrade": upgrade}
+
+
+def _awaiting_plan(r: dict) -> bool:
+    """A request still waiting on a plan decision (not a follow-up message on one already approved)."""
+    return r.get("status") == "pending" and not r.get("approved")
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _thread(r: dict) -> list[dict]:
+    """The messages on a request, oldest first. Requests made before threads existed keep their note and reply."""
+    if "thread" in r:
+        return list(r["thread"])
+    out = []
+    if r.get("message"):
+        out.append({"from": "student", "text": r["message"], "at": _ms(r.get("createdAt"))})
+    if r.get("status") == "replied" and (r.get("reply") or r.get("approved")):
+        out.append({"from": "admin", "text": r.get("reply", ""), "at": _ms(r.get("repliedAt")), "approved": bool(r.get("approved"))})
+    return out
 
 
 def _count(query) -> int:
@@ -332,6 +355,8 @@ def _request_row(doc) -> dict:
         "message": r.get("message", ""),
         "status": r.get("status"),
         "reply": r.get("reply", ""),
+        "thread": _thread(r),
+        "updatedAt": _ms(r.get("updatedAt")) or _ms(r.get("repliedAt")) or _ms(r.get("createdAt")),
         "approved": bool(r.get("approved")),
         "userRead": bool(r.get("userRead")),
         "createdAt": _ms(r.get("createdAt")),
@@ -348,7 +373,7 @@ def request_upgrade(req: https_fn.CallableRequest) -> dict:
     if account.get("status") == "suspended":
         raise _denied("Your account is suspended.")
     requests = db.collection("upgradeRequests")
-    has_pending = _count(requests.where("uid", "==", uid).where("status", "==", "pending")) > 0
+    has_pending = any(_awaiting_plan(d.to_dict()) for d in requests.where("uid", "==", uid).where("status", "==", "pending").stream())
     plan = data.get("plan")
     try:
         accounts.check_upgrade_request(account.get("plan", accounts.DEFAULT_PLAN), plan, has_pending, accounts.is_admin(req.auth.token))
@@ -356,16 +381,19 @@ def request_upgrade(req: https_fn.CallableRequest) -> dict:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
     token = req.auth.token or {}
     ref = requests.document()
+    message = _clean(data.get("message"), accounts.MAX_MESSAGE)
     ref.set({
         "uid": uid,
         "email": token.get("email") or account.get("email", ""),
         "displayName": token.get("name") or account.get("displayName", ""),
         "currentPlan": account.get("plan", accounts.DEFAULT_PLAN),
         "requestedPlan": plan,
-        "message": _clean(data.get("message"), accounts.MAX_MESSAGE),
+        "message": message,
+        "thread": [{"from": "student", "text": message, "at": _now_ms()}] if message else [],
         "status": "pending",
         "userRead": False,
         "createdAt": firestore.SERVER_TIMESTAMP,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
     })
     return {"id": ref.id}
 
@@ -384,7 +412,7 @@ def list_upgrade_requests(req: https_fn.CallableRequest) -> dict:
             for d in docs:
                 if d.get("status") == "replied" and not d.to_dict().get("userRead"):
                     d.reference.update({"userRead": True})
-    rows = sorted((_request_row(d) for d in docs), key=lambda r: -(r["createdAt"] or 0))
+    rows = sorted((_request_row(d) for d in docs), key=lambda r: -(r["updatedAt"] or 0))
     return {"requests": rows}
 
 
@@ -405,16 +433,50 @@ def admin_reply_upgrade(req: https_fn.CallableRequest) -> dict:
     if not snap.exists:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "That request no longer exists.")
     r = snap.to_dict()
+    approve = approve and not r.get("approved")
     if approve:
         account_ref = _account_ref(db, r["uid"])
         if not account_ref.get().exists:
             raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "That account no longer exists.")
         account_ref.update({"plan": r["requestedPlan"], "updatedAt": firestore.SERVER_TIMESTAMP})
+    message = {"from": "admin", "text": reply, "at": _now_ms()}
+    if approve:
+        message["approved"] = True
     ref.update({
         "status": "replied",
         "reply": reply,
-        "approved": approve,
+        "approved": approve or bool(r.get("approved")),
+        "thread": _thread(r) + [message],
         "userRead": False,
         "repliedAt": firestore.SERVER_TIMESTAMP,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"ok": True}
+
+
+@https_fn.on_call()
+def reply_upgrade(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    data = req.data or {}
+    request_id = _clean(data.get("id"), 128)
+    text = _clean(data.get("text"), accounts.MAX_MESSAGE)
+    if not request_id:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Pick a request.")
+    if not text:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Write a message first.")
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    ref = db.collection("upgradeRequests").document(request_id)
+    snap = ref.get()
+    # Someone else's request looks the same as a missing one.
+    if not snap.exists or snap.to_dict().get("uid") != uid:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "That request no longer exists.")
+    r = snap.to_dict()
+    ref.update({
+        "status": "pending",  # back in the admin's queue
+        "thread": _thread(r) + [{"from": "student", "text": text, "at": _now_ms()}],
+        "userRead": True,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
     })
     return {"ok": True}

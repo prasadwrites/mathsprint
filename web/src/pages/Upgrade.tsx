@@ -1,12 +1,70 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAccount } from "../App";
 import TopBar, { Chip } from "../components/TopBar";
-import { listUpgradeRequests, requestUpgrade } from "../lib/db";
+import { listUpgradeRequests, replyUpgrade, requestUpgrade } from "../lib/db";
 import { PLANS, type PlanId, type UpgradeRequest } from "../lib/types";
 
 const label = (id: PlanId) => PLANS.find((p) => p.id === id)?.label ?? id;
 export const when = (ms: number | null) =>
   ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+
+/** The messages on one request, oldest first. `viewer` decides which side reads as "You". */
+export function Conversation({ r, viewer }: { r: UpgradeRequest; viewer: "student" | "admin" }) {
+  if (!r.thread.length) return <p className="small muted">No note.</p>;
+  return (
+    <ol className="conversation">
+      {r.thread.map((m, i) => {
+        const mine = m.from === viewer;
+        const who = mine ? "You" : m.from === "admin" ? "MathSprint" : r.displayName || r.email;
+        return (
+          <li key={i} className={`msg ${m.from === "admin" ? "from-admin" : "from-student"} ${mine ? "mine" : ""}`}>
+            <span className="small muted">
+              {who} · {when(m.at)}
+            </span>
+            {m.approved && <span className="small"><b>Upgraded to {label(r.requestedPlan)}.</b></span>}
+            {m.text && <p>{m.text}</p>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** A textarea and Send button for writing back on a request. */
+export function ReplyBox({ label: aria, placeholder, onSend, children }: { label: string; placeholder: string; onSend: (text: string, approve: boolean) => Promise<void>; children?: (text: string, busy: boolean, send: (approve: boolean) => void) => ReactNode }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = async (approve = false) => {
+    setBusy(true);
+    try {
+      await onSend(text.trim(), approve);
+      setText("");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="stack"
+      style={{ gap: 8 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (text.trim()) send();
+      }}
+    >
+      <textarea aria-label={aria} maxLength={1000} placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="row" style={{ gap: 8 }}>
+        {children ? (
+          children(text.trim(), busy, send)
+        ) : (
+          <button type="submit" className="btn-small btn-primary" disabled={busy || !text.trim()}>
+            {busy ? "Sending…" : "Send"}
+          </button>
+        )}
+      </div>
+    </form>
+  );
+}
 
 export default function Upgrade() {
   const { account, refresh } = useAccount();
@@ -31,7 +89,7 @@ export default function Upgrade() {
 
   const current = account?.plan ?? "free";
   const currentIndex = PLANS.findIndex((p) => p.id === current);
-  const pending = requests?.find((r) => r.status === "pending");
+  const pending = requests?.find((r) => r.status === "pending" && !r.approved);
   const choice = plan ?? PLANS[currentIndex + 1]?.id ?? null;
 
   const submit = async () => {
@@ -137,13 +195,20 @@ export default function Upgrade() {
                     {r.status === "pending" ? <Chip tone="warn">Waiting</Chip> : r.approved ? <Chip tone="good">Upgraded</Chip> : <Chip>Replied</Chip>}
                   </div>
                   <span className="small muted">Sent {when(r.createdAt)}</span>
-                  {r.message && <p className="quote">{r.message}</p>}
-                  {r.status === "replied" && (
-                    <div className="reply">
-                      <span className="small muted">Reply from MathSprint · {when(r.repliedAt)}</span>
-                      {r.reply ? <p>{r.reply}</p> : <p>Your plan was upgraded to {label(r.requestedPlan)}.</p>}
-                    </div>
-                  )}
+                  <Conversation r={r} viewer="student" />
+                  <ReplyBox
+                    label="Write back"
+                    placeholder="Write back to MathSprint"
+                    onSend={async (text) => {
+                      try {
+                        await replyUpgrade(r.id, text);
+                        setError("");
+                        await load();
+                      } catch (e) {
+                        setError((e as Error).message || "Your message didn't send. Try again.");
+                      }
+                    }}
+                  />
                 </li>
               ))}
             </ul>

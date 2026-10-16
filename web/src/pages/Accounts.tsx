@@ -3,7 +3,7 @@ import TopBar, { Chip } from "../components/TopBar";
 import { useAccount } from "../App";
 import { adminDeleteAccount, adminListAccounts, adminReplyUpgrade, adminUpdateAccount, listUpgradeRequests, type AccountUpdate } from "../lib/db";
 import { PLANS, type AdminAccount, type PlanId, type PlanLimits, type UpgradeRequest } from "../lib/types";
-import { when } from "./Upgrade";
+import { Conversation, ReplyBox, when } from "./Upgrade";
 
 const PLAN_ORDER: PlanId[] = ["free", "pro", "promax"];
 
@@ -203,16 +203,6 @@ function AccountRow({
 const planLabel = (id: PlanId) => PLANS.find((p) => p.id === id)?.label ?? id;
 
 function RequestItem({ r, onReply }: { r: UpgradeRequest; onReply: (reply: string, approve: boolean) => Promise<void> }) {
-  const [reply, setReply] = useState("");
-  const [busy, setBusy] = useState(false);
-  const send = async (approve: boolean) => {
-    setBusy(true);
-    try {
-      await onReply(reply.trim(), approve);
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <li className={`request ${r.status === "pending" ? "pending" : ""}`}>
       <div className="row spread">
@@ -227,33 +217,29 @@ function RequestItem({ r, onReply }: { r: UpgradeRequest; onReply: (reply: strin
           {r.status === "pending" ? <Chip tone="warn">Waiting</Chip> : r.approved ? <Chip tone="good">Upgraded</Chip> : <Chip>Replied</Chip>}
         </div>
       </div>
-      <span className="small">Sent {when(r.createdAt)}</span>
-      {r.message ? <p className="quote">{r.message}</p> : <p className="small">No note.</p>}
-      {r.status === "pending" ? (
-        <form
-          className="stack"
-          style={{ gap: 8 }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(true);
-          }}
-        >
-          <textarea aria-label={`Reply to ${r.email}`} maxLength={1000} placeholder="Write a message back (optional when you approve)" value={reply} onChange={(e) => setReply(e.target.value)} />
-          <div className="row" style={{ gap: 8 }}>
-            <button type="submit" className="btn-small btn-primary" disabled={busy}>
-              Upgrade to {planLabel(r.requestedPlan)} and reply
+      <span className="small">
+        Sent {when(r.createdAt)}
+        {r.status === "replied" && r.userRead ? " · they've seen your reply" : ""}
+      </span>
+      <Conversation r={r} viewer="admin" />
+      <ReplyBox label={`Reply to ${r.email}`} placeholder={r.approved ? "Write a message back" : "Write a message back (optional when you approve)"} onSend={onReply}>
+        {(text, busy, send) =>
+          r.approved ? (
+            <button type="submit" className="btn-small btn-primary" disabled={busy || !text}>
+              Send reply
             </button>
-            <button type="button" className="btn-small" disabled={busy || !reply.trim()} onClick={() => send(false)}>
-              Reply without upgrading
-            </button>
-          </div>
-        </form>
-      ) : (
-        <div className="reply">
-          <span className="small">You replied · {when(r.repliedAt)}{r.userRead ? " · seen" : ""}</span>
-          {r.reply && <p>{r.reply}</p>}
-        </div>
-      )}
+          ) : (
+            <>
+              <button type="button" className="btn-small btn-primary" disabled={busy} onClick={() => send(true)}>
+                Upgrade to {planLabel(r.requestedPlan)} and reply
+              </button>
+              <button type="submit" className="btn-small" disabled={busy || !text}>
+                Reply without upgrading
+              </button>
+            </>
+          )
+        }
+      </ReplyBox>
     </li>
   );
 }

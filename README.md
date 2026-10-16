@@ -22,6 +22,7 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               request_upgrade        a student asks for a bigger plan, with an optional note
               list_upgrade_requests  the student's own requests, or every request for the admin
               admin_reply_upgrade    admin only: reply to a request, optionally upgrading the plan
+              reply_upgrade          a student writes back on one of their requests
 ```
 
 ### Accounts and plans
@@ -40,7 +41,7 @@ An account's own access code replaces the shared `DECK_ACCESS_CODE` for that per
 
 ### Upgrade requests
 
-Students ask for a bigger plan from **Request an upgrade** in the profile menu (or the link on Create deck). They can have one request waiting at a time. When the admin signs in, the home page shows how many requests are waiting and the **Accounts** link carries a count. On the Accounts page the admin can **Upgrade and reply** (changes the plan) or **Reply without upgrading**. The student then sees a dot on their avatar and a banner on the home page, and reads the reply on the Upgrade page. Requests live in `upgradeRequests/{id}`, which only the Cloud Functions can read or write.
+Students ask for a bigger plan from **Request an upgrade** in the profile menu (or the link on Create deck). They can have one request waiting at a time. When the admin signs in, the home page shows how many requests are waiting and the **Accounts** link carries a count. On the Accounts page the admin can **Upgrade and reply** (changes the plan) or **Reply without upgrading**. The student then sees a dot on their avatar and a banner on the home page, and reads the reply on the Upgrade page. Each request is a conversation: either side can keep writing back, and a student's message puts the request back in the admin's waiting count. Requests live in `upgradeRequests/{id}`, which only the Cloud Functions can read or write.
 
 Decks over 20 questions are written in parts of 20 that run in parallel (`functions/generator.py`), so a 200-question deck stays inside Claude's output limit and the function timeout.
 
