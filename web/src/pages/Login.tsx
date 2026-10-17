@@ -1,12 +1,14 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { useState } from "react";
+import { pendingInvite } from "../lib/invite";
 import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const invite = pendingInvite();
+  const [email, setEmail] = useState(invite?.email ?? "");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup">(invite ? "signup" : "signin");
   const [error, setError] = useState("");
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -35,6 +37,12 @@ export default function Login() {
         <Brand />
         <h1>Timed math practice for high school and college students.</h1>
         <p className="muted">Create a deck on any topic, practice against the clock, and see exactly where your time went.</p>
+        {invite && (
+          <p className="notice" role="status">
+            <b>A friend invited you to MathSprint.</b>
+            {invite.email ? ` Sign up with ${invite.email} so they get the credit.` : " Sign up with the email your invite was sent to so they get the credit."}
+          </p>
+        )}
         <button className="btn-primary btn-big" onClick={() => run(() => signInWithPopup(auth, googleProvider))}>
           Continue with Google
         </button>

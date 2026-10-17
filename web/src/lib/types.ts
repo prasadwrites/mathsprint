@@ -94,6 +94,8 @@ export interface AccountSummary {
   /** Everyone's first 5 decks need no access code. */
   needsCode: boolean;
   codeFreeLeft: number;
+  /** Extra decks earned from friends who joined, already counted in maxDecks. */
+  bonusDecks: number;
   /** Admin: requests waiting for a reply. Students: their open request and unread replies. */
   upgrade?: { waiting?: number; pendingPlan?: PlanId | null; unreadReplies?: number };
 }
@@ -139,6 +141,15 @@ export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgra
   /** The last 7 days, today included (UTC days). */
   weekSeconds: number;
   lastActiveAt: number | null;
+  invitesJoined: number;
+}
+
+export interface Invite {
+  token: string;
+  email: string;
+  status: "invited" | "joined";
+  createdAt: number | null;
+  joinedAt: number | null;
 }
 
 export interface PlanLimits {

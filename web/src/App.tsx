@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useActivityHeartbeat } from "./lib/activity";
 import { getAccount } from "./lib/db";
+import { clearInvite, pendingInvite } from "./lib/invite";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
 import Accounts from "./pages/Accounts";
@@ -13,6 +14,7 @@ import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import PracticeSetup from "./pages/PracticeSetup";
 import Results from "./pages/Results";
+import Invite from "./pages/Invite";
 import Upgrade from "./pages/Upgrade";
 
 const UserContext = createContext<User | null>(null);
@@ -41,8 +43,11 @@ export default function App() {
   useActivityHeartbeat(!!user);
 
   const refresh = useCallback(() => {
-    getAccount()
-      .then(setAccount)
+    getAccount(pendingInvite()?.token)
+      .then((a) => {
+        clearInvite(); // the server has seen it; it only counts for a brand new account anyway
+        setAccount(a);
+      })
       .catch(() => setAccount(null));
   }, []);
   useEffect(() => {
@@ -71,6 +76,7 @@ export default function App() {
         <Route path="/sessions/:sessionId/results" element={<Results />} />
         <Route path="/admin" element={<AdminOnly />} />
         <Route path="/upgrade" element={<Upgrade />} />
+        <Route path="/invite" element={<Invite />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </AccountContext.Provider>

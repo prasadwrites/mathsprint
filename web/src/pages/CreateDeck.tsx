@@ -209,6 +209,9 @@ export default function CreateDeck() {
                         {account.upgrade?.pendingPlan ? "Upgrade requested" : "Request an upgrade"}
                       </Link>
                     )}
+                    <Link to="/invite" style={{ fontWeight: 700, fontSize: 14 }}>
+                      Invite a friend for a free deck
+                    </Link>
                   </div>
                 )}
                 {suspended && <p className="error">Your account is suspended. Contact the person who runs MathSprint.</p>}

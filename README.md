@@ -24,6 +24,8 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               admin_reply_upgrade    admin only: reply to a request, optionally upgrading the plan
               reply_upgrade          a student writes back on one of their requests
               record_activity        one heartbeat per active minute, for time on site
+              create_invite          a student invites a friend's email and gets a link to share
+              list_invites           the student's invites and who has joined
 ```
 
 ### Accounts and plans
@@ -43,6 +45,10 @@ Everyone's first 5 decks need no access code (`CODE_FREE_DECKS` in `functions/ac
 ### Upgrade requests
 
 Students ask for a bigger plan from **Request an upgrade** in the profile menu (or the link on Create deck). They can have one request waiting at a time. When the admin signs in, the home page shows how many requests are waiting and the **Accounts** link carries a count. On the Accounts page the admin can **Upgrade and reply** (changes the plan) or **Reply without upgrading**. The student then sees a dot on their avatar and a banner on the home page, and reads the reply on the Upgrade page. Each request is a conversation: either side can keep writing back, and a student's message puts the request back in the admin's waiting count. Requests live in `upgradeRequests/{id}`, which only the Cloud Functions can read or write.
+
+### Invites
+
+Students invite friends from **Invite friends** in the top bar. Each invite is a unique link (`/?invite=TOKEN&email=...`) they can copy or email. When a friend signs up with that email after the invite was made, the inviter gets one bonus deck: it raises both their plan's deck limit and their code-free decks by one. Friends who already had an account don't count, and each email can earn one inviter one deck. Invites live in `invites/{token}`, which only the Cloud Functions can read or write.
 
 ### Payments
 
