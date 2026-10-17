@@ -164,3 +164,84 @@ export const PLANS: { id: PlanId; label: string; decks: number; questions: numbe
   { id: "pro", label: "Pro", decks: 50, questions: 120 },
   { id: "promax", label: "Pro Max", decks: 100, questions: 200 },
 ];
+
+/** A Pro or Pro Max user's contact group, such as a class. */
+export interface Group {
+  id: string;
+  name: string;
+  emails: string[];
+  updatedAt: number | null;
+}
+
+/** A deck assigned to a group. */
+export interface GroupTest {
+  id: string;
+  deckId: string;
+  deckTitle: string;
+  groupId: string;
+  groupName: string;
+  questionCount: number;
+  /** 0 means no time limit. */
+  timeLimitSec: number;
+  createdAt: number | null;
+  assigned: number;
+  completed: number;
+}
+
+/** One group member's link, code and result, as the test's owner sees it. */
+export interface TestTaker {
+  token: string;
+  email: string;
+  code: string;
+  status: "assigned" | "started" | "completed";
+  score: number | null;
+  usedSec: number | null;
+  /** Sent more than two minutes after the time ran out. */
+  late: boolean;
+  /** Too many wrong codes; a new code unlocks it. */
+  locked: boolean;
+  startedAt: number | null;
+  completedAt: number | null;
+  answers: Record<string, string>;
+  results: Record<string, boolean>;
+}
+
+export interface TestResults {
+  test: GroupTest;
+  questions: { prompt: string; math: string; type: string; answerDisplay: string; concept: string }[];
+  takers: TestTaker[];
+  overall: {
+    assigned: number;
+    started: number;
+    completed: number;
+    averageScore: number | null;
+    averageSec: number | null;
+    /** How many finishers got each question right. */
+    questionCorrect: number[];
+  };
+}
+
+/** What a group member sees: the test, then its questions (without answers), then only their own result. */
+export interface OpenTest {
+  title: string;
+  from: string;
+  groupName: string;
+  email: string;
+  questionCount: number;
+  timeLimitSec: number;
+  status: TestTaker["status"];
+  elapsedSec?: number;
+  remainingSec?: number | null;
+  questions?: { prompt: string; math: string; type: "numeric" | "choice"; choices: string[]; answerCount: number }[];
+  result?: OwnTestResult;
+}
+
+export interface OwnTestResult {
+  score: number;
+  total: number;
+  usedSec: number;
+  questions: { prompt: string; math: string; answer: string; correct: boolean; answerDisplay: string; steps: SolutionStep[] }[];
+}
+
+/** Groups and group tests come with Pro and Pro Max. The server checks this too. */
+export const canUseGroups = (a: AccountSummary | null) => !!a && (a.isAdmin || a.plan === "pro" || a.plan === "promax");

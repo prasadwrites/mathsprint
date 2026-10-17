@@ -301,3 +301,21 @@ a { color: var(--accent); }
 .pay-step { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .invite-link { display: block; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+/* Groups and group tests */
+.small { font-size: 13px; }
+.group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.group-toggle { color: var(--ink); text-align: left; }
+.group-toggle h3 { display: inline; }
+.group-toggle h3::after { content: " ▸"; color: var(--muted); }
+.group-toggle[aria-expanded=true] h3::after { content: " ▾"; }
+.tiles.four { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.email-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.email-list li { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); }
+.email-list li:first-child { border-top: none; }
+.email-list .email { overflow-wrap: anywhere; min-width: 0; }
+.answer-grid { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; font-size: 14px; }
+.answer-grid li { display: grid; grid-template-columns: 28px 1fr minmax(80px, auto) auto; gap: 8px 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+@media (max-width: 640px) {
+  .answer-grid li { grid-template-columns: 28px 1fr; }
+  .answer-grid li > :nth-child(n+3) { grid-column: 2; }
+}

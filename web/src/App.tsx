@@ -1,6 +1,6 @@
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useActivityHeartbeat } from "./lib/activity";
 import { getAccount } from "./lib/db";
 import { clearInvite, pendingInvite } from "./lib/invite";
@@ -10,10 +10,13 @@ import Accounts from "./pages/Accounts";
 import CreateDeck from "./pages/CreateDeck";
 import Dashboard from "./pages/Dashboard";
 import DeckReview from "./pages/DeckReview";
+import Groups from "./pages/Groups";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import PracticeSetup from "./pages/PracticeSetup";
 import Results from "./pages/Results";
+import TakeTest from "./pages/TakeTest";
+import TestResults from "./pages/TestResults";
 import Invite from "./pages/Invite";
 import Upgrade from "./pages/Upgrade";
 
@@ -37,6 +40,19 @@ function AdminOnly() {
 }
 
 export default function App() {
+  // Group members open their test from a link without signing in.
+  const { pathname } = useLocation();
+  if (pathname.startsWith("/t/")) {
+    return (
+      <Routes>
+        <Route path="/t/:token" element={<TakeTest />} />
+      </Routes>
+    );
+  }
+  return <SignedInApp />;
+}
+
+function SignedInApp() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [account, setAccount] = useState<AccountSummary | null>(null);
   useEffect(() => onAuthStateChanged(auth, setUser), []);
@@ -77,6 +93,8 @@ export default function App() {
         <Route path="/admin" element={<AdminOnly />} />
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="/invite" element={<Invite />} />
+        <Route path="/groups" element={<Groups />} />
+        <Route path="/tests/:testId" element={<TestResults />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </AccountContext.Provider>

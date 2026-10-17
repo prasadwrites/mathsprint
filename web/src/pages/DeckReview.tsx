@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import AssignTest from "../components/AssignTest";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { getDeck, getQuestions } from "../lib/db";
 import { formatClock } from "../lib/pace";
@@ -83,6 +84,8 @@ export default function DeckReview() {
             <span className="value">{formatClock(questions.length * 90)}</span>
           </div>
         </div>
+
+        <AssignTest deck={deck} suggestedSec={questions.length * 90} />
 
         <div className="panel">
           <div className="row spread">
