@@ -7,6 +7,13 @@ import { Conversation, ReplyBox, when } from "./Upgrade";
 
 const PLAN_ORDER: PlanId[] = ["free", "pro", "promax"];
 
+/** 0 → "0m", 300 → "5m", 7500 → "2h 5m". */
+const duration = (seconds: number) => {
+  const m = Math.round(seconds / 60);
+  if (m < 1) return "0m";
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
+};
+
 const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "never");
 
 function AccountRow({
@@ -52,6 +59,10 @@ function AccountRow({
         {a.displayName && <span className="small">{a.email}</span>}
         <span className="small">
           Joined {date(a.createdAt)} · last sign-in {date(a.lastSignInAt)}
+        </span>
+        <span className="small time-on-site">
+          Time on site: <b>{duration(a.activeSeconds)}</b> in all · {duration(a.weekSeconds)} this week · {duration(a.todaySeconds)} today
+          {a.lastActiveAt ? ` · last active ${when(a.lastActiveAt)}` : ""}
         </span>
       </div>
 
@@ -303,6 +314,7 @@ export default function Accounts() {
   const [plans, setPlans] = useState<Record<PlanId, PlanLimits> | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | PlanId | "suspended">("all");
+  const [sort, setSort] = useState<"newest" | "week" | "total">("newest");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -342,12 +354,15 @@ export default function Accounts() {
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (accounts ?? []).filter(
+    const list = (accounts ?? []).filter(
       (a) =>
         (!q || a.email.toLowerCase().includes(q) || a.displayName.toLowerCase().includes(q)) &&
         (filter === "all" || (filter === "suspended" ? a.status === "suspended" : a.plan === filter && !a.isAdmin)),
     );
-  }, [accounts, search, filter]);
+    if (sort === "week") return [...list].sort((x, y) => y.weekSeconds - x.weekSeconds);
+    if (sort === "total") return [...list].sort((x, y) => y.activeSeconds - x.activeSeconds);
+    return list; // the server sends the admin first, then newest sign-ups
+  }, [accounts, search, filter, sort]);
 
   const count = (f: typeof filter) => (accounts ?? []).filter((a) => (f === "suspended" ? a.status === "suspended" : !a.isAdmin && a.plan === f)).length;
 
@@ -391,6 +406,11 @@ export default function Accounts() {
                 </button>
               ))}
             </div>
+            <select aria-label="Sort accounts" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} style={{ width: "auto" }}>
+              <option value="newest">Newest first</option>
+              <option value="week">Most time this week</option>
+              <option value="total">Most time in all</option>
+            </select>
           </div>
           {error && <p className="error">{error}</p>}
           {notice && !error && (

@@ -130,6 +130,12 @@ export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgra
   accessCode: string | null;
   createdAt: number | null;
   lastSignInAt: number | null;
+  /** Time actively using the app, counted a minute at a time. */
+  activeSeconds: number;
+  todaySeconds: number;
+  /** The last 7 days, today included (UTC days). */
+  weekSeconds: number;
+  lastActiveAt: number | null;
 }
 
 export interface PlanLimits {

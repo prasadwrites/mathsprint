@@ -64,6 +64,11 @@ export async function getAccount() {
   return (await httpsCallable<void, AccountSummary>(functions, "get_account")()).data;
 }
 
+/** One heartbeat for a minute of active use. The server ignores extra beats inside the same minute. */
+export async function recordActivity() {
+  await httpsCallable<void, { counted: boolean }>(functions, "record_activity")();
+}
+
 export async function adminListAccounts() {
   return (await httpsCallable<void, { accounts: AdminAccount[]; plans: Record<PlanId, PlanLimits> }>(functions, "admin_list_accounts")()).data;
 }

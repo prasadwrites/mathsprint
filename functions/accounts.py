@@ -6,6 +6,7 @@ Everything here is plain Python so it can be tested without Firebase; main.py do
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from access import access_code_ok
@@ -122,3 +123,43 @@ def check_upgrade_request(current_plan: str, requested_plan: str, has_pending: b
         raise AccessDenied(f"You're already on {PLANS[current].label}. Pick a bigger plan.")
     if has_pending:
         raise AccessDenied("You already have a request waiting. You'll see the reply here.")
+
+
+# Time on site. The app sends one heartbeat for each minute someone is actively using it.
+HEARTBEAT_SECONDS = 60
+MIN_BEAT_GAP_MS = 50_000  # extra beats (other tabs, retries) inside a minute earn nothing
+KEEP_DAYS = 35
+DAY_MS = 86_400_000
+
+
+def day_key(ms: int) -> str:
+    """The UTC date of a time in milliseconds, as YYYY-MM-DD."""
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+
+
+def credit_activity(account: dict, now_ms: int) -> dict | None:
+    """The fields to write for one heartbeat, or None if it came too soon after the last one."""
+    last = account.get("lastBeatAt")
+    if isinstance(last, (int, float)) and 0 <= now_ms - last < MIN_BEAT_GAP_MS:
+        return None
+    today = day_key(now_ms)
+    oldest = day_key(now_ms - KEEP_DAYS * DAY_MS)
+    days = {k: int(v) for k, v in (account.get("activeDays") or {}).items() if k > oldest}
+    days[today] = days.get(today, 0) + HEARTBEAT_SECONDS
+    return {
+        "activeSeconds": int(account.get("activeSeconds", 0)) + HEARTBEAT_SECONDS,
+        "activeDays": days,
+        "lastBeatAt": now_ms,
+    }
+
+
+def activity_summary(account: dict, now_ms: int) -> dict:
+    """What the admin sees about someone's time on site."""
+    days = account.get("activeDays") or {}
+    week = {day_key(now_ms - i * DAY_MS) for i in range(7)}
+    return {
+        "activeSeconds": int(account.get("activeSeconds", 0)),
+        "todaySeconds": int(days.get(day_key(now_ms), 0)),
+        "weekSeconds": sum(int(v) for k, v in days.items() if k in week),
+        "lastActiveAt": account.get("lastBeatAt"),
+    }
