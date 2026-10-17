@@ -5,6 +5,7 @@ Everything here is plain Python so it can be tested without Firebase; main.py do
 
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -48,6 +49,19 @@ def plan_for(account: dict) -> Plan:
     return PLANS.get(account.get("plan", DEFAULT_PLAN), PLANS[DEFAULT_PLAN])
 
 
+def bonus_decks(account: dict) -> int:
+    """One extra deck for each friend who joined from this person's invite."""
+    return max(0, int(account.get("bonusDecks", 0)))
+
+
+def max_decks(account: dict) -> int:
+    return plan_for(account).max_decks + bonus_decks(account)
+
+
+def code_free_decks(account: dict) -> int:
+    return CODE_FREE_DECKS + bonus_decks(account)
+
+
 def new_account(email: str, name: str) -> dict:
     return {"email": email, "displayName": name, "plan": DEFAULT_PLAN, "status": "active", "decksCreated": 0}
 
@@ -60,17 +74,18 @@ def summary(account: dict, admin: bool) -> dict:
         "planLabel": plan.label,
         "status": account.get("status", "active"),
         "decksCreated": int(account.get("decksCreated", 0)),
-        "maxDecks": plan.max_decks,
+        "maxDecks": max_decks(account),
+        "bonusDecks": bonus_decks(account),
         "maxQuestions": plan.max_questions,
         "isAdmin": admin,
         "needsCode": needs_code(account, admin),
-        "codeFreeLeft": 0 if admin else max(0, CODE_FREE_DECKS - int(account.get("decksCreated", 0))),
+        "codeFreeLeft": 0 if admin else max(0, code_free_decks(account) - int(account.get("decksCreated", 0))),
     }
 
 
 def needs_code(account: dict, admin: bool) -> bool:
     """An access code is only asked for once someone has built their first CODE_FREE_DECKS decks."""
-    return not admin and int(account.get("decksCreated", 0)) >= CODE_FREE_DECKS
+    return not admin and int(account.get("decksCreated", 0)) >= code_free_decks(account)
 
 
 def check_code(account: dict, code_valid: bool, given: object, admin: bool) -> None:
@@ -78,7 +93,7 @@ def check_code(account: dict, code_valid: bool, given: object, admin: bool) -> N
     if code_valid or not needs_code(account, admin):
         return
     if not str(given or "").strip():
-        raise AccessDenied(f"Your first {CODE_FREE_DECKS} decks didn't need a code. Enter an access code to build more.")
+        raise AccessDenied(f"Your first {code_free_decks(account)} decks didn't need a code. Enter an access code to build more.")
     raise AccessDenied(WRONG_CODE)
 
 
@@ -91,8 +106,8 @@ def check_can_generate(account: dict, count: int, admin: bool) -> None:
     plan = plan_for(account)
     if count > plan.max_questions:
         raise AccessDenied(f"Your {plan.label} plan allows up to {plan.max_questions} questions per deck.")
-    if int(account.get("decksCreated", 0)) >= plan.max_decks:
-        raise AccessDenied(f"You've used all {plan.max_decks} decks on your {plan.label} plan.")
+    if int(account.get("decksCreated", 0)) >= max_decks(account):
+        raise AccessDenied(f"You've used all {max_decks(account)} decks on your {plan.label} plan. Invite a friend to earn another.")
 
 
 def code_ok(given: object, account_code: str | None, global_code: str | None, admin: bool) -> bool:
@@ -181,3 +196,22 @@ def activity_summary(account: dict, now_ms: int) -> dict:
         "weekSeconds": sum(int(v) for k, v in days.items() if k in week),
         "lastActiveAt": account.get("lastBeatAt"),
     }
+
+
+# Invites. Each friend who signs up with the invited email earns the inviter one more deck.
+MAX_INVITES = 100
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def clean_invite_email(email: object, own_email: str) -> str:
+    """The invited address, lowercased. Raises AccessDenied with a message for the student."""
+    e = str(email or "").strip().lower()
+    if len(e) > 254 or not _EMAIL.match(e):
+        raise AccessDenied("Enter a valid email address.")
+    if e == (own_email or "").strip().lower():
+        raise AccessDenied("That's your own email. Invite a friend instead.")
+    return e
+
+
+def new_invite_token() -> str:
+    return secrets.token_urlsafe(9)

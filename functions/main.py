@@ -11,6 +11,8 @@ list_upgrade_requests - The student's own requests and replies, or every request
 admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
 reply_upgrade         - A student writes back on one of their requests, which puts it back in the admin's queue.
 record_activity       - One heartbeat per active minute, so the admin can see how long each person spends in the app.
+create_invite         - A student invites a friend's email and gets a link to share; a friend who joins earns them a deck.
+list_invites          - The student's own invites and whether each friend has joined.
 """
 
 from __future__ import annotations
@@ -65,7 +67,50 @@ def _load_account(db, req: https_fn.CallableRequest) -> dict:
     token = req.auth.token or {}
     account = accounts.new_account(token.get("email", ""), token.get("name", ""))
     ref.set({**account, "createdAt": firestore.SERVER_TIMESTAMP})
+    # A brand new account: if a friend invited this email, credit them.
+    _claim_invite(db, req.auth.uid, token.get("email", ""), (req.data or {}).get("invite") if isinstance(req.data, dict) else None)
     return account
+
+
+def _claim_invite(db, uid: str, email: str, invite_token) -> None:
+    """Gives one bonus deck to whoever invited this new sign-in's email. Only sign-ins made after the invite count."""
+    email = (email or "").strip().lower()
+    if not email:
+        return
+    invites = db.collection("invites")
+    found = []
+    if isinstance(invite_token, str) and 0 < len(invite_token) <= 64:
+        snap = invites.document(invite_token).get()
+        if snap.exists:
+            found.append(snap)
+    found += sorted(invites.where("email", "==", email).stream(), key=lambda s: _ms(s.get("createdAt")) or 0)
+    try:
+        joined_ms = auth.get_user(uid).user_metadata.creation_timestamp
+    except auth.UserNotFoundError:
+        return
+    for snap in found:
+        r = snap.to_dict()
+        invited_ms = _ms(r.get("createdAt")) or 0
+        if r.get("email") != email or r.get("status") != "invited" or r.get("inviterUid") == uid:
+            continue
+        if joined_ms and joined_ms + 60_000 < invited_ms:  # this person had signed up before the invite
+            continue
+
+        @firestore.transactional
+        def run(transaction, ref=snap.reference, inviter=r["inviterUid"]) -> bool:
+            if _txn_data(transaction, ref).get("status") != "invited":
+                return False
+            transaction.update(ref, {"status": "joined", "joinedUid": uid, "joinedAt": firestore.SERVER_TIMESTAMP})
+            transaction.set(_account_ref(db, inviter), {"bonusDecks": firestore.Increment(1)}, merge=True)
+            return True
+
+        if run(db.transaction()):
+            return
+
+
+def _txn_data(transaction, ref) -> dict:
+    snap = ref.get(transaction=transaction)
+    return snap.to_dict() if snap.exists else {}
 
 
 def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool, code_valid: bool, given_code: object) -> None:
@@ -262,6 +307,7 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
             "accessCode": codes.get(user.uid),
             "createdAt": meta.creation_timestamp if meta else None,
             "lastSignInAt": meta.last_sign_in_timestamp if meta else None,
+            "invitesJoined": accounts.bonus_decks(account),
             **accounts.activity_summary(account, now),
             **accounts.summary(account, accounts.is_admin(token)),
         })
@@ -340,6 +386,8 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
     for s in sessions:
         writer.delete(s.reference)
     for r in db.collection("upgradeRequests").where("uid", "==", uid).stream():
+        writer.delete(r.reference)
+    for r in db.collection("invites").where("inviterUid", "==", uid).stream():
         writer.delete(r.reference)
     for ref in (_account_ref(db, uid), db.collection("accessCodes").document(uid), db.collection("users").document(uid)):
         writer.delete(ref)
@@ -505,3 +553,52 @@ def record_activity(req: https_fn.CallableRequest) -> dict:
         return bool(changes)
 
     return {"counted": run(db.transaction())}
+
+
+def _invite_row(doc) -> dict:
+    r = doc.to_dict()
+    return {"token": doc.id, "email": r.get("email", ""), "status": r.get("status"), "createdAt": _ms(r.get("createdAt")), "joinedAt": _ms(r.get("joinedAt"))}
+
+
+@https_fn.on_call()
+def create_invite(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    db = firestore.client()
+    account = _load_account(db, req)
+    if account.get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    token = req.auth.token or {}
+    try:
+        email = accounts.clean_invite_email((req.data or {}).get("email"), token.get("email", ""))
+    except AccessDenied as e:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, str(e))
+    invites = db.collection("invites")
+    mine = list(invites.where("inviterUid", "==", uid).stream())
+    same = next((d for d in mine if d.get("email") == email), None)
+    if same:
+        return _invite_row(same)  # inviting the same friend again reuses their link
+    try:
+        auth.get_user_by_email(email)
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.ALREADY_EXISTS, "That person already has a MathSprint account.")
+    except auth.UserNotFoundError:
+        pass
+    if len(mine) >= accounts.MAX_INVITES:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.RESOURCE_EXHAUSTED, f"You can have up to {accounts.MAX_INVITES} invites.")
+    ref = invites.document(accounts.new_invite_token())
+    ref.set({
+        "inviterUid": uid,
+        "inviterName": token.get("name") or account.get("displayName", ""),
+        "email": email,
+        "status": "invited",
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return _invite_row(ref.get())
+
+
+@https_fn.on_call()
+def list_invites(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    db = firestore.client()
+    rows = [_invite_row(d) for d in db.collection("invites").where("inviterUid", "==", uid).stream()]
+    rows.sort(key=lambda r: -(r["createdAt"] or 0))
+    return {"invites": rows}

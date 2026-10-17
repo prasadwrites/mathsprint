@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, AdminAccount, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, AdminAccount, Invite, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -60,8 +60,17 @@ export async function explainStep(args: { deckId: string; questionId: string; st
   return (await call(args)).data.explanation;
 }
 
-export async function getAccount() {
-  return (await httpsCallable<void, AccountSummary>(functions, "get_account")()).data;
+/** `invite` is the token from an invite link, so a brand new account credits the friend who invited it. */
+export async function getAccount(invite?: string) {
+  return (await httpsCallable<{ invite?: string }, AccountSummary>(functions, "get_account")(invite ? { invite } : {})).data;
+}
+
+export async function createInvite(email: string) {
+  return (await httpsCallable<{ email: string }, Invite>(functions, "create_invite")({ email })).data;
+}
+
+export async function listInvites() {
+  return (await httpsCallable<void, { invites: Invite[] }>(functions, "list_invites")()).data.invites;
 }
 
 /** One heartbeat for a minute of active use. The server ignores extra beats inside the same minute. */

@@ -134,3 +134,19 @@ def test_first_five_decks_need_no_access_code():
     assert summary(acct(decksCreated=3), admin=False)["codeFreeLeft"] == 2
     assert summary(sixth, admin=False)["needsCode"] is True
     assert summary(sixth, admin=True)["needsCode"] is False
+
+
+def test_each_friend_who_joins_adds_a_deck_and_a_code_free_deck():
+    a = acct(decksCreated=5, bonusDecks=2)
+    assert summary(a, admin=False)["maxDecks"] == 7 and summary(a, admin=False)["codeFreeLeft"] == 2
+    check_can_generate(a, 10, admin=False)  # 5 used of 5 + 2
+    accounts.check_code(a, False, "", admin=False)  # still inside the 7 code-free decks
+    with pytest.raises(AccessDenied, match="used all 7"):
+        check_can_generate(acct(decksCreated=7, bonusDecks=2), 10, admin=False)
+
+
+def test_invite_emails_are_checked():
+    assert accounts.clean_invite_email("  Friend@Example.COM ", "me@example.com") == "friend@example.com"
+    for bad in ["", "nope", "a@b", "me@example.com"]:
+        with pytest.raises(AccessDenied):
+            accounts.clean_invite_email(bad, "Me@Example.com")

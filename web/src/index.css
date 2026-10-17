@@ -242,7 +242,7 @@ a { color: var(--accent); }
   .practice-nav .btn { flex: 1; }
   .appbar-inner { gap: 4px 16px; }
   .appbar-inner > div:last-child { margin-left: auto; }
-  .nav { order: 3; flex-basis: 100%; }
+  .nav { order: 3; flex-basis: 100%; flex-wrap: wrap; column-gap: 16px; row-gap: 0; }
 }
 
 .layout-gap { gap: 20px; }
@@ -299,3 +299,5 @@ a { color: var(--accent); }
 .square-pay-button { display: inline-block; min-width: 212px; height: 48px; line-height: 48px; font-size: 18px; color: #fff; background-color: #006aff; text-align: center; text-decoration: none; border-radius: 6px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1) inset; }
 .square-pay-button:hover { background-color: #0055cc; }
 .pay-step { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
+.invite-link { display: block; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }

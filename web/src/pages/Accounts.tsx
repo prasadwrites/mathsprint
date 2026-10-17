@@ -64,6 +64,11 @@ function AccountRow({
           Time on site: <b>{duration(a.activeSeconds)}</b> in all · {duration(a.weekSeconds)} this week · {duration(a.todaySeconds)} today
           {a.lastActiveAt ? ` · last active ${when(a.lastActiveAt)}` : ""}
         </span>
+        {a.invitesJoined > 0 && (
+          <span className="small">
+            {a.invitesJoined} {a.invitesJoined === 1 ? "friend" : "friends"} joined from their invites (+{a.invitesJoined} {a.invitesJoined === 1 ? "deck" : "decks"})
+          </span>
+        )}
       </div>
 
       <div className="usage">

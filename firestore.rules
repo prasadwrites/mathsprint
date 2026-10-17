@@ -59,6 +59,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /invites/{token} {
+      allow read, write: if false;
+    }
+
     // Per-account access codes. Read and written only through the admin functions.
     match /accessCodes/{uid} {
       allow read, write: if false;
