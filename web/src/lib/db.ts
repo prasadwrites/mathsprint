@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, AdminAccount, Invite, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, AdminAccount, Group, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -71,6 +71,49 @@ export async function createInvite(email: string) {
 
 export async function listInvites() {
   return (await httpsCallable<void, { invites: Invite[] }>(functions, "list_invites")()).data.invites;
+}
+
+export async function listGroups() {
+  return (await httpsCallable<void, { groups: Group[] }>(functions, "list_groups")()).data.groups;
+}
+
+/** Creates a group (no id) or replaces a group's name and emails. */
+export async function saveGroup(group: { id?: string; name: string; emails: string[] }) {
+  return (await httpsCallable<typeof group, Group>(functions, "save_group")(group)).data;
+}
+
+export async function deleteGroup(id: string) {
+  await httpsCallable<{ id: string }, { ok: boolean }>(functions, "delete_group")({ id });
+}
+
+/** Gives every member of the group their own link and code. Assigning again adds anyone new to the group. */
+export async function assignTest(args: { deckId: string; groupId: string; timeLimitSec: number }) {
+  return (await httpsCallable<typeof args, { id: string; added: number }>(functions, "assign_test", { timeout: 120_000 })(args)).data;
+}
+
+export async function listTests(deckId?: string) {
+  return (await httpsCallable<{ deckId?: string }, { tests: GroupTest[] }>(functions, "list_tests")(deckId ? { deckId } : {})).data.tests;
+}
+
+export async function getTestResults(id: string) {
+  return (await httpsCallable<{ id: string }, TestResults>(functions, "get_test_results")({ id })).data;
+}
+
+export async function resetTestLink(token: string) {
+  return (await httpsCallable<{ token: string }, TestTaker>(functions, "reset_test_link")({ token })).data;
+}
+
+export async function deleteTest(id: string) {
+  await httpsCallable<{ id: string }, { ok: boolean }>(functions, "delete_test", { timeout: 120_000 })({ id });
+}
+
+/** Group members don't sign in. Without a code this only says what the test is; with the right code it starts the clock. */
+export async function openTest(token: string, code?: string) {
+  return (await httpsCallable<{ token: string; code?: string }, OpenTest>(functions, "open_test")(code === undefined ? { token } : { token, code })).data;
+}
+
+export async function submitTest(token: string, code: string, answers: Record<string, string>) {
+  return (await httpsCallable<object, OpenTest>(functions, "submit_test")({ token, code, answers })).data;
 }
 
 /** One heartbeat for a minute of active use. The server ignores extra beats inside the same minute. */

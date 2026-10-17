@@ -107,6 +107,7 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
               <Link to="/" aria-current={current("")}>Home</Link>
               <Link to="/#decks" aria-current={current("#decks")}>My decks</Link>
               <Link to="/#progress" aria-current={current("#progress")}>Progress</Link>
+              <Link to="/groups" aria-current={pathname === "/groups" ? "page" : undefined}>Groups</Link>
               {!admin && (
                 <>
                   <Link to="/upgrade" aria-current={pathname === "/upgrade" ? "page" : undefined}>

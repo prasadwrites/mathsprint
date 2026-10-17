@@ -26,6 +26,10 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               record_activity        one heartbeat per active minute, for time on site
               create_invite          a student invites a friend's email and gets a link to share
               list_invites           the student's invites and who has joined
+              list_groups, save_group, delete_group   Pro and Pro Max: contact groups of emails
+              assign_test            Pro and Pro Max: a deck for a group, one link and access code per member
+              list_tests, get_test_results, reset_test_link, delete_test   the owner's tests and results
+              open_test, submit_test no sign-in: a member opens their test with link + code, graded here
 ```
 
 ### Accounts and plans
@@ -49,6 +53,10 @@ Students ask for a bigger plan from **Request an upgrade** in the profile menu (
 ### Invites
 
 Students invite friends from **Invite friends** in the top bar. Each invite is a unique link (`/?invite=TOKEN&email=...`) they can copy or email. When a friend signs up with that email after the invite was made, the inviter gets one bonus deck: it raises both their plan's deck limit and their code-free decks by one. Friends who already had an account don't count, and each email can earn one inviter one deck. Invites live in `invites/{token}`, which only the Cloud Functions can read or write.
+
+### Groups and group tests
+
+Pro and Pro Max accounts (and the admin) get **Groups** in the top bar. A teacher creates a group such as "8th Grade" and adds, edits or removes any number of emails (paste many at once, one per line or comma separated). On a deck's page, **Assign to a group** picks a group and a time limit (or none). Every member gets their own link (`/t/TOKEN`) and a 6-character access code; the teacher copies or emails each one, or copies everyone's at once. Members don't need an account: they open the link, enter the code, and the clock starts. Answers are graded by `submit_test` on the server, so the answer key never reaches their browser, and they see only their own result with worked solutions. The teacher's results page shows how many finished, the average score and time, how often each question was answered correctly, and each member's answers. Ten wrong codes lock a link until the teacher gives it a **New code**. Assigning the same deck to the same group again adds links for people added to the group since. The test keeps its own copy of the questions, so deleting the deck or the group doesn't break it. All of this lives in `groups`, `tests/{id}/questions` and `testTakers/{token}`, which only the Cloud Functions can read or write; the plan check is in `functions/groups.py`.
 
 ### Payments
 

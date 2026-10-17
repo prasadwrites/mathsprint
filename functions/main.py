@@ -13,6 +13,10 @@ reply_upgrade         - A student writes back on one of their requests, which pu
 record_activity       - One heartbeat per active minute, so the admin can see how long each person spends in the app.
 create_invite         - A student invites a friend's email and gets a link to share; a friend who joins earns them a deck.
 list_invites          - The student's own invites and whether each friend has joined.
+list_groups, save_group, delete_group - Pro and Pro Max: contact groups of emails.
+assign_test           - Pro and Pro Max: assign a deck to a group, with a link and access code for each member.
+list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
+open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from firebase_admin import auth, firestore, initialize_app
 from firebase_functions import https_fn, options
 
 import accounts
+import groups
 from accounts import AccessDenied
 from generator import DeckRequest, GenerationError, explain_step as _explain, generate_deck as _generate
 
@@ -389,6 +394,11 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
         writer.delete(r.reference)
     for r in db.collection("invites").where("inviterUid", "==", uid).stream():
         writer.delete(r.reference)
+    for collection in ("groups", "testTakers"):
+        for r in db.collection(collection).where("ownerUid", "==", uid).stream():
+            writer.delete(r.reference)
+    for t in db.collection("tests").where("ownerUid", "==", uid).stream():
+        db.recursive_delete(t.reference)  # the test and its copy of the questions
     for ref in (_account_ref(db, uid), db.collection("accessCodes").document(uid), db.collection("users").document(uid)):
         writer.delete(ref)
     writer.close()
@@ -602,3 +612,359 @@ def list_invites(req: https_fn.CallableRequest) -> dict:
     rows = [_invite_row(d) for d in db.collection("invites").where("inviterUid", "==", uid).stream()]
     rows.sort(key=lambda r: -(r["createdAt"] or 0))
     return {"invites": rows}
+
+
+# Groups and group tests (Pro and Pro Max). A teacher keeps groups of emails, assigns a deck to a group, and each
+# member gets their own link and access code. Students take the test without signing in; answers are graded here.
+
+
+def _group_owner(db, req: https_fn.CallableRequest) -> tuple[str, dict]:
+    """The caller's uid and account, if their plan includes groups."""
+    uid = _require_user(req)
+    account = _load_account(db, req)
+    try:
+        groups.check_can_use_groups(account, accounts.is_admin(req.auth.token))
+    except AccessDenied as e:
+        raise _denied(str(e))
+    return uid, account
+
+
+def _not_found(message: str) -> https_fn.HttpsError:
+    return https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, message)
+
+
+def _invalid(message: str) -> https_fn.HttpsError:
+    return https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, message)
+
+
+def _owned(db, collection: str, doc_id: object, uid: str, missing: str):
+    """A document the caller owns. Someone else's looks the same as a missing one."""
+    doc_id = _clean(doc_id, 128)
+    snap = db.collection(collection).document(doc_id).get() if doc_id else None
+    if snap is None or not snap.exists or snap.to_dict().get("ownerUid", snap.to_dict().get("ownerId")) != uid:
+        raise _not_found(missing)
+    return snap
+
+
+def _group_row(doc) -> dict:
+    r = doc.to_dict()
+    return {"id": doc.id, "name": r.get("name", ""), "emails": list(r.get("emails") or []), "updatedAt": _ms(r.get("updatedAt"))}
+
+
+@https_fn.on_call()
+def list_groups(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    rows = [_group_row(d) for d in db.collection("groups").where("ownerUid", "==", uid).stream()]
+    rows.sort(key=lambda r: r["name"].lower())
+    return {"groups": rows}
+
+
+@https_fn.on_call()
+def save_group(req: https_fn.CallableRequest) -> dict:
+    """Creates a group, or replaces an existing group's name and emails."""
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    data = req.data or {}
+    try:
+        name, emails = groups.clean_group(data.get("name"), data.get("emails"))
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    if data.get("id"):
+        ref = _owned(db, "groups", data["id"], uid, "That group no longer exists.").reference
+        ref.update({"name": name, "emails": emails, "updatedAt": firestore.SERVER_TIMESTAMP})
+    else:
+        if _count(db.collection("groups").where("ownerUid", "==", uid)) >= groups.MAX_GROUPS:
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.RESOURCE_EXHAUSTED, f"You can have up to {groups.MAX_GROUPS} groups.")
+        ref = db.collection("groups").document()
+        ref.set({"ownerUid": uid, "name": name, "emails": emails, "createdAt": firestore.SERVER_TIMESTAMP, "updatedAt": firestore.SERVER_TIMESTAMP})
+    return _group_row(ref.get())
+
+
+@https_fn.on_call()
+def delete_group(req: https_fn.CallableRequest) -> dict:
+    """Tests already assigned to the group keep working; their links don't depend on the group."""
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    _owned(db, "groups", (req.data or {}).get("id"), uid, "That group no longer exists.").reference.delete()
+    return {"ok": True}
+
+
+def _new_taker(db, writer, test_id: str, uid: str, email: str) -> None:
+    writer.set(db.collection("testTakers").document(groups.new_test_token()), {
+        "testId": test_id,
+        "ownerUid": uid,
+        "email": email,
+        "code": groups.new_test_code(),
+        "status": "assigned",
+        "wrongTries": 0,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+
+
+@https_fn.on_call(timeout_sec=120)
+def assign_test(req: https_fn.CallableRequest) -> dict:
+    """Assigns a deck to a group. Assigning the same deck to the same group again adds links for emails added since."""
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    data = req.data or {}
+    deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
+    group = _owned(db, "groups", data.get("groupId"), uid, "That group no longer exists.")
+    emails = list(group.get("emails") or [])
+    if not emails:
+        raise _invalid("Add some emails to the group first.")
+    try:
+        limit = max(0, min(6 * 3600, int(data.get("timeLimitSec") or 0)))
+    except (TypeError, ValueError):
+        limit = 0
+
+    tests = db.collection("tests")
+    existing = next((t for t in tests.where("ownerUid", "==", uid).stream()
+                     if t.get("deckId") == deck.id and t.get("groupId") == group.id), None)
+    writer = db.bulk_writer()
+    if existing:
+        have = {t.get("email") for t in db.collection("testTakers").where("testId", "==", existing.id).stream()}
+        added = [e for e in emails if e not in have]
+        for e in added:
+            _new_taker(db, writer, existing.id, uid, e)
+        writer.close()
+        existing.reference.update({"groupName": group.get("name")})
+        return {"id": existing.id, "added": len(added)}
+
+    questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
+    if not questions:
+        raise _invalid("That deck has no questions.")
+    ref = tests.document()
+    for i, q in enumerate(questions):
+        q = {k: v for k, v in q.items() if k != "check"}  # the SymPy check isn't needed to grade
+        writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    for e in emails:
+        _new_taker(db, writer, ref.id, uid, e)
+    writer.close()
+    # Written last, so a test only shows up once its questions and links exist.
+    ref.set({
+        "ownerUid": uid,
+        "ownerName": (req.auth.token or {}).get("name") or (req.auth.token or {}).get("email", ""),
+        "deckId": deck.id,
+        "deckTitle": deck.get("title"),
+        "groupId": group.id,
+        "groupName": group.get("name"),
+        "questionCount": len(questions),
+        "timeLimitSec": limit,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"id": ref.id, "added": len(emails)}
+
+
+def _test_row(db, doc) -> dict:
+    r = doc.to_dict()
+    takers = db.collection("testTakers").where("testId", "==", doc.id)
+    return {
+        "id": doc.id,
+        "deckId": r.get("deckId"),
+        "deckTitle": r.get("deckTitle", ""),
+        "groupId": r.get("groupId"),
+        "groupName": r.get("groupName", ""),
+        "questionCount": r.get("questionCount", 0),
+        "timeLimitSec": r.get("timeLimitSec", 0),
+        "createdAt": _ms(r.get("createdAt")),
+        "assigned": _count(takers),
+        "completed": _count(takers.where("status", "==", "completed")),
+    }
+
+
+@https_fn.on_call()
+def list_tests(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    deck_id = (req.data or {}).get("deckId")
+    docs = [d for d in db.collection("tests").where("ownerUid", "==", uid).stream() if not deck_id or d.get("deckId") == deck_id]
+    rows = sorted((_test_row(db, d) for d in docs), key=lambda r: -(r["createdAt"] or 0))
+    return {"tests": rows}
+
+
+def _test_questions(test_ref) -> list[dict]:
+    return sorted((q.to_dict() for q in test_ref.collection("questions").stream()), key=lambda q: q.get("order", 0))
+
+
+def _taker_row(doc) -> dict:
+    r = doc.to_dict()
+    return {
+        "token": doc.id,
+        "email": r.get("email", ""),
+        "code": r.get("code", ""),
+        "status": r.get("status", "assigned"),
+        "score": r.get("score"),
+        "usedSec": r.get("usedSec"),
+        "late": bool(r.get("late")),
+        "locked": int(r.get("wrongTries", 0)) >= groups.MAX_LOCKOUT_TRIES,
+        "startedAt": r.get("startedAtMs"),
+        "completedAt": _ms(r.get("completedAt")),
+        "answers": r.get("answers") or {},
+        "results": r.get("results") or {},
+    }
+
+
+@https_fn.on_call()
+def get_test_results(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    test = _owned(db, "tests", (req.data or {}).get("id"), uid, "That test no longer exists.")
+    questions = _test_questions(test.reference)
+    takers = [_taker_row(d) for d in db.collection("testTakers").where("testId", "==", test.id).stream()]
+    takers.sort(key=lambda t: t["email"])
+    return {
+        "test": _test_row(db, test),
+        "questions": [{k: q.get(k) for k in ("prompt", "math", "type", "answerDisplay", "concept")} for q in questions],
+        "takers": takers,
+        "overall": groups.overall(takers, len(questions)),
+    }
+
+
+@https_fn.on_call()
+def reset_test_link(req: https_fn.CallableRequest) -> dict:
+    """Gives one member a new access code and clears their wrong tries, for a code that leaked or got locked."""
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    taker = _owned(db, "testTakers", (req.data or {}).get("token"), uid, "That link no longer exists.")
+    taker.reference.update({"code": groups.new_test_code(), "wrongTries": 0})
+    return _taker_row(taker.reference.get())
+
+
+@https_fn.on_call(timeout_sec=120)
+def delete_test(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    test = _owned(db, "tests", (req.data or {}).get("id"), uid, "That test no longer exists.")
+    writer = db.bulk_writer()
+    for t in db.collection("testTakers").where("testId", "==", test.id).stream():
+        writer.delete(t.reference)
+    writer.close()
+    db.recursive_delete(test.reference)
+    return {"ok": True}
+
+
+# The student's side. No sign-in: the link's token and the access code are the key.
+
+
+def _taker(db, token: object):
+    token = _clean(token, 64)
+    snap = db.collection("testTakers").document(token).get() if token else None
+    if snap is None or not snap.exists:
+        raise _not_found("This test link doesn't work. Ask the person who sent it for a new one.")
+    test = db.collection("tests").document(snap.get("testId")).get()
+    if not test.exists:
+        raise _not_found("This test has been removed.")
+    return snap, test
+
+
+def _check_test_code(snap, given) -> None:
+    r = snap.to_dict()
+    if int(r.get("wrongTries", 0)) >= groups.MAX_LOCKOUT_TRIES:
+        raise _denied("Too many wrong codes. Ask the person who sent the link for a new code.")
+    if not groups.code_matches(given, r.get("code", "")):
+        snap.reference.update({"wrongTries": firestore.Increment(1)})
+        raise _denied("That access code isn't right.")
+
+
+def _test_meta(test, taker: dict) -> dict:
+    t = test.to_dict()
+    return {
+        "title": t.get("deckTitle", ""),
+        "from": t.get("ownerName", ""),
+        "groupName": t.get("groupName", ""),
+        "email": taker.get("email", ""),
+        "questionCount": t.get("questionCount", 0),
+        "timeLimitSec": t.get("timeLimitSec", 0),
+        "status": taker.get("status", "assigned"),
+    }
+
+
+def _own_result(questions: list[dict], taker: dict) -> dict:
+    """Only this student's own answers and score."""
+    answers, results = taker.get("answers") or {}, taker.get("results") or {}
+    return {
+        "score": taker.get("score", 0),
+        "total": len(questions),
+        "usedSec": taker.get("usedSec", 0),
+        "questions": [{
+            "prompt": q.get("prompt", ""),
+            "math": q.get("math", ""),
+            "answer": answers.get(str(i), ""),
+            "correct": bool(results.get(str(i))),
+            "answerDisplay": q.get("answerDisplay", ""),
+            "steps": q.get("steps") or [],
+        } for i, q in enumerate(questions)],
+    }
+
+
+@https_fn.on_call()
+def open_test(req: https_fn.CallableRequest) -> dict:
+    """Without a code: what the test is. With the right code: starts the clock and returns the questions (no answers),
+    or the student's result if they already finished."""
+    db = firestore.client()
+    data = req.data or {}
+    snap, test = _taker(db, data.get("token"))
+    taker = snap.to_dict()
+    if "code" not in data:
+        return _test_meta(test, taker)
+    _check_test_code(snap, data.get("code"))
+    questions = _test_questions(test.reference)
+    now = _now_ms()
+    if taker.get("status") == "assigned":
+        snap.reference.update({"status": "started", "startedAtMs": now, "wrongTries": 0})
+        taker = {**taker, "status": "started", "startedAtMs": now}
+    meta = _test_meta(test, taker)
+    if taker.get("status") == "completed":
+        return {**meta, "result": _own_result(questions, taker)}
+    limit = int(meta["timeLimitSec"] or 0)
+    elapsed = (now - int(taker.get("startedAtMs") or now)) / 1000
+    return {
+        **meta,
+        "elapsedSec": elapsed,
+        "remainingSec": max(0, limit - elapsed) if limit else None,
+        "questions": [{
+            "prompt": q.get("prompt", ""),
+            "math": q.get("math", ""),
+            "type": q.get("type", "numeric"),
+            "choices": q.get("choices") or [],
+            "answerCount": len(q.get("answerValues") or []) or 1,
+        } for q in questions],
+    }
+
+
+@https_fn.on_call()
+def submit_test(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    data = req.data or {}
+    snap, test = _taker(db, data.get("token"))
+    _check_test_code(snap, data.get("code"))
+    questions = _test_questions(test.reference)
+    ref = snap.reference
+
+    @firestore.transactional
+    def run(transaction) -> dict:
+        taker = _txn_data(transaction, ref)
+        if taker.get("status") == "completed":
+            return taker  # a second tab or a retry: keep the first submission
+        if taker.get("status") != "started":
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, "Open the test before sending answers.")
+        now = _now_ms()
+        limit = int(test.get("timeLimitSec") or 0)
+        used = (now - int(taker.get("startedAtMs") or now)) / 1000
+        answers = groups.clean_answers(data.get("answers"), len(questions))
+        graded = groups.grade(questions, answers)
+        changes = {
+            "status": "completed",
+            "answers": answers,
+            "results": graded["results"],
+            "score": graded["score"],
+            "usedSec": round(min(used, limit) if limit else used),
+            "late": bool(limit) and used * 1000 > limit * 1000 + groups.LATE_GRACE_MS,
+            "completedAt": firestore.SERVER_TIMESTAMP,
+        }
+        transaction.update(ref, changes)
+        return {**taker, **changes}
+
+    taker = run(db.transaction())
+    return {**_test_meta(test, taker), "result": _own_result(questions, taker)}

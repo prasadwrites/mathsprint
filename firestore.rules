@@ -63,6 +63,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Contact groups, the tests assigned to them (with their copy of the questions) and each member's link,
+    // code and answers. Only the Cloud Functions read or write these, so answers and codes never reach a browser.
+    match /groups/{groupId} {
+      allow read, write: if false;
+    }
+    match /tests/{testId}/{document=**} {
+      allow read, write: if false;
+    }
+    match /testTakers/{token} {
+      allow read, write: if false;
+    }
+
     // Per-account access codes. Read and written only through the admin functions.
     match /accessCodes/{uid} {
       allow read, write: if false;
