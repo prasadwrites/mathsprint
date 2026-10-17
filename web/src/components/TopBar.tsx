@@ -40,6 +40,7 @@ function ProfileMenu() {
   const { account } = useAccount();
   const admin = useIsAdmin();
   const [open, setOpen] = useState(false);
+  const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -57,6 +58,7 @@ function ProfileMenu() {
         onClick={() => setOpen(!open)}
       >
         {initial}
+        {!admin && !!account?.reports?.unread && <span className="dot" aria-label="New reply to your report" />}
       </button>
       {open && (
         <div className="menu" role="menu">
@@ -65,7 +67,18 @@ function ProfileMenu() {
             <div className="who">
               <Chip>{account.isAdmin ? "Admin" : account.planLabel}</Chip>{" "}
               {!account.isAdmin && `${account.decksCreated} of ${account.maxDecks} decks used`}
+              {account.promo && (
+                <div className="small">Promotion until {new Date(account.promo.endsAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</div>
+              )}
             </div>
+          )}
+          <Link role="menuitem" className="menu-link" to="/plans" onClick={() => setOpen(false)}>
+            Compare plans
+          </Link>
+          {!admin && (
+            <Link role="menuitem" className="menu-link" to="/report" state={{ from: location.pathname }} onClick={() => setOpen(false)}>
+              Report a problem {!!account?.reports?.unread && <span className="badge">{account.reports.unread}</span>}
+            </Link>
           )}
           {admin && (
             <Link role="menuitem" className="menu-link" to="/admin" onClick={() => setOpen(false)}>
@@ -86,8 +99,9 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
   const { pathname, hash } = useLocation();
   const current = (h: string) => (pathname === "/" && hash === h ? "page" : undefined);
   const admin = useIsAdmin();
-  const upgrade = useAccount().account?.upgrade;
-  const waiting = upgrade?.waiting ?? 0;
+  const { account } = useAccount();
+  const upgrade = account?.upgrade;
+  const waiting = (upgrade?.waiting ?? 0) + (account?.reports?.open ?? 0);
   const unread = upgrade?.unreadReplies ?? 0;
   return (
     <header className="appbar">
@@ -120,7 +134,7 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
               )}
               {admin && (
                 <Link to="/admin" aria-current={pathname === "/admin" ? "page" : undefined}>
-                  Accounts {!!waiting && <span className="badge" aria-label={`${waiting} upgrade requests waiting`}>{waiting}</span>}
+                  Accounts {!!waiting && <span className="badge" aria-label={`${waiting} requests and reports waiting`}>{waiting}</span>}
                 </Link>
               )}
             </nav>

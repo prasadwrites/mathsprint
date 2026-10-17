@@ -150,3 +150,50 @@ def test_invite_emails_are_checked():
     for bad in ["", "nope", "a@b", "me@example.com"]:
         with pytest.raises(AccessDenied):
             accounts.clean_invite_email(bad, "Me@Example.com")
+
+
+DAY = 86_400_000
+
+
+def test_promotion_raises_the_plan_until_it_ends():
+    now = 1_800_000_000_000
+    account = {"plan": "free", "decksCreated": 5, "promo": {"plan": "promax", "endsAt": now + DAY}}
+    assert accounts.plan_id(account, now) == "promax"
+    assert accounts.plan_for(account, now).max_decks == 100
+    assert accounts.plan_id(account, now + DAY) == "free"  # back to the plan from before
+    assert accounts.base_plan_id(account) == "free"
+
+
+def test_promotion_never_lowers_a_plan():
+    now = 1_800_000_000_000
+    assert accounts.plan_id({"plan": "promax", "promo": {"plan": "pro", "endsAt": now + DAY}}, now) == "promax"
+    assert accounts.plan_id({"plan": "pro", "promo": {"plan": "bogus", "endsAt": now + DAY}}, now) == "pro"
+
+
+def test_summary_shows_promotion_and_base_plan():
+    s = accounts.summary({"plan": "free", "promo": {"plan": "pro", "endsAt": 9_999_999_999_999}}, False)
+    assert s["plan"] == "pro" and s["basePlan"] == "free" and s["maxDecks"] == 50
+    assert s["promo"] == {"plan": "pro", "planLabel": "Pro", "endsAt": 9_999_999_999_999}
+    assert accounts.summary({"plan": "free"}, False)["promo"] is None
+
+
+def test_check_promotion():
+    assert accounts.check_promotion({"plan": "free"}, "pro", "3") == ("pro", 3)
+    with pytest.raises(AccessDenied, match="bigger plan"):
+        accounts.check_promotion({"plan": "pro"}, "pro", 1)
+    with pytest.raises(AccessDenied, match="months"):
+        accounts.check_promotion({"plan": "free"}, "pro", 5)
+    with pytest.raises(AccessDenied, match="Pick a plan"):
+        accounts.check_promotion({"plan": "free"}, "gold", 1)
+
+
+def test_add_months_keeps_calendar_dates():
+    from datetime import datetime, timezone
+
+    def ms(*a):
+        return int(datetime(*a, tzinfo=timezone.utc).timestamp() * 1000)
+
+    assert accounts.add_months(ms(2026, 10, 17, 9), 1) == ms(2026, 11, 17, 9)
+    assert accounts.add_months(ms(2026, 11, 30), 3) == ms(2027, 2, 28)
+    assert accounts.add_months(ms(2026, 1, 31), 1) == ms(2026, 2, 28)
+    assert accounts.add_months(ms(2026, 10, 1), 12) == ms(2027, 10, 1)

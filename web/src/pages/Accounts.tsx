@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import TopBar, { Chip } from "../components/TopBar";
 import { useAccount } from "../App";
-import { adminDeleteAccount, adminListAccounts, adminReplyUpgrade, adminUpdateAccount, listUpgradeRequests, type AccountUpdate } from "../lib/db";
-import { PLANS, type AdminAccount, type PlanId, type PlanLimits, type UpgradeRequest } from "../lib/types";
+import {
+  adminDeleteAccount,
+  adminEndPromotion,
+  adminListAccounts,
+  adminOfferPromotion,
+  adminReplyReport,
+  adminReplyUpgrade,
+  adminUpdateAccount,
+  listReports,
+  listUpgradeRequests,
+  type AccountUpdate,
+} from "../lib/db";
+import { PLANS, type AdminAccount, type PlanId, type PlanLimits, type ProblemReport, type UpgradeRequest } from "../lib/types";
+import { ReportStatus } from "./Report";
 import { Conversation, ReplyBox, when } from "./Upgrade";
 
 const PLAN_ORDER: PlanId[] = ["free", "pro", "promax"];
@@ -16,16 +28,116 @@ const duration = (seconds: number) => {
 
 const date = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "never");
 
+const MONTHS = [1, 2, 3, 6, 12];
+const shortDate = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+/** Offer a bigger plan for a few months, or see and end the one running. */
+function Promotion({ a, plans, onChanged }: { a: AdminAccount; plans: Record<PlanId, PlanLimits>; onChanged: () => void }) {
+  const higher = PLAN_ORDER.slice(PLAN_ORDER.indexOf(a.basePlan) + 1);
+  const [open, setOpen] = useState(false);
+  const [plan, setPlan] = useState<PlanId>(higher[0] ?? "promax");
+  const [months, setMonths] = useState(1);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+      setOpen(false);
+      setNote("");
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message || "That didn't work. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const end = (
+    <button type="button" className="btn-link" style={{ fontSize: 13 }} disabled={busy} onClick={() => confirm(`End this for ${a.email}?`) && act(() => adminEndPromotion(a.uid))}>
+      {a.promo ? "End now" : "Withdraw"}
+    </button>
+  );
+  if (a.promo || a.offer) {
+    return (
+      <span className="small">
+        {a.promo && (
+          <>
+            <Chip tone="good">Promotion</Chip> {a.promo.planLabel} until {shortDate(a.promo.endsAt)}, then {plans[a.basePlan]?.label}.{" "}
+          </>
+        )}
+        {a.offer && (
+          <>
+            <Chip tone="warn">Offered</Chip> {a.offer.planLabel} for {a.offer.months} mo, not answered yet.{" "}
+          </>
+        )}
+        {end}
+        {error && <span className="error"> {error}</span>}
+      </span>
+    );
+  }
+  if (!higher.length) return null;
+  if (!open) {
+    return (
+      <span className="small">
+        <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => setOpen(true)}>
+          Offer a promotion
+        </button>
+      </span>
+    );
+  }
+  return (
+    <form
+      className="promo-box"
+      onSubmit={(e) => {
+        e.preventDefault();
+        act(() => adminOfferPromotion({ uid: a.uid, plan, months, note: note.trim() }));
+      }}
+    >
+      <div className="row" style={{ gap: 8 }}>
+        <select aria-label="Promotion plan" value={plan} onChange={(e) => setPlan(e.target.value as PlanId)} style={{ width: "auto" }}>
+          {higher.map((p) => (
+            <option key={p} value={p}>
+              {plans[p]?.label ?? p}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Promotion length" value={months} onChange={(e) => setMonths(Number(e.target.value))} style={{ width: "auto" }}>
+          {MONTHS.map((m) => (
+            <option key={m} value={m}>
+              {m} {m === 1 ? "month" : "months"}
+            </option>
+          ))}
+        </select>
+      </div>
+      <input type="text" aria-label="Note to the user" placeholder="Note to them (optional)" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
+      <div className="row" style={{ gap: 8 }}>
+        <button type="submit" className="btn-small btn-primary" disabled={busy}>
+          {busy ? "Sending…" : "Send offer"}
+        </button>
+        <button type="button" className="btn-small" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+      <span className="small">They see it when they sign in. The term starts when they accept, then they go back to {plans[a.basePlan]?.label}.</span>
+      {error && <p className="error">{error}</p>}
+    </form>
+  );
+}
+
 function AccountRow({
   a,
   plans,
   onChange,
   onDelete,
+  onPromotion,
 }: {
   a: AdminAccount;
   plans: Record<PlanId, PlanLimits>;
   onChange: (u: Omit<AccountUpdate, "uid">) => Promise<void>;
   onDelete: () => Promise<void>;
+  onPromotion: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -78,7 +190,7 @@ function AccountRow({
           <>
             <div className="seg" role="group" aria-label={`Plan for ${a.email}`}>
               {PLAN_ORDER.map((p) => (
-                <button key={p} type="button" className="btn-small" aria-pressed={a.plan === p} disabled={busy} onClick={() => a.plan !== p && run({ plan: p })}>
+                <button key={p} type="button" className="btn-small" aria-pressed={a.basePlan === p} disabled={busy} onClick={() => a.basePlan !== p && run({ plan: p })}>
                   {plans[p]?.label ?? p}
                 </button>
               ))}
@@ -91,6 +203,7 @@ function AccountRow({
                 {a.decksCreated}/{a.maxDecks} decks
               </span>
             </div>
+            <Promotion a={a} plans={plans} onChanged={onPromotion} />
             <span className="small">
               Up to {a.maxQuestions} questions a deck
               {a.decksCreated > 0 && (
@@ -313,6 +426,87 @@ function Requests({ onChange }: { onChange: () => void }) {
   );
 }
 
+function Reports({ onChange }: { onChange: () => void }) {
+  const [reports, setReports] = useState<ProblemReport[] | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setReports(await listReports());
+    } catch (e) {
+      setError((e as Error).message || "Reports couldn't be loaded.");
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  if (!reports?.length && !error) return null;
+  const open = (reports ?? []).filter((r) => r.status === "open");
+  const rest = (reports ?? []).filter((r) => r.status !== "open");
+  const shown = [...open, ...(showAll ? rest : rest.slice(0, open.length ? 0 : 3))];
+  const send = async (r: ProblemReport, text: string, resolve: boolean) => {
+    try {
+      await adminReplyReport({ id: r.id, text, resolve });
+      setError("");
+      await load();
+      onChange();
+    } catch (e) {
+      setError((e as Error).message || "The reply didn't send. Try again.");
+    }
+  };
+  return (
+    <section className="panel stack" id="reports">
+      <div className="row spread">
+        <h2>Problem reports</h2>
+        {open.length > 0 && <Chip tone="warn">{open.length} waiting</Chip>}
+      </div>
+      {error && <p className="error">{error}</p>}
+      {open.length === 0 && <p className="muted">Nothing waiting. Recent reports are below.</p>}
+      <ul className="requests">
+        {shown.map((r) => (
+          <li key={r.id} className="request">
+            <div className="row spread">
+              <div className="who-col">
+                <b>{r.displayName || r.email}</b>
+                {r.displayName && <span className="small">{r.email}</span>}
+              </div>
+              <ReportStatus status={r.status} />
+            </div>
+            <span className="small">
+              Sent {when(r.createdAt)}
+              {r.page && (
+                <>
+                  {" "}from <span className="mono">{r.page}</span>
+                </>
+              )}
+            </span>
+            <Conversation r={r} viewer="admin" />
+            <ReplyBox label={`Reply to ${r.email}`} placeholder="Write back (optional when you mark it resolved)" onSend={(text, resolve) => send(r, text, resolve)}>
+              {(text, busy, submit) => (
+                <>
+                  <button type="submit" className="btn-small btn-primary" disabled={busy || !text}>
+                    Reply
+                  </button>
+                  {r.status !== "resolved" && (
+                    <button type="button" className="btn-small" disabled={busy} onClick={() => submit(true)}>
+                      {text ? "Reply and mark resolved" : "Mark resolved"}
+                    </button>
+                  )}
+                </>
+              )}
+            </ReplyBox>
+          </li>
+        ))}
+      </ul>
+      {rest.length > shown.length - open.length && (
+        <button type="button" className="btn-link" style={{ alignSelf: "flex-start" }} onClick={() => setShowAll(true)}>
+          Show {rest.length - (shown.length - open.length)} earlier
+        </button>
+      )}
+    </section>
+  );
+}
+
 export default function Accounts() {
   const { refresh } = useAccount();
   const [accounts, setAccounts] = useState<AdminAccount[] | null>(null);
@@ -386,6 +580,7 @@ export default function Accounts() {
             refresh();
           }}
         />
+        <Reports onChange={refresh} />
 
         {plans && (
           <div className="tiles">
@@ -431,7 +626,7 @@ export default function Accounts() {
             plans && (
               <ul className="acct-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {shown.map((a) => (
-                  <AccountRow key={a.uid} a={a} plans={plans} onChange={(u) => update(a.uid, u)} onDelete={() => remove(a)} />
+                  <AccountRow key={a.uid} a={a} plans={plans} onChange={(u) => update(a.uid, u)} onDelete={() => remove(a)} onPromotion={load} />
                 ))}
               </ul>
             )

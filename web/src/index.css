@@ -319,3 +319,21 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .answer-grid li { grid-template-columns: 28px 1fr; }
   .answer-grid li > :nth-child(n+3) { grid-column: 2; }
 }
+/* Plans, problem reports and promotions */
+.offer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 20px; align-items: center; padding: 16px 20px; border-radius: 14px; background: var(--good-soft); border: 1px solid color-mix(in srgb, var(--good) 40%, var(--line)); }
+.plans-table-wrap { padding: 8px 20px; overflow-x: auto; }
+.plans-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.plans-table th, .plans-table td { padding: 14px 8px; border-top: 1px solid var(--line); text-align: center; vertical-align: middle; }
+.plans-table thead th { border-top: none; font-family: var(--f-display); font-size: 18px; }
+.plans-table th[scope=row] { text-align: left; font-weight: 700; padding-left: 0; }
+.plans-table th[scope=row] .small { display: block; font-weight: 400; margin-top: 2px; }
+.plans-table td .mono { font-size: 18px; }
+.plans-table .yes { color: var(--good); display: inline-flex; }
+.plans-table .no { color: var(--muted); }
+.promo-box { display: flex; flex-direction: column; gap: 8px; }
+@media (max-width: 560px) {
+  .plans-table-wrap { padding: 4px 12px; }
+  .plans-table { font-size: 14px; }
+  .plans-table thead th { font-size: 15px; }
+  .plans-table th, .plans-table td { padding: 12px 4px; }
+}

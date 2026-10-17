@@ -5,8 +5,10 @@ Everything here is plain Python so it can be tested without Firebase; main.py do
 
 from __future__ import annotations
 
+import calendar
 import re
 import secrets
+import time
 from datetime import datetime, timezone
 from dataclasses import dataclass
 
@@ -28,6 +30,7 @@ PLANS: dict[str, Plan] = {
     "promax": Plan("Pro Max", 100, 200),
 }
 DEFAULT_PLAN = "free"
+PLAN_ORDER = list(PLANS)  # free < pro < promax
 STATUSES = {"active", "suspended"}
 MIN_QUESTIONS = 3
 MAX_QUESTIONS = max(p.max_questions for p in PLANS.values())
@@ -45,8 +48,32 @@ def is_admin(token: dict | None) -> bool:
     return (token.get("email") or "").lower() == ADMIN_EMAIL and token.get("email_verified") is True
 
 
-def plan_for(account: dict) -> Plan:
-    return PLANS.get(account.get("plan", DEFAULT_PLAN), PLANS[DEFAULT_PLAN])
+def base_plan_id(account: dict) -> str:
+    """The plan the admin set, ignoring any promotion."""
+    return account.get("plan") if account.get("plan") in PLANS else DEFAULT_PLAN
+
+
+def active_promo(account: dict, now_ms: int | None = None) -> dict | None:
+    """The accepted promotion still in its term, if it raises the plan."""
+    promo = account.get("promo")
+    if not isinstance(promo, dict) or promo.get("plan") not in PLANS:
+        return None
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    if int(promo.get("endsAt") or 0) <= now_ms:
+        return None
+    if PLAN_ORDER.index(promo["plan"]) <= PLAN_ORDER.index(base_plan_id(account)):
+        return None
+    return promo
+
+
+def plan_id(account: dict, now_ms: int | None = None) -> str:
+    """The plan in force now: a promotion's while it lasts, then the plan from before it."""
+    promo = active_promo(account, now_ms)
+    return promo["plan"] if promo else base_plan_id(account)
+
+
+def plan_for(account: dict, now_ms: int | None = None) -> Plan:
+    return PLANS[plan_id(account, now_ms)]
 
 
 def bonus_decks(account: dict) -> int:
@@ -69,9 +96,12 @@ def new_account(email: str, name: str) -> dict:
 def summary(account: dict, admin: bool) -> dict:
     """What the app shows a student about their own account. Never includes the access code."""
     plan = plan_for(account)
+    promo = active_promo(account)
     return {
-        "plan": account.get("plan", DEFAULT_PLAN) if account.get("plan") in PLANS else DEFAULT_PLAN,
+        "plan": plan_id(account),
+        "basePlan": base_plan_id(account),
         "planLabel": plan.label,
+        "promo": {"plan": promo["plan"], "planLabel": PLANS[promo["plan"]].label, "endsAt": int(promo["endsAt"])} if promo else None,
         "status": account.get("status", "active"),
         "decksCreated": int(account.get("decksCreated", 0)),
         "maxDecks": max_decks(account),
@@ -141,7 +171,6 @@ def clean_update(data: dict) -> dict:
     return out
 
 
-PLAN_ORDER = list(PLANS)  # free < pro < promax
 MAX_MESSAGE = 1000
 
 
@@ -215,3 +244,32 @@ def clean_invite_email(email: object, own_email: str) -> str:
 
 def new_invite_token() -> str:
     return secrets.token_urlsafe(9)
+
+
+# Promotions. The admin offers a bigger plan for a number of months; it takes effect when the student accepts it,
+# and plan_id() stops counting it once the term ends, so nothing has to run to switch the plan back.
+PROMO_MONTHS = (1, 2, 3, 6, 12)
+
+
+def check_promotion(account: dict, plan: object, months: object) -> tuple[str, int]:
+    """The offer's plan and months. Raises AccessDenied with a message for the admin."""
+    if plan not in PLANS:
+        raise AccessDenied("Pick a plan to offer.")
+    if PLAN_ORDER.index(plan) <= PLAN_ORDER.index(base_plan_id(account)):
+        raise AccessDenied(f"They're already on {PLANS[base_plan_id(account)].label}. Offer a bigger plan.")
+    try:
+        months = int(months)
+    except (TypeError, ValueError):
+        months = 0
+    if months not in PROMO_MONTHS:
+        raise AccessDenied("Pick 1, 2, 3, 6 or 12 months.")
+    return plan, months
+
+
+def add_months(ms: int, months: int) -> int:
+    """The same time of day `months` calendar months later (Jan 31 + 1 month is the last day of February), in UTC."""
+    d = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+    m = d.month - 1 + months
+    year, month = d.year + m // 12, m % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return int(d.replace(year=year, month=month, day=day).timestamp() * 1000)
