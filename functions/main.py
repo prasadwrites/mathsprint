@@ -10,6 +10,7 @@ request_upgrade       - A student asks the admin for a bigger plan, with an opti
 list_upgrade_requests - The student's own requests and replies, or every request for the admin.
 admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
 reply_upgrade         - A student writes back on one of their requests, which puts it back in the admin's queue.
+record_activity       - One heartbeat per active minute, so the admin can see how long each person spends in the app.
 """
 
 from __future__ import annotations
@@ -247,6 +248,7 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
     stored = {d.id: d.to_dict() for d in db.collection("accounts").stream()}
     codes = {d.id: d.to_dict().get("code") for d in db.collection("accessCodes").stream()}
     rows = []
+    now = _now_ms()
     # Firebase Auth is the full list of sign-ins, including people who never opened the app after signing up.
     for user in auth.list_users().iterate_all():
         account = stored.get(user.uid) or accounts.new_account(user.email or "", user.display_name or "")
@@ -259,6 +261,7 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
             "accessCode": codes.get(user.uid),
             "createdAt": meta.creation_timestamp if meta else None,
             "lastSignInAt": meta.last_sign_in_timestamp if meta else None,
+            **accounts.activity_summary(account, now),
             **accounts.summary(account, accounts.is_admin(token)),
         })
     rows.sort(key=lambda r: (not r["isAdmin"], -(r["createdAt"] or 0)))
@@ -480,3 +483,24 @@ def reply_upgrade(req: https_fn.CallableRequest) -> dict:
         "updatedAt": firestore.SERVER_TIMESTAMP,
     })
     return {"ok": True}
+
+
+@https_fn.on_call()
+def record_activity(req: https_fn.CallableRequest) -> dict:
+    _require_user(req)
+    db = firestore.client()
+    _load_account(db, req)  # creates the account on someone's first visit
+    ref = _account_ref(db, req.auth.uid)
+
+    @firestore.transactional
+    def run(transaction) -> bool:
+        snap = ref.get(transaction=transaction)
+        account = snap.to_dict() or {}
+        if account.get("status") == "suspended":
+            return False
+        changes = accounts.credit_activity(account, _now_ms())
+        if changes:
+            transaction.update(ref, changes)
+        return bool(changes)
+
+    return {"counted": run(db.transaction())}

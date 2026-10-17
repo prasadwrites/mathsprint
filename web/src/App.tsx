@@ -1,6 +1,7 @@
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useActivityHeartbeat } from "./lib/activity";
 import { getAccount } from "./lib/db";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
@@ -37,6 +38,7 @@ export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [account, setAccount] = useState<AccountSummary | null>(null);
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useActivityHeartbeat(!!user);
 
   const refresh = useCallback(() => {
     getAccount()

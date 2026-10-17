@@ -97,3 +97,23 @@ def test_upgrade_requests_must_go_up_one_at_a_time():
         check_upgrade_request("free", "gold", has_pending=False, admin=False)
     with pytest.raises(AccessDenied):
         check_upgrade_request("free", "pro", has_pending=False, admin=True)
+
+
+def test_heartbeats_add_a_minute_each_but_not_faster():
+    day = 1_760_000_000_000  # some fixed time
+    acct = {}
+    first = accounts.credit_activity(acct, day)
+    assert first["activeSeconds"] == 60 and first["activeDays"] == {accounts.day_key(day): 60}
+    acct.update(first)
+    assert accounts.credit_activity(acct, day + 10_000) is None  # a second tab in the same minute
+    acct.update(accounts.credit_activity(acct, day + 60_000))
+    assert acct["activeSeconds"] == 120
+
+
+def test_activity_summary_counts_today_and_last_seven_days_and_drops_old_days():
+    now = 1_760_000_000_000
+    key = accounts.day_key
+    acct = {"activeSeconds": 9000, "activeDays": {key(now): 120, key(now - 3 * accounts.DAY_MS): 600, key(now - 10 * accounts.DAY_MS): 900, key(now - 40 * accounts.DAY_MS): 50}, "lastBeatAt": now}
+    s = accounts.activity_summary(acct, now)
+    assert s == {"activeSeconds": 9000, "todaySeconds": 120, "weekSeconds": 720, "lastActiveAt": now}
+    assert key(now - 40 * accounts.DAY_MS) not in accounts.credit_activity(acct, now + 60_000)["activeDays"]

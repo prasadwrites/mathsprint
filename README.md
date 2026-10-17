@@ -23,6 +23,7 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               list_upgrade_requests  the student's own requests, or every request for the admin
               admin_reply_upgrade    admin only: reply to a request, optionally upgrading the plan
               reply_upgrade          a student writes back on one of their requests
+              record_activity        one heartbeat per active minute, for time on site
 ```
 
 ### Accounts and plans
@@ -42,6 +43,10 @@ An account's own access code replaces the shared `DECK_ACCESS_CODE` for that per
 ### Upgrade requests
 
 Students ask for a bigger plan from **Request an upgrade** in the profile menu (or the link on Create deck). They can have one request waiting at a time. When the admin signs in, the home page shows how many requests are waiting and the **Accounts** link carries a count. On the Accounts page the admin can **Upgrade and reply** (changes the plan) or **Reply without upgrading**. The student then sees a dot on their avatar and a banner on the home page, and reads the reply on the Upgrade page. Each request is a conversation: either side can keep writing back, and a student's message puts the request back in the admin's waiting count. Requests live in `upgradeRequests/{id}`, which only the Cloud Functions can read or write.
+
+### Time on site
+
+While someone has MathSprint open in a visible tab and has touched the page in the last 5 minutes, the app sends one heartbeat a minute to `record_activity`. Each heartbeat adds a minute to the account (extra beats inside the same minute, such as from a second tab, add nothing). The Accounts page shows each person's total time, the last 7 days, today, and when they were last active, and can sort by time. Days are UTC, and daily totals older than 35 days are dropped; the all-time total is kept.
 
 Decks over 20 questions are written in parts of 20 that run in parallel (`functions/generator.py`), so a 200-question deck stays inside Claude's output limit and the function timeout.
 
