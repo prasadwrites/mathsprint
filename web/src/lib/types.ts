@@ -91,6 +91,9 @@ export interface AccountSummary {
   isAdmin: boolean;
   /** True when the admin gave this account its own access code. */
   hasOwnCode: boolean;
+  /** Everyone's first 5 decks need no access code. */
+  needsCode: boolean;
+  codeFreeLeft: number;
   /** Admin: requests waiting for a reply. Students: their open request and unread replies. */
   upgrade?: { waiting?: number; pendingPlan?: PlanId | null; unreadReplies?: number };
 }

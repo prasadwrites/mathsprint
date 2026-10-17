@@ -117,3 +117,20 @@ def test_activity_summary_counts_today_and_last_seven_days_and_drops_old_days():
     s = accounts.activity_summary(acct, now)
     assert s == {"activeSeconds": 9000, "todaySeconds": 120, "weekSeconds": 720, "lastActiveAt": now}
     assert key(now - 40 * accounts.DAY_MS) not in accounts.credit_activity(acct, now + 60_000)["activeDays"]
+
+
+def test_first_five_decks_need_no_access_code():
+    import pytest
+
+    for made in range(accounts.CODE_FREE_DECKS):
+        accounts.check_code(acct(decksCreated=made), False, "", admin=False)  # no code, no problem
+    sixth = acct(plan="pro", decksCreated=5)
+    with pytest.raises(AccessDenied, match="Enter an access code"):
+        accounts.check_code(sixth, False, "", admin=False)
+    with pytest.raises(AccessDenied, match="isn't right"):
+        accounts.check_code(sixth, False, "nope", admin=False)
+    accounts.check_code(sixth, True, "good", admin=False)
+    accounts.check_code(sixth, False, "", admin=True)
+    assert summary(acct(decksCreated=3), admin=False)["codeFreeLeft"] == 2
+    assert summary(sixth, admin=False)["needsCode"] is True
+    assert summary(sixth, admin=True)["needsCode"] is False
