@@ -1,5 +1,6 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { pendingInvite } from "../lib/invite";
 import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
@@ -36,7 +37,9 @@ export default function Login() {
       <div className="stack" style={{ paddingTop: "10vh" }}>
         <Brand />
         <h1>Timed math practice for high school and college students.</h1>
-        <p className="muted">Create a deck on any topic, practice against the clock, and see exactly where your time went.</p>
+        <p className="muted">
+          Create a deck on any topic, practice against the clock, and see exactly where your time went. <Link to="/plans">Compare plans</Link>
+        </p>
         {invite && (
           <p className="notice" role="status">
             <b>A friend invited you to MathSprint.</b>

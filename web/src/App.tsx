@@ -14,6 +14,8 @@ import Groups from "./pages/Groups";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
 import PracticeSetup from "./pages/PracticeSetup";
+import Plans from "./pages/Plans";
+import Report from "./pages/Report";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
 import TestResults from "./pages/TestResults";
@@ -40,12 +42,13 @@ function AdminOnly() {
 }
 
 export default function App() {
-  // Group members open their test from a link without signing in.
+  // Pages anyone can open without signing in: a group member's test, and the plan comparison.
   const { pathname } = useLocation();
-  if (pathname.startsWith("/t/")) {
+  if (pathname.startsWith("/t/") || pathname === "/plans") {
     return (
       <Routes>
         <Route path="/t/:token" element={<TakeTest />} />
+        <Route path="/plans" element={<Plans />} />
       </Routes>
     );
   }
@@ -94,6 +97,7 @@ function SignedInApp() {
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="/invite" element={<Invite />} />
         <Route path="/groups" element={<Groups />} />
+        <Route path="/report" element={<Report />} />
         <Route path="/tests/:testId" element={<TestResults />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

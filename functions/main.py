@@ -17,6 +17,10 @@ list_groups, save_group, delete_group - Pro and Pro Max: contact groups of email
 assign_test           - Pro and Pro Max: assign a deck to a group, with a link and access code for each member.
 list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
 open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
+report_problem, list_reports, reply_report - A signed-in user reports a problem; the user and admin write back and forth.
+admin_reply_report    - Admin only: answer a problem report, optionally marking it resolved.
+admin_offer_promotion, admin_end_promotion - Admin only: offer a bigger plan for some months, or end it early.
+respond_promotion     - The user accepts or declines an offer; an accepted plan lasts for its term, then the old plan is back.
 """
 
 from __future__ import annotations
@@ -252,15 +256,25 @@ def get_account(req: https_fn.CallableRequest) -> dict:
     has_code = db.collection("accessCodes").document(req.auth.uid).get().exists
     admin = accounts.is_admin(token)
     requests = db.collection("upgradeRequests")
+    reports = db.collection("reports")
     if admin:
         upgrade = {"waiting": _count(requests.where("status", "==", "pending"))}
+        report_counts = {"open": _count(reports.where("status", "==", "open"))}
     else:
         mine = [d.to_dict() for d in requests.where("uid", "==", req.auth.uid).stream()]
         upgrade = {
             "pendingPlan": next((r["requestedPlan"] for r in mine if _awaiting_plan(r)), None),
             "unreadReplies": sum(1 for r in mine if r.get("status") == "replied" and not r.get("userRead")),
         }
-    return {**accounts.summary(account, admin), "hasOwnCode": has_code, "upgrade": upgrade}
+        report_counts = {"unread": sum(1 for r in reports.where("uid", "==", req.auth.uid).stream() if not r.to_dict().get("userRead", True))}
+    offer = next(iter(_open_offers(db, req.auth.uid)), None)
+    return {
+        **accounts.summary(account, admin),
+        "hasOwnCode": has_code,
+        "upgrade": upgrade,
+        "reports": report_counts,
+        "offer": _offer_row(offer) if offer and not admin else None,
+    }
 
 
 def _awaiting_plan(r: dict) -> bool:
@@ -298,6 +312,7 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
     db = firestore.client()
     stored = {d.id: d.to_dict() for d in db.collection("accounts").stream()}
     codes = {d.id: d.to_dict().get("code") for d in db.collection("accessCodes").stream()}
+    offers = {d.get("uid"): _offer_row(d) for d in db.collection("promotions").where("status", "==", "offered").stream()}
     rows = []
     now = _now_ms()
     # Firebase Auth is the full list of sign-ins, including people who never opened the app after signing up.
@@ -313,6 +328,7 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
             "createdAt": meta.creation_timestamp if meta else None,
             "lastSignInAt": meta.last_sign_in_timestamp if meta else None,
             "invitesJoined": accounts.bonus_decks(account),
+            "offer": offers.get(user.uid),
             **accounts.activity_summary(account, now),
             **accounts.summary(account, accounts.is_admin(token)),
         })
@@ -394,6 +410,9 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
         writer.delete(r.reference)
     for r in db.collection("invites").where("inviterUid", "==", uid).stream():
         writer.delete(r.reference)
+    for collection in ("reports", "promotions"):
+        for r in db.collection(collection).where("uid", "==", uid).stream():
+            writer.delete(r.reference)
     for collection in ("groups", "testTakers"):
         for r in db.collection(collection).where("ownerUid", "==", uid).stream():
             writer.delete(r.reference)
@@ -968,3 +987,235 @@ def submit_test(req: https_fn.CallableRequest) -> dict:
 
     taker = run(db.transaction())
     return {**_test_meta(test, taker), "result": _own_result(questions, taker)}
+
+
+# Problem reports. A signed-in user writes to the admin; either side can keep writing back.
+MAX_OPEN_REPORTS = 10
+
+
+def _report_row(doc) -> dict:
+    r = doc.to_dict()
+    return {
+        "id": doc.id,
+        "uid": r.get("uid"),
+        "email": r.get("email", ""),
+        "displayName": r.get("displayName", ""),
+        "page": r.get("page", ""),
+        "status": r.get("status", "open"),
+        "thread": list(r.get("thread") or []),
+        "userRead": bool(r.get("userRead", True)),
+        "createdAt": _ms(r.get("createdAt")),
+        "updatedAt": _ms(r.get("updatedAt")),
+    }
+
+
+@https_fn.on_call()
+def report_problem(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    data = req.data or {}
+    db = firestore.client()
+    account = _load_account(db, req)
+    if account.get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    text = _clean(data.get("message"), accounts.MAX_MESSAGE)
+    if not text:
+        raise _invalid("Tell us what went wrong.")
+    reports = db.collection("reports")
+    if sum(1 for r in reports.where("uid", "==", uid).stream() if r.get("status") != "resolved") >= MAX_OPEN_REPORTS:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.RESOURCE_EXHAUSTED, "You have several reports open. Add to one of those instead.")
+    token = req.auth.token or {}
+    ref = reports.document()
+    ref.set({
+        "uid": uid,
+        "email": token.get("email") or account.get("email", ""),
+        "displayName": token.get("name") or account.get("displayName", ""),
+        "page": _clean(data.get("page"), 200),
+        "status": "open",
+        "thread": [{"from": "student", "text": text, "at": _now_ms()}],
+        "userRead": True,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+    return _report_row(ref.get())
+
+
+@https_fn.on_call()
+def list_reports(req: https_fn.CallableRequest) -> dict:
+    """The user's own reports (markRead clears the reply notification), or every report for the admin."""
+    uid = _require_user(req)
+    db = firestore.client()
+    reports = db.collection("reports")
+    if accounts.is_admin(req.auth.token):
+        docs = list(reports.order_by("createdAt", direction=firestore.Query.DESCENDING).limit(200).stream())
+    else:
+        docs = list(reports.where("uid", "==", uid).stream())
+        if (req.data or {}).get("markRead"):
+            for d in docs:
+                if not d.to_dict().get("userRead", True):
+                    d.reference.update({"userRead": True})
+    return {"reports": sorted((_report_row(d) for d in docs), key=lambda r: -(r["updatedAt"] or 0))}
+
+
+@https_fn.on_call()
+def reply_report(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    data = req.data or {}
+    text = _clean(data.get("text"), accounts.MAX_MESSAGE)
+    if not text:
+        raise _invalid("Write a message first.")
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    snap = _owned_report(db, data.get("id"), uid)
+    snap.reference.update({
+        "status": "open",  # back in the admin's queue
+        "thread": list(snap.get("thread") or []) + [{"from": "student", "text": text, "at": _now_ms()}],
+        "userRead": True,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"ok": True}
+
+
+def _owned_report(db, report_id, uid: str | None):
+    """A report by id; for a user, only their own. Someone else's looks the same as a missing one."""
+    report_id = _clean(report_id, 128)
+    snap = db.collection("reports").document(report_id).get() if report_id else None
+    if snap is None or not snap.exists or (uid is not None and snap.get("uid") != uid):
+        raise _not_found("That report no longer exists.")
+    return snap
+
+
+@https_fn.on_call()
+def admin_reply_report(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    data = req.data or {}
+    text = _clean(data.get("text"), accounts.MAX_MESSAGE)
+    resolve = bool(data.get("resolve"))
+    if not text and not resolve:
+        raise _invalid("Write a reply first.")
+    db = firestore.client()
+    snap = _owned_report(db, data.get("id"), None)
+    message = {"from": "admin", "text": text, "at": _now_ms(), **({"resolved": True} if resolve else {})}
+    snap.reference.update({
+        "status": "resolved" if resolve else "replied",
+        "thread": list(snap.get("thread") or []) + [message],
+        "userRead": False,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"ok": True}
+
+
+# Promotions. The admin offers a bigger plan for a few months; the user accepts it when they next sign in.
+
+
+def _open_offers(db, uid: str) -> list:
+    offers = db.collection("promotions").where("uid", "==", uid).where("status", "==", "offered").stream()
+    return sorted(offers, key=lambda d: -(_ms(d.get("createdAt")) or 0))
+
+
+def _offer_row(doc) -> dict:
+    r = doc.to_dict()
+    return {
+        "id": doc.id,
+        "plan": r.get("plan"),
+        "planLabel": accounts.PLANS[r["plan"]].label if r.get("plan") in accounts.PLANS else r.get("plan"),
+        "months": r.get("months"),
+        "note": r.get("note", ""),
+        "createdAt": _ms(r.get("createdAt")),
+    }
+
+
+def _withdraw_offers(db, uid: str) -> None:
+    for d in _open_offers(db, uid):
+        d.reference.update({"status": "withdrawn", "updatedAt": firestore.SERVER_TIMESTAMP})
+
+
+@https_fn.on_call()
+def admin_offer_promotion(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    data = req.data or {}
+    uid = _clean(data.get("uid"), 128)
+    try:
+        user = auth.get_user(uid) if uid else None
+    except auth.UserNotFoundError:
+        user = None
+    if user is None:
+        raise _not_found("That account doesn't exist.")
+    if accounts.is_admin({"email": user.email, "email_verified": user.email_verified}):
+        raise _invalid("The admin account has no limits to promote.")
+    db = firestore.client()
+    ref = _account_ref(db, uid)
+    snap = ref.get()
+    account = snap.to_dict() if snap.exists else accounts.new_account(user.email or "", user.display_name or "")
+    if not snap.exists:
+        ref.set({**account, "createdAt": firestore.SERVER_TIMESTAMP})
+    try:
+        plan, months = accounts.check_promotion(account, data.get("plan"), data.get("months"))
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    _withdraw_offers(db, uid)  # one offer at a time; a new one replaces the old
+    offer = db.collection("promotions").document()
+    offer.set({
+        "uid": uid,
+        "email": user.email or "",
+        "plan": plan,
+        "months": months,
+        "note": _clean(data.get("note"), 300),
+        "status": "offered",
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    })
+    return _offer_row(offer.get())
+
+
+@https_fn.on_call()
+def admin_end_promotion(req: https_fn.CallableRequest) -> dict:
+    """Withdraws an offer that hasn't been accepted and ends a running promotion now."""
+    _require_admin(req)
+    uid = _clean((req.data or {}).get("uid"), 128)
+    if not uid:
+        raise _invalid("Pick an account.")
+    db = firestore.client()
+    _withdraw_offers(db, uid)
+    ref = _account_ref(db, uid)
+    snap = ref.get()
+    promo = accounts.active_promo(snap.to_dict()) if snap.exists else None
+    if promo:
+        ref.update({"promo.endsAt": _now_ms(), "updatedAt": firestore.SERVER_TIMESTAMP})
+        if promo.get("promotionId"):
+            db.collection("promotions").document(promo["promotionId"]).set({"status": "ended", "endedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+    return {"ok": True}
+
+
+@https_fn.on_call()
+def respond_promotion(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    data = req.data or {}
+    accept = bool(data.get("accept"))
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    offer_id = _clean(data.get("id"), 128)
+    if not offer_id:
+        raise _invalid("Pick an offer.")
+    offer_ref = db.collection("promotions").document(offer_id)
+    account_ref = _account_ref(db, uid)
+
+    @firestore.transactional
+    def run(transaction) -> dict:
+        offer = _txn_data(transaction, offer_ref)
+        if offer.get("uid") != uid or offer.get("status") != "offered":
+            raise _not_found("That offer is no longer available.")
+        if not accept:
+            transaction.update(offer_ref, {"status": "declined", "updatedAt": firestore.SERVER_TIMESTAMP})
+            return {"accepted": False}
+        now = _now_ms()
+        ends = accounts.add_months(now, int(offer["months"]))
+        transaction.update(account_ref, {
+            "promo": {"plan": offer["plan"], "months": int(offer["months"]), "startedAt": now, "endsAt": ends, "promotionId": offer_id},
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+        transaction.update(offer_ref, {"status": "accepted", "acceptedAt": firestore.SERVER_TIMESTAMP, "endsAt": ends, "updatedAt": firestore.SERVER_TIMESTAMP})
+        return {"accepted": True, "endsAt": ends}
+
+    return run(db.transaction())

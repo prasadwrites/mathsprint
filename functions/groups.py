@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import secrets
 
-from accounts import AccessDenied, plan_for
+from accounts import AccessDenied, plan_for, plan_id
 
 GROUP_PLANS = {"pro", "promax"}
 MAX_GROUPS = 50
@@ -21,7 +21,7 @@ _CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 
 def can_use_groups(account: dict, admin: bool) -> bool:
-    return admin or account.get("plan") in GROUP_PLANS
+    return admin or plan_id(account) in GROUP_PLANS
 
 
 def check_can_use_groups(account: dict, admin: bool) -> None:

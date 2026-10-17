@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
+import PromotionOffer from "../components/PromotionOffer";
 import { addSampleDeck, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
 import { formatClock } from "../lib/pace";
@@ -17,8 +18,10 @@ function formatHours(sec: number) {
 
 export default function Dashboard() {
   const user = useUser();
-  const { account } = useAccount();
+  const { account, refresh } = useAccount();
   const waiting = account?.isAdmin ? account.upgrade?.waiting ?? 0 : 0;
+  const openReports = account?.isAdmin ? account.reports?.open ?? 0 : 0;
+  const reportReplies = account?.reports?.unread ?? 0;
   const unread = account?.upgrade?.unreadReplies ?? 0;
   const navigate = useNavigate();
   const { hash } = useLocation();
@@ -58,6 +61,21 @@ export default function Dashboard() {
             <span>Review and reply →</span>
           </Link>
         )}
+        {openReports > 0 && (
+          <Link className="notice" to="/admin#reports">
+            <b>
+              {openReports} problem {openReports === 1 ? "report is" : "reports are"} waiting for you.
+            </b>
+            <span>Read and reply →</span>
+          </Link>
+        )}
+        {reportReplies > 0 && (
+          <Link className="notice" to="/report">
+            <b>You have a reply about a problem you reported.</b>
+            <span>Read it →</span>
+          </Link>
+        )}
+        {account?.offer && <PromotionOffer offer={account.offer} onDone={refresh} />}
         {unread > 0 && (
           <Link className="notice" to="/upgrade">
             <b>You have a reply about your upgrade request.</b>

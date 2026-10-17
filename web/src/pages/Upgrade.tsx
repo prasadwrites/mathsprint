@@ -1,16 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useAccount } from "../App";
 import SquarePay from "../components/SquarePay";
 import TopBar, { Chip } from "../components/TopBar";
 import { listUpgradeRequests, replyUpgrade, requestUpgrade } from "../lib/db";
-import { PLANS, type PlanId, type UpgradeRequest } from "../lib/types";
+import { PLANS, type PlanId, type RequestMessage, type UpgradeRequest } from "../lib/types";
 
 const label = (id: PlanId) => PLANS.find((p) => p.id === id)?.label ?? id;
 export const when = (ms: number | null) =>
   ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
-/** The messages on one request, oldest first. `viewer` decides which side reads as "You". */
-export function Conversation({ r, viewer }: { r: UpgradeRequest; viewer: "student" | "admin" }) {
+/** The messages on one request or report, oldest first. `viewer` decides which side reads as "You". */
+export function Conversation({ r, viewer }: { r: { thread: RequestMessage[]; displayName: string; email: string; requestedPlan?: PlanId }; viewer: "student" | "admin" }) {
   if (!r.thread.length) return <p className="small muted">No note.</p>;
   return (
     <ol className="conversation">
@@ -22,7 +23,8 @@ export function Conversation({ r, viewer }: { r: UpgradeRequest; viewer: "studen
             <span className="small muted">
               {who} · {when(m.at)}
             </span>
-            {m.approved && <span className="small"><b>Upgraded to {label(r.requestedPlan)}.</b></span>}
+            {m.approved && r.requestedPlan && <span className="small"><b>Upgraded to {label(r.requestedPlan)}.</b></span>}
+            {m.resolved && <span className="small"><b>Marked as resolved.</b></span>}
             {m.text && <p>{m.text}</p>}
           </li>
         );
@@ -88,7 +90,8 @@ export default function Upgrade() {
     load();
   }, []);
 
-  const current = account?.plan ?? "free";
+  // Requests are for a lasting plan, so a running promotion doesn't count.
+  const current = account?.basePlan ?? account?.plan ?? "free";
   const currentIndex = PLANS.findIndex((p) => p.id === current);
   const pending = requests?.find((r) => r.status === "pending" && !r.approved);
   const choice = plan ?? PLANS[currentIndex + 1]?.id ?? null;
@@ -113,7 +116,18 @@ export default function Upgrade() {
     <>
       <TopBar back={{ to: "/", label: "Home" }} />
       <main className="page narrow">
-        <h1>Upgrade your plan</h1>
+        <div className="row spread">
+          <h1>Upgrade your plan</h1>
+          <Link to="/plans">Compare plans</Link>
+        </div>
+        {account?.promo && (
+          <p className="notice" role="status">
+            <b>
+              You're on {account.promo.planLabel} until {new Date(account.promo.endsAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} with a promotion.
+            </b>{" "}
+            After that you're back on {label(current)}, unless you upgrade.
+          </p>
+        )}
 
         <div className="tiles">
           {PLANS.map((p, i) => {

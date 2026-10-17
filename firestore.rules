@@ -75,6 +75,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Problem reports and plan promotions. Read and written only through functions.
+    match /reports/{reportId} {
+      allow read, write: if false;
+    }
+    match /promotions/{promotionId} {
+      allow read, write: if false;
+    }
+
     // Per-account access codes. Read and written only through the admin functions.
     match /accessCodes/{uid} {
       allow read, write: if false;

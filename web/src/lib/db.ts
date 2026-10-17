@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, AdminAccount, Group, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -114,6 +114,36 @@ export async function openTest(token: string, code?: string) {
 
 export async function submitTest(token: string, code: string, answers: Record<string, string>) {
   return (await httpsCallable<object, OpenTest>(functions, "submit_test")({ token, code, answers })).data;
+}
+
+export async function reportProblem(message: string, page: string) {
+  return (await httpsCallable<{ message: string; page: string }, ProblemReport>(functions, "report_problem")({ message, page })).data;
+}
+
+/** Users get their own reports (markRead clears the reply notification); the admin gets all of them. */
+export async function listReports(markRead = false) {
+  return (await httpsCallable<{ markRead: boolean }, { reports: ProblemReport[] }>(functions, "list_reports")({ markRead })).data.reports;
+}
+
+export async function replyReport(id: string, text: string) {
+  await httpsCallable<{ id: string; text: string }, { ok: boolean }>(functions, "reply_report")({ id, text });
+}
+
+export async function adminReplyReport(args: { id: string; text: string; resolve: boolean }) {
+  await httpsCallable<typeof args, { ok: boolean }>(functions, "admin_reply_report")(args);
+}
+
+export async function adminOfferPromotion(args: { uid: string; plan: PlanId; months: number; note: string }) {
+  return (await httpsCallable<typeof args, PromotionOffer>(functions, "admin_offer_promotion")(args)).data;
+}
+
+/** Withdraws an unanswered offer and ends a running promotion now. */
+export async function adminEndPromotion(uid: string) {
+  await httpsCallable<{ uid: string }, { ok: boolean }>(functions, "admin_end_promotion")({ uid });
+}
+
+export async function respondPromotion(id: string, accept: boolean) {
+  return (await httpsCallable<{ id: string; accept: boolean }, { accepted: boolean; endsAt?: number }>(functions, "respond_promotion")({ id, accept })).data;
 }
 
 /** One heartbeat for a minute of active use. The server ignores extra beats inside the same minute. */

@@ -82,8 +82,16 @@ export type PlanId = "free" | "pro" | "promax";
 
 /** The signed-in student's own account, from the get_account function. */
 export interface AccountSummary {
+  /** The plan in force now, a promotion's while it lasts. */
   plan: PlanId;
+  /** The plan without any promotion; it's back when the promotion ends. */
+  basePlan: PlanId;
   planLabel: string;
+  promo: { plan: PlanId; planLabel: string; endsAt: number } | null;
+  /** A promotion the admin offered that the user hasn't answered yet. */
+  offer: PromotionOffer | null;
+  /** Admin: reports waiting for a reply. Users: replies they haven't read. */
+  reports?: { open?: number; unread?: number };
   status: "active" | "suspended";
   decksCreated: number;
   maxDecks: number;
@@ -125,10 +133,35 @@ export interface RequestMessage {
   at: number | null;
   /** Set on the admin message that upgraded the plan. */
   approved?: boolean;
+  /** Set on the admin message that closed a problem report. */
+  resolved?: boolean;
+}
+
+export interface PromotionOffer {
+  id: string;
+  plan: PlanId;
+  planLabel: string;
+  months: number;
+  note: string;
+  createdAt: number | null;
+}
+
+export interface ProblemReport {
+  id: string;
+  uid: string;
+  email: string;
+  displayName: string;
+  /** Where in the app the user was when they reported it. */
+  page: string;
+  status: "open" | "replied" | "resolved";
+  thread: RequestMessage[];
+  userRead: boolean;
+  createdAt: number | null;
+  updatedAt: number | null;
 }
 
 /** One row on the admin accounts page. Times are milliseconds since the epoch. */
-export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgrade"> {
+export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgrade" | "reports"> {
   uid: string;
   email: string;
   displayName: string;

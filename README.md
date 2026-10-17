@@ -30,6 +30,8 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               assign_test            Pro and Pro Max: a deck for a group, one link and access code per member
               list_tests, get_test_results, reset_test_link, delete_test   the owner's tests and results
               open_test, submit_test no sign-in: a member opens their test with link + code, graded here
+              report_problem, list_reports, reply_report, admin_reply_report   problem reports to the admin
+              admin_offer_promotion, admin_end_promotion, respond_promotion    time-limited plan promotions
 ```
 
 ### Accounts and plans
@@ -57,6 +59,18 @@ Students invite friends from **Invite friends** in the top bar. Each invite is a
 ### Groups and group tests
 
 Pro and Pro Max accounts (and the admin) get **Groups** in the top bar. A teacher creates a group such as "8th Grade" and adds, edits or removes any number of emails (paste many at once, one per line or comma separated). On a deck's page, **Assign to a group** picks a group and a time limit (or none). Every member gets their own link (`/t/TOKEN`) and a 6-character access code; the teacher copies or emails each one, or copies everyone's at once. Members don't need an account: they open the link, enter the code, and the clock starts. Answers are graded by `submit_test` on the server, so the answer key never reaches their browser, and they see only their own result with worked solutions. The teacher's results page shows how many finished, the average score and time, how often each question was answered correctly, and each member's answers. Ten wrong codes lock a link until the teacher gives it a **New code**. Assigning the same deck to the same group again adds links for people added to the group since. The test keeps its own copy of the questions, so deleting the deck or the group doesn't break it. All of this lives in `groups`, `tests/{id}/questions` and `testTakers/{token}`, which only the Cloud Functions can read or write; the plan check is in `functions/groups.py`.
+
+### Plan comparison
+
+`/plans` compares Free, Pro and Pro Max and opens with or without signing in (from the sign-in page, the profile menu and the Upgrade page). Deck and question limits come from `PLANS` in `web/src/lib/types.ts`, which mirrors the server.
+
+### Problem reports
+
+Signed-in users pick **Report a problem** in the profile menu, which records the page they came from. The admin sees waiting reports on the home page, as a count on **Accounts**, and in **Problem reports** on the Accounts page, where they can reply or mark a report resolved. Either side can keep writing back; a user's message reopens it. Reports live in `reports/{id}`, functions only.
+
+### Promotions
+
+On the Accounts page the admin can **Offer a promotion**: a bigger plan for 1, 2, 3, 6 or 12 months, with an optional note. The user sees the offer on their home page and accepts or declines it. Accepting stores `promo {plan, startedAt, endsAt}` on the account; the term runs in calendar months from that moment. `plan_id()` in `functions/accounts.py` uses the promotion's plan only while it lasts, so the account is back on its own plan the moment the term ends, with nothing scheduled to switch it. Changing someone's plan during a promotion changes the plan they return to. The admin can withdraw an offer or end a promotion early. Offers live in `promotions/{id}`, functions only.
 
 ### Payments
 
