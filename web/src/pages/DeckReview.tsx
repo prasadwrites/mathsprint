@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import DeleteDeck from "../components/DeleteDeck";
 import AssignTest from "../components/AssignTest";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { getDeck, getQuestions } from "../lib/db";
@@ -15,6 +16,7 @@ const LEVELS = [
 export default function DeckReview() {
   const { deckId = "" } = useParams();
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const [deck, setDeck] = useState<Deck | null | undefined>(undefined);
   const [questions, setQuestions] = useState<Question[]>([]);
 
@@ -64,6 +66,7 @@ export default function DeckReview() {
             <Link className="btn btn-primary btn-big" to={`/decks/${deck.id}/practice`}>
               <Icon name="play" /> Start practice
             </Link>
+            <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
           </div>
         </div>
 
