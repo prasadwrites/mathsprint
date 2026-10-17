@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAccount } from "../App";
+import SquarePay from "../components/SquarePay";
 import TopBar, { Chip } from "../components/TopBar";
 import { listUpgradeRequests, replyUpgrade, requestUpgrade } from "../lib/db";
 import { PLANS, type PlanId, type UpgradeRequest } from "../lib/types";
@@ -149,6 +150,10 @@ export default function Upgrade() {
               <span className="muted">You asked for {label(pending.requestedPlan)} on {when(pending.createdAt)}.</span>
             </div>
             <p className="muted">You'll see the reply here and on your home page.</p>
+            <div className="pay-step">
+              <SquarePay plan={pending.requestedPlan} />
+              <span className="muted">Haven't paid for {label(pending.requestedPlan)} yet? Pay here and we'll switch your plan.</span>
+            </div>
           </div>
         ) : choice ? (
           <form
@@ -158,10 +163,17 @@ export default function Upgrade() {
               submit();
             }}
           >
-            <h2>Ask for {label(choice)}</h2>
+            <h2>Upgrade to {label(choice)}</h2>
+            <div className="stack" style={{ gap: 8 }}>
+              <b>1. Pay with Square</b>
+              <div className="pay-step">
+                <SquarePay plan={choice} />
+                <span className="muted">Checkout opens in a new window.</span>
+              </div>
+            </div>
             <div>
               <label htmlFor="upgrade-note">
-                Anything to add? <span className="muted">(optional)</span>
+                <b>2. Send your request</b> so we can switch your plan. Anything to add? <span className="muted">(optional)</span>
               </label>
               <textarea
                 id="upgrade-note"

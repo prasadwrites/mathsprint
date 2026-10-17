@@ -44,6 +44,10 @@ Everyone's first 5 decks need no access code (`CODE_FREE_DECKS` in `functions/ac
 
 Students ask for a bigger plan from **Request an upgrade** in the profile menu (or the link on Create deck). They can have one request waiting at a time. When the admin signs in, the home page shows how many requests are waiting and the **Accounts** link carries a count. On the Accounts page the admin can **Upgrade and reply** (changes the plan) or **Reply without upgrading**. The student then sees a dot on their avatar and a banner on the home page, and reads the reply on the Upgrade page. Each request is a conversation: either side can keep writing back, and a student's message puts the request back in the admin's waiting count. Requests live in `upgradeRequests/{id}`, which only the Cloud Functions can read or write.
 
+### Payments
+
+The Upgrade page shows Square's **Pay now** button for Pro and Pro Max (links in `web/src/components/SquarePay.tsx`). Checkout opens in a popup, the way Square's embed code does. Paying doesn't change the plan by itself: the student sends their upgrade request and the admin approves it on the Accounts page.
+
 ### Time on site
 
 While someone has MathSprint open in a visible tab and has touched the page in the last 5 minutes, the app sends one heartbeat a minute to `record_activity`. Each heartbeat adds a minute to the account (extra beats inside the same minute, such as from a second tab, add nothing). The Accounts page shows each person's total time, the last 7 days, today, and when they were last active, and can sort by time. Days are UTC, and daily totals older than 35 days are dropped; the all-time total is kept.
