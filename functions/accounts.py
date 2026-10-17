@@ -30,6 +30,8 @@ DEFAULT_PLAN = "free"
 STATUSES = {"active", "suspended"}
 MIN_QUESTIONS = 3
 MAX_QUESTIONS = max(p.max_questions for p in PLANS.values())
+CODE_FREE_DECKS = 5  # everyone's first decks need no access code
+WRONG_CODE = "That access code isn't right."
 
 
 class AccessDenied(Exception):
@@ -61,7 +63,23 @@ def summary(account: dict, admin: bool) -> dict:
         "maxDecks": plan.max_decks,
         "maxQuestions": plan.max_questions,
         "isAdmin": admin,
+        "needsCode": needs_code(account, admin),
+        "codeFreeLeft": 0 if admin else max(0, CODE_FREE_DECKS - int(account.get("decksCreated", 0))),
     }
+
+
+def needs_code(account: dict, admin: bool) -> bool:
+    """An access code is only asked for once someone has built their first CODE_FREE_DECKS decks."""
+    return not admin and int(account.get("decksCreated", 0)) >= CODE_FREE_DECKS
+
+
+def check_code(account: dict, code_valid: bool, given: object, admin: bool) -> None:
+    """Raises AccessDenied if this deck needs an access code and the right one wasn't given."""
+    if code_valid or not needs_code(account, admin):
+        return
+    if not str(given or "").strip():
+        raise AccessDenied(f"Your first {CODE_FREE_DECKS} decks didn't need a code. Enter an access code to build more.")
+    raise AccessDenied(WRONG_CODE)
 
 
 def check_can_generate(account: dict, count: int, admin: bool) -> None:

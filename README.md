@@ -38,7 +38,7 @@ The admin is `prasad.writes@gmail.com` (only when Firebase has verified the emai
 
 Everything is enforced server-side. `generate_deck` checks the plan and takes one deck from it in a Firestore transaction before calling Claude, and gives it back if generation fails. Decks count when created, so deleting one doesn't free a slot (the admin can reset the count). The admin account has no limits and needs no access code.
 
-An account's own access code replaces the shared `DECK_ACCESS_CODE` for that person; accounts without one keep using the shared code. Suspending an account disables its sign-in, revokes its open sessions, and makes Firestore rules refuse its reads and writes until it is reactivated.
+Everyone's first 5 decks need no access code (`CODE_FREE_DECKS` in `functions/accounts.py`), so Free accounts never need one. From the sixth deck on, an account's own access code replaces the shared `DECK_ACCESS_CODE` for that person; accounts without one keep using the shared code. Suspending an account disables its sign-in, revokes its open sessions, and makes Firestore rules refuse its reads and writes until it is reactivated.
 
 ### Upgrade requests
 
@@ -89,7 +89,7 @@ You need Node 20+, Python 3.12, the Firebase CLI (`npm i -g firebase-tools`), a 
 2. In the Firebase console, enable **Authentication** (Google and Email/Password providers) and create a **Firestore** database.
 3. Copy `web/.env.example` to `web/.env.local` and fill in the web app config from Project settings.
 4. Store the Claude key as a secret: `firebase functions:secrets:set ANTHROPIC_API_KEY`
-   Then set the access code people must enter to build a deck: `firebase functions:secrets:set DECK_ACCESS_CODE`. Change it any time by running the same command and redeploying the functions.
+   Then set the access code people must enter to build decks after their first 5: `firebase functions:secrets:set DECK_ACCESS_CODE`. Change it any time by running the same command and redeploying the functions.
 5. Install:
    ```bash
    npm --prefix web install

@@ -68,8 +68,9 @@ def _load_account(db, req: https_fn.CallableRequest) -> dict:
     return account
 
 
-def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool) -> None:
-    """Checks the plan and takes one deck from it atomically, so two tabs can't both use the last deck."""
+def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool, code_valid: bool, given_code: object) -> None:
+    """Checks the plan and access code and takes one deck from the plan atomically, so two tabs can't both use the last deck
+    (or the last deck that needs no code)."""
 
     ref = _account_ref(db, req.auth.uid)
 
@@ -79,6 +80,7 @@ def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool) ->
         if snap.exists:
             account = snap.to_dict()
             accounts.check_can_generate(account, count, admin)
+            accounts.check_code(account, code_valid, given_code, admin)
             transaction.update(ref, {"decksCreated": firestore.Increment(1)})
         else:
             token = req.auth.token or {}
@@ -97,8 +99,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
     db = firestore.client()
     code_doc = db.collection("accessCodes").document(uid).get()
     account_code = code_doc.get("code") if code_doc.exists else None
-    if not accounts.code_ok(data.get("accessCode"), account_code, os.environ.get("DECK_ACCESS_CODE"), admin):
-        raise _denied("That access code isn't right.")
+    code_valid = accounts.code_ok(data.get("accessCode"), account_code, os.environ.get("DECK_ACCESS_CODE"), admin)
     topic = _clean(data.get("topic"), 200)
     if not topic:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Tell me what to practice.")
@@ -107,7 +108,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
     except (TypeError, ValueError):
         count = 10
     try:
-        _reserve_deck(db, req, count, admin)
+        _reserve_deck(db, req, count, admin, code_valid, data.get("accessCode"))
     except AccessDenied as e:
         raise _denied(str(e))
     difficulty = data.get("difficulty") if data.get("difficulty") in DIFFICULTIES else "Medium"

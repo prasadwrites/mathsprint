@@ -39,7 +39,6 @@ export default function CreateDeck() {
   const maxQuestions = account?.maxQuestions ?? 20;
   const outOfDecks = !!account && !account.isAdmin && account.decksCreated >= account.maxDecks;
   const suspended = account?.status === "suspended";
-  const needsCode = !account?.isAdmin;
   const [params] = useSearchParams();
   const [topic, setTopic] = useState(params.get("topic") ?? "");
   const [asked, setAsked] = useState(!!params.get("topic"));
@@ -48,6 +47,9 @@ export default function CreateDeck() {
   const [level, setLevel] = useState("");
   const [notes, setNotes] = useState(params.get("notes") ?? "");
   const [accessCode, setAccessCode] = useState(storedCode);
+  // Set when the server asks for a code the account summary didn't know about yet.
+  const [codeAsked, setCodeAsked] = useState(false);
+  const needsCode = codeAsked || !!account?.needsCode;
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
@@ -65,12 +67,13 @@ export default function CreateDeck() {
     setBusy(true);
     setError("");
     try {
-      const res = await generateDeck({ topic, count: clamp(count), difficulty, level: level || "High school or college", notes, accessCode: needsCode ? accessCode.trim() : "" });
+      const res = await generateDeck({ topic, count: clamp(count), difficulty, level: level || "High school or college", notes, accessCode: accessCode.trim() });
       if (needsCode) storeCode(accessCode.trim());
       refresh();
       navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
     } catch (e) {
       if ((e as Error).message === "That access code isn't right.") storeCode(null);
+      if (/access code/i.test((e as Error).message)) setCodeAsked(true);
       refresh();
       setError((e as Error).message || "The deck couldn't be generated. Try again.");
       setBusy(false);
@@ -196,6 +199,11 @@ export default function CreateDeck() {
                         ? `You've used all ${account.maxDecks} decks on your plan.`
                         : `${account.decksCreated} of ${account.maxDecks} decks used.`}
                     </span>
+                    {account.codeFreeLeft > 0 && account.maxDecks > account.decksCreated + account.codeFreeLeft && (
+                      <span className="muted" style={{ fontSize: 14 }}>
+                        · {account.codeFreeLeft === 1 ? "1 more deck" : `${account.codeFreeLeft} more decks`} without an access code
+                      </span>
+                    )}
                     {account.plan !== "promax" && (
                       <Link to="/upgrade" style={{ fontWeight: 700, fontSize: 14 }}>
                         {account.upgrade?.pendingPlan ? "Upgrade requested" : "Request an upgrade"}
