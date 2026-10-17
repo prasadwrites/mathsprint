@@ -17,6 +17,7 @@ list_groups, save_group, delete_group - Pro and Pro Max: contact groups of email
 assign_test           - Pro and Pro Max: assign a deck to a group, with a link and access code for each member.
 list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
 open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
+delete_deck           - The owner deletes one of their decks with its questions and practice history. The plan count stays.
 report_problem, list_reports, reply_report - A signed-in user reports a problem; the user and admin write back and forth.
 admin_reply_report    - Admin only: answer a problem report, optionally marking it resolved.
 admin_offer_promotion, admin_end_promotion - Admin only: offer a bigger plan for some months, or end it early.
@@ -1219,3 +1220,21 @@ def respond_promotion(req: https_fn.CallableRequest) -> dict:
         return {"accepted": True, "endsAt": ends}
 
     return run(db.transaction())
+
+
+@https_fn.on_call(timeout_sec=120)
+def delete_deck(req: https_fn.CallableRequest) -> dict:
+    """Deletes a deck, its questions and its practice sessions. decksCreated is left alone: a deleted deck still counts
+    toward the plan. Tests already assigned from it keep working on their own copy of the questions."""
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    deck = _owned(db, "decks", (req.data or {}).get("deckId"), uid, "That deck no longer exists.")
+    sessions = list(db.collection("sessions").where("ownerId", "==", uid).where("deckId", "==", deck.id).stream())
+    writer = db.bulk_writer()
+    for s in sessions:
+        writer.delete(s.reference)
+    writer.close()
+    db.recursive_delete(deck.reference)
+    return {"ok": True, "sessions": len(sessions)}

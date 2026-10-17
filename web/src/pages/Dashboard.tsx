@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
+import DeleteDeck from "../components/DeleteDeck";
 import PromotionOffer from "../components/PromotionOffer";
 import { addSampleDeck, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
@@ -150,6 +151,7 @@ export default function Dashboard() {
                       <Link className="btn" to={`/decks/${d.id}`}>
                         Review
                       </Link>
+                      <DeleteDeck deck={d} onDeleted={() => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null)} />
                     </div>
                   </article>
                 );

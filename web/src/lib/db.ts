@@ -191,6 +191,11 @@ export async function replyUpgrade(id: string, text: string) {
   await httpsCallable<{ id: string; text: string }, { ok: boolean }>(functions, "reply_upgrade")({ id, text });
 }
 
+/** Deletes the deck with its questions and practice history. It still counts toward the plan's decks. */
+export async function deleteDeck(deckId: string) {
+  return (await httpsCallable<{ deckId: string }, { ok: boolean; sessions: number }>(functions, "delete_deck", { timeout: 120_000 })({ deckId })).data;
+}
+
 /** Adds a ready-made deck so a new student can try practice before generating their own. */
 export async function addSampleDeck(uid: string): Promise<string> {
   const deckRef = doc(collection(db, "decks"));

@@ -30,6 +30,7 @@ React + TypeScript (Vite, Tailwind)  ── Firebase Hosting
               assign_test            Pro and Pro Max: a deck for a group, one link and access code per member
               list_tests, get_test_results, reset_test_link, delete_test   the owner's tests and results
               open_test, submit_test no sign-in: a member opens their test with link + code, graded here
+              delete_deck            the owner deletes a deck, its questions and its practice history
               report_problem, list_reports, reply_report, admin_reply_report   problem reports to the admin
               admin_offer_promotion, admin_end_promotion, respond_promotion    time-limited plan promotions
 ```
@@ -44,7 +45,7 @@ The admin is `prasad.writes@gmail.com` (only when Firebase has verified the emai
 | Pro | 50 | 120 |
 | Pro Max | 100 | 200 |
 
-Everything is enforced server-side. `generate_deck` checks the plan and takes one deck from it in a Firestore transaction before calling Claude, and gives it back if generation fails. Decks count when created, so deleting one doesn't free a slot (the admin can reset the count). The admin account has no limits and needs no access code.
+Everything is enforced server-side. `generate_deck` checks the plan and takes one deck from it in a Firestore transaction before calling Claude, and gives it back if generation fails. Decks count when created, so deleting one doesn't free a slot (the admin can reset the count). Students delete a deck from its card or page after confirming; `delete_deck` removes its questions and practice sessions, and tests already assigned from it keep their own copy. The admin account has no limits and needs no access code.
 
 Everyone's first 5 decks need no access code (`CODE_FREE_DECKS` in `functions/accounts.py`), so Free accounts never need one. From the sixth deck on, an account's own access code replaces the shared `DECK_ACCESS_CODE` for that person; accounts without one keep using the shared code. Suspending an account disables its sign-in, revokes its open sessions, and makes Firestore rules refuse its reads and writes until it is reactivated.
 
