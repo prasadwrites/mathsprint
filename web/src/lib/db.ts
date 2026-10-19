@@ -112,8 +112,8 @@ export async function openTest(token: string, code?: string) {
   return (await httpsCallable<{ token: string; code?: string }, OpenTest>(functions, "open_test")(code === undefined ? { token } : { token, code })).data;
 }
 
-export async function submitTest(token: string, code: string, answers: Record<string, string>) {
-  return (await httpsCallable<object, OpenTest>(functions, "submit_test")({ token, code, answers })).data;
+export async function submitTest(token: string, code: string, answers: Record<string, string>, track: { times: number[]; visits: number[]; changes: number[] }) {
+  return (await httpsCallable<object, OpenTest>(functions, "submit_test")({ token, code, answers, ...track })).data;
 }
 
 export async function reportProblem(message: string, page: string) {

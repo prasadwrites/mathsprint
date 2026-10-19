@@ -237,6 +237,12 @@ export interface TestTaker {
   completedAt: number | null;
   answers: Record<string, string>;
   results: Record<string, boolean>;
+  /** Seconds spent on each question, by index. Missing for tests finished before this was recorded. */
+  times?: number[] | null;
+  /** How many times each question was opened. */
+  visits?: number[] | null;
+  /** How many times each answer was changed after it was first given. */
+  changes?: number[] | null;
 }
 
 export interface TestResults {
@@ -273,7 +279,7 @@ export interface OwnTestResult {
   score: number;
   total: number;
   usedSec: number;
-  questions: { prompt: string; math: string; answer: string; correct: boolean; answerDisplay: string; steps: SolutionStep[] }[];
+  questions: { prompt: string; math: string; answer: string; correct: boolean; answerDisplay: string; steps: SolutionStep[]; sec?: number | null }[];
 }
 
 /** Groups and group tests come with Pro and Pro Max. The server checks this too. */

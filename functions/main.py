@@ -822,6 +822,10 @@ def _taker_row(doc) -> dict:
         "completedAt": _ms(r.get("completedAt")),
         "answers": r.get("answers") or {},
         "results": r.get("results") or {},
+        # Per-question detail; tests finished before this was recorded have none.
+        "times": r.get("times"),
+        "visits": r.get("visits"),
+        "changes": r.get("changes"),
     }
 
 
@@ -903,6 +907,7 @@ def _test_meta(test, taker: dict) -> dict:
 def _own_result(questions: list[dict], taker: dict) -> dict:
     """Only this student's own answers and score."""
     answers, results = taker.get("answers") or {}, taker.get("results") or {}
+    times = taker.get("times") or []
     return {
         "score": taker.get("score", 0),
         "total": len(questions),
@@ -914,6 +919,7 @@ def _own_result(questions: list[dict], taker: dict) -> dict:
             "correct": bool(results.get(str(i))),
             "answerDisplay": q.get("answerDisplay", ""),
             "steps": q.get("steps") or [],
+            "sec": times[i] if i < len(times) else None,
         } for i, q in enumerate(questions)],
     }
 
@@ -983,6 +989,10 @@ def submit_test(req: https_fn.CallableRequest) -> dict:
             "late": bool(limit) and used * 1000 > limit * 1000 + groups.LATE_GRACE_MS,
             "completedAt": firestore.SERVER_TIMESTAMP,
         }
+        if isinstance(data.get("times"), list):  # a page loaded before timing was added sends none
+            changes["times"] = groups.clean_times(data.get("times"), len(questions), used)
+            changes["visits"] = groups.clean_counts(data.get("visits"), len(questions))
+            changes["changes"] = groups.clean_counts(data.get("changes"), len(questions))
         transaction.update(ref, changes)
         return {**taker, **changes}
 

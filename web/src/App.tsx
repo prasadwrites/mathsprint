@@ -19,6 +19,7 @@ import Report from "./pages/Report";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
 import TestResults from "./pages/TestResults";
+import MemberResult from "./pages/MemberResult";
 import Invite from "./pages/Invite";
 import Upgrade from "./pages/Upgrade";
 
@@ -99,6 +100,7 @@ function SignedInApp() {
         <Route path="/groups" element={<Groups />} />
         <Route path="/report" element={<Report />} />
         <Route path="/tests/:testId" element={<TestResults />} />
+        <Route path="/tests/:testId/m/:token" element={<MemberResult />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </AccountContext.Provider>

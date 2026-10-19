@@ -5,21 +5,30 @@ import { openTest, submitTest } from "../lib/db";
 import { formatClock } from "../lib/pace";
 import type { OpenTest, OwnTestResult } from "../lib/types";
 
-/** A refresh keeps the code and answers, so the student lands back on their test. */
+/** Per question: seconds on screen, times opened, and times an answer was changed after it was first given. */
+type Track = { times: number[]; visits: number[]; changes: number[] };
+type Saved = { code?: string; answers?: Record<string, string>; track?: Track };
+
+/** A refresh keeps the code, answers and timings, so the student lands back on their test. */
 const storeKey = (token: string) => `ms.test.${token}`;
-function loadLocal(token: string): { code?: string; answers?: Record<string, string> } {
+function loadLocal(token: string): Saved {
   try {
     return JSON.parse(localStorage.getItem(storeKey(token)) || "{}");
   } catch {
     return {};
   }
 }
-function saveLocal(token: string, value: { code: string; answers: Record<string, string> }) {
+function saveLocal(token: string, value: Saved) {
   try {
     localStorage.setItem(storeKey(token), JSON.stringify(value));
   } catch {
     /* storage unavailable */
   }
+}
+
+function newTrack(saved: Track | undefined, n: number): Track {
+  const fit = (xs: unknown) => Array.from({ length: n }, (_, i) => (Array.isArray(xs) && typeof xs[i] === "number" ? xs[i] : 0));
+  return { times: fit(saved?.times), visits: fit(saved?.visits), changes: fit(saved?.changes) };
 }
 
 function Result({ test, result }: { test: OpenTest; result: OwnTestResult }) {
@@ -61,6 +70,12 @@ function Result({ test, result }: { test: OpenTest; result: OwnTestResult }) {
               <b>{q.answer || "–"}</b>
               <span className="muted">Correct answer</span>
               <b>{q.answerDisplay}</b>
+              {q.sec != null && (
+                <>
+                  <span className="muted">Time</span>
+                  <b>{formatClock(q.sec)}</b>
+                </>
+              )}
             </div>
             {q.steps.length > 0 && (
               <details>
@@ -95,14 +110,29 @@ function Questions({ token, code, test, onDone }: { token: string; code: string;
   const sent = useRef(false);
   const answersRef = useRef(answers);
   answersRef.current = answers;
+  const track = useRef(newTrack(loadLocal(token).track, N));
+  const iRef = useRef(i);
+  iRef.current = i;
+  const entry = useRef(""); // the answer the open question had when it was opened
+  const lastOpened = useRef(-1);
+
+  const persist = useCallback(() => saveLocal(token, { code, answers: answersRef.current, track: track.current }), [token, code]);
+  /** Counts a changed answer when the student moves off a question they had already answered. */
+  const noteChange = useCallback((k: number) => {
+    const now = (answersRef.current[k] ?? "").trim();
+    if (entry.current && now && now !== entry.current) track.current.changes[k] += 1;
+    entry.current = now;
+  }, []);
 
   const submit = useCallback(async () => {
     if (sent.current) return;
     sent.current = true;
     setSending(true);
     setError("");
+    noteChange(iRef.current);
+    persist();
     try {
-      const done = await submitTest(token, code, answersRef.current);
+      const done = await submitTest(token, code, answersRef.current, track.current);
       try {
         localStorage.removeItem(storeKey(token));
       } catch {
@@ -114,12 +144,30 @@ function Questions({ token, code, test, onDone }: { token: string; code: string;
       setSending(false);
       setError((e as Error).message || "Your answers didn't send. Check your connection and try again.");
     }
-  }, [token, code, onDone]);
+  }, [token, code, onDone, noteChange, persist]);
 
   useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 250);
+    let last = Date.now();
+    let saved = last;
+    const t = window.setInterval(() => {
+      const n = Date.now();
+      setNow(n);
+      // Only time the question while it's on screen; a long gap means the device slept.
+      if (document.visibilityState === "visible" && !sent.current) track.current.times[iRef.current] += Math.min(n - last, 5000) / 1000;
+      last = n;
+      if (n - saved >= 2000) {
+        saved = n;
+        persist();
+      }
+    }, 250);
     return () => window.clearInterval(t);
-  }, []);
+  }, [persist]);
+  useEffect(() => {
+    if (lastOpened.current !== i) track.current.visits[i] += 1; // not again when React re-runs the effect
+    lastOpened.current = i;
+    entry.current = (answersRef.current[i] ?? "").trim();
+    return () => noteChange(i);
+  }, [i, noteChange]);
   useEffect(() => {
     if (deadline.current !== null && now >= deadline.current) submit();
   }, [now, submit]);
@@ -130,7 +178,7 @@ function Questions({ token, code, test, onDone }: { token: string; code: string;
   const setAnswer = (value: string) => {
     const next = { ...answers, [i]: value };
     setAnswers(next);
-    saveLocal(token, { code, answers: next });
+    saveLocal(token, { code, answers: next, track: track.current });
   };
   const last = i === N - 1;
   const left = deadline.current === null ? null : Math.max(0, (deadline.current - now) / 1000);
@@ -252,7 +300,7 @@ export default function TakeTest() {
       setError("");
       try {
         const t = await openTest(token, given);
-        saveLocal(token, { code: given, answers: loadLocal(token).answers ?? {} });
+        saveLocal(token, { ...loadLocal(token), code: given });
         setCode(given);
         setTest(t);
       } catch (e) {
