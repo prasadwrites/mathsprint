@@ -337,3 +337,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .plans-table thead th { font-size: 15px; }
   .plans-table th, .plans-table td { padding: 12px 4px; }
 }
+.tbar.timed { grid-template-columns: 28px 1fr 48px 48px; }
+.tbar.wide { grid-template-columns: minmax(90px, 160px) 1fr 56px; }
+.legend i.mark { width: 2px; height: 14px; border-radius: 0; background: var(--ink); opacity: .6; }

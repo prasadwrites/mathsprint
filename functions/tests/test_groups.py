@@ -67,3 +67,17 @@ def test_grade_and_overall():
     assert o["averageScore"] == 1.5 and o["averageSec"] == 90
     assert o["questionCorrect"] == [2, 1]
     assert groups.overall([], 2)["averageScore"] is None
+
+
+def test_clean_times_clamps_and_fits_the_server_clock():
+    assert groups.clean_times([10, "x", -5, None, float("nan")], 5, 100) == [10.0, 0.0, 0.0, 0.0, 0.0]
+    assert groups.clean_times([1.26], 3, 100) == [1.3, 0.0, 0.0]
+    # A browser that claims more time than the server saw is scaled down to fit.
+    assert groups.clean_times([300, 100], 2, 100) == [75.0, 25.0]
+    assert groups.clean_times("nope", 2, 100) == [0.0, 0.0]
+    assert groups.clean_times([5, 5, 5], 2, 100) == [5.0, 5.0]
+
+
+def test_clean_counts_are_small_whole_numbers():
+    assert groups.clean_counts([2, "3", -1, 10**9, "x"], 6) == [2, 3, 0, 999, 0, 0]
+    assert groups.clean_counts(None, 2) == [0, 0]

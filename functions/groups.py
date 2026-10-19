@@ -110,6 +110,38 @@ def clean_answers(answers: object, count: int) -> dict[str, str]:
     return out
 
 
+def clean_times(times: object, count: int, used_sec: float) -> list[float]:
+    """Seconds the student spent on each question, as their browser measured it. The browser can't be trusted,
+    so values are clamped and scaled down to fit the time the server saw them take."""
+    raw = times if isinstance(times, list) else []
+    out = []
+    for i in range(count):
+        v = raw[i] if i < len(raw) else 0
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            v = 0.0
+        out.append(v if v > 0 and v == v and v != float("inf") else 0.0)
+    total = sum(out)
+    room = max(0.0, float(used_sec))
+    if total > room and total > 0:
+        out = [v * room / total for v in out]
+    return [round(v, 1) for v in out]
+
+
+def clean_counts(counts: object, count: int, cap: int = 999) -> list[int]:
+    """Small per-question counters from the browser, such as how often an answer was changed."""
+    raw = counts if isinstance(counts, list) else []
+    out = []
+    for i in range(count):
+        try:
+            v = int(raw[i]) if i < len(raw) else 0
+        except (TypeError, ValueError, OverflowError):
+            v = 0
+        out.append(max(0, min(cap, v)))
+    return out
+
+
 def grade(questions: list[dict], answers: dict[str, str]) -> dict:
     results = {str(i): is_correct(q, answers.get(str(i))) for i, q in enumerate(questions)}
     score = sum(results.values())

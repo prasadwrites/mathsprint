@@ -3,11 +3,12 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import TopBar, { Chip } from "../components/TopBar";
 import { deleteTest, getTestResults, resetTestLink } from "../lib/db";
 import { formatClock } from "../lib/pace";
+import { conceptStats, groupStats, questionStats, rankOf } from "../lib/testStats";
 import { shareText, testLink, testMailto } from "../lib/tests";
 import type { TestResults as Results, TestTaker } from "../lib/types";
 import { when } from "./Upgrade";
 
-function CopyButton({ text, label }: { text: string; label: string }) {
+export function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -42,7 +43,6 @@ function status(t: TestTaker, total: number) {
 }
 
 function Member({ t, data, onReset }: { t: TestTaker; data: Results; onReset: (t: TestTaker) => void }) {
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const title = data.test.deckTitle;
   const total = data.questions.length;
@@ -50,7 +50,10 @@ function Member({ t, data, onReset }: { t: TestTaker; data: Results; onReset: (t
     <li className="request">
       <div className="row spread">
         <b style={{ overflowWrap: "anywhere" }}>{t.email}</b>
-        {status(t, total)}
+        <span className="row" style={{ gap: 8 }}>
+          {t.status === "completed" && rankOf(data, t).of > 1 && <span className="small muted">#{rankOf(data, t).rank}</span>}
+          {status(t, total)}
+        </span>
       </div>
       <span className="small">
         {t.status === "completed"
@@ -83,25 +86,11 @@ function Member({ t, data, onReset }: { t: TestTaker; data: Results; onReset: (t
           </button>
         )}
         {t.status === "completed" && (
-          <button type="button" className="btn btn-small" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {open ? "Hide answers" : "See answers"}
-          </button>
+          <Link className="btn btn-small btn-primary" to={`/tests/${data.test.id}/m/${t.token}`}>
+            See their result
+          </Link>
         )}
       </div>
-      {open && (
-        <ol className="answer-grid">
-          {data.questions.map((q, i) => (
-            <li key={i} className={t.results[i] ? "ok" : "no"}>
-              <span className="mono muted">{i + 1}</span>
-              <span>
-                {q.prompt} <span className="mono">{q.math}</span>
-              </span>
-              <span className="mono">{t.answers[i] || "–"}</span>
-              <span>{t.results[i] ? <Chip tone="good">Correct</Chip> : <Chip tone="miss">Answer: {q.answerDisplay}</Chip>}</span>
-            </li>
-          ))}
-        </ol>
-      )}
     </li>
   );
 }
@@ -112,6 +101,7 @@ export default function TestResults() {
   const [data, setData] = useState<Results | null>(null);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [sortBy, setSortBy] = useState<"name" | "score">("name");
 
   useEffect(() => {
     getTestResults(testId)
@@ -125,6 +115,14 @@ export default function TestResults() {
 
   const { test, overall, questions, takers } = data;
   const N = questions.length;
+  const g = groupStats(data);
+  const qs = questionStats(data);
+  const topics = conceptStats(data);
+  const maxBand = Math.max(1, ...g.bands.map((b) => b.count));
+  const sorted =
+    sortBy === "name"
+      ? takers
+      : [...takers].sort((a, b) => (b.status === "completed" ? 1 : 0) - (a.status === "completed" ? 1 : 0) || (b.score ?? 0) - (a.score ?? 0) || (a.usedSec ?? 0) - (b.usedSec ?? 0));
   const allText = takers.map((t) => `${t.email}\n${testLink(t.token)}\nAccess code: ${t.code}`).join("\n\n");
 
   return (
@@ -171,33 +169,112 @@ export default function TestResults() {
         </div>
 
         {overall.completed > 0 && (
-          <section className="panel stack">
-            <div className="row spread">
-              <h2>Question by question</h2>
-              <span className="muted">Share of finishers who got it right</span>
+          <>
+            <div className="tiles four">
+              <div className="tile">
+                <span className="label">Median score</span>
+                <span className="value">
+                  {g.median === null ? "–" : `${g.median % 1 ? g.median.toFixed(1) : g.median}/${N}`}
+                </span>
+              </div>
+              <div className="tile">
+                <span className="label">Best and lowest</span>
+                <span className="value">
+                  {g.best}/{N} · {g.lowest}/{N}
+                </span>
+              </div>
+              <div className="tile">
+                <span className="label">Median time</span>
+                <span className="value">{g.medianSec === null ? "–" : formatClock(g.medianSec)}</span>
+              </div>
+              <div className="tile">
+                <span className="label">Sent late</span>
+                <span className="value">{g.late}</span>
+                <span className="muted">{g.late ? "after the time ran out" : "Everyone finished on time"}</span>
+              </div>
             </div>
-            <div className="tbars">
-              {questions.map((q, i) => {
-                const pct = overall.questionCorrect[i] / overall.completed;
-                return (
-                  <div className="tbar" key={i} title={`${q.prompt} ${q.math}`}>
-                    <span className="mono muted">{i + 1}</span>
+
+            <section className="panel stack">
+              <h2>Scores</h2>
+              <div className="tbars">
+                {g.bands.map((b) => (
+                  <div className="tbar wide" key={b.label}>
+                    <span className="small">{b.label}</span>
                     <div className="b">
-                      <i style={{ width: `${pct * 100}%`, background: `var(--${pct >= 0.5 ? "accent" : "miss"})` }} />
+                      <i style={{ width: `${(b.count / maxBand) * 100}%`, background: "var(--accent)" }} />
                     </div>
-                    <span className="mono">{Math.round(pct * 100)}%</span>
+                    <span className="mono">{b.count}</span>
                   </div>
-                );
-              })}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+
+            <section className="panel stack">
+              <div className="row spread">
+                <h2>Question by question</h2>
+                <span className="muted">Share of finishers who got it right{g.timed > 0 && ", and their average time"}</span>
+              </div>
+              {g.hardest && g.easiest && g.hardest.i !== g.easiest.i && (
+                <p className="muted small">
+                  Hardest was question {g.hardest.i + 1} ({Math.round(g.hardest.correctPct! * 100)}% right). Easiest was question {g.easiest.i + 1} ({Math.round(g.easiest.correctPct! * 100)}% right).
+                </p>
+              )}
+              <div className="tbars">
+                {questions.map((q, i) => {
+                  const pct = overall.questionCorrect[i] / overall.completed;
+                  return (
+                    <div className={`tbar${g.timed > 0 ? " timed" : ""}`} key={i} title={`${q.prompt} ${q.math}`}>
+                      <span className="mono muted">{i + 1}</span>
+                      <div className="b">
+                        <i style={{ width: `${pct * 100}%`, background: `var(--${pct >= 0.5 ? "accent" : "miss"})` }} />
+                      </div>
+                      <span className="mono">{Math.round(pct * 100)}%</span>
+                      {g.timed > 0 && <span className="mono muted">{qs[i].avgSec === null ? "–" : formatClock(qs[i].avgSec!)}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {g.timed > 0 && g.timed < overall.completed && (
+                <p className="muted small">Times come from the {g.timed} members who finished after MathSprint started tracking time per question.</p>
+              )}
+            </section>
+
+            {topics.length > 1 && (
+              <section className="panel stack">
+                <h2>By topic</h2>
+                <div className="tbars">
+                  {topics.map((c) => (
+                    <div className="tbar wide" key={c.concept}>
+                      <span className="small">
+                        {c.concept} <span className="muted">({c.questions})</span>
+                      </span>
+                      <div className="b">
+                        <i style={{ width: `${c.pct * 100}%`, background: `var(--${c.pct >= 0.5 ? "accent" : "miss"})` }} />
+                      </div>
+                      <span className="mono">{Math.round(c.pct * 100)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
 
         <section className="stack">
-          <h2>Members</h2>
+          <div className="row spread">
+            <h2>Members</h2>
+            <div className="seg" role="group" aria-label="Sort members">
+              <button type="button" aria-pressed={sortBy === "name"} onClick={() => setSortBy("name")}>
+                By email
+              </button>
+              <button type="button" aria-pressed={sortBy === "score"} onClick={() => setSortBy("score")}>
+                By score
+              </button>
+            </div>
+          </div>
           <div className="panel">
             <ul className="requests">
-              {takers.map((t) => (
+              {sorted.map((t) => (
                 <Member
                   key={t.token}
                   t={t}
