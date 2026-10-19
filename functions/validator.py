@@ -18,14 +18,20 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
-from schema import GeneratedQuestion
+from schema import Figure, GeneratedQuestion
 
 # parse_expr evaluates Python, so only a tiny, known vocabulary is let through.
 _ALLOWED_CHARS = re.compile(r"^[0-9a-zA-Z+\-*/^()., =]*$")
 _ALLOWED_NAMES = {
     "sqrt": sp.sqrt, "pi": sp.pi, "E": sp.E, "exp": sp.exp, "log": sp.log, "ln": sp.log,
-    "sin": sp.sin, "cos": sp.cos, "tan": sp.tan, "abs": sp.Abs, "Abs": sp.Abs,
+    "sin": sp.sin, "cos": sp.cos, "tan": sp.tan, "abs": sp.Abs, "Abs": sp.Abs, "diff": sp.diff,
 }
+X = sp.Symbol("x", real=True)
+FIGURE_MAX_ITEMS = 8
+# Grid lines per axis: fewer than 2 says nothing, more than 40 is unreadable on a phone.
+GRID_LINES = (2, 40)
+# Two labels closer than this share of the view's width or height would overlap.
+LABEL_GAP = 0.04
 _TRANSFORMS = standard_transformations + (implicit_multiplication_application, convert_xor)
 
 
@@ -40,23 +46,35 @@ class CheckResult:
     computed: list[float] | None = None
 
 
-def _parse(text: str, variable: str) -> sp.Expr:
+def _parse(text: str, variable: str, functions: dict[str, sp.Lambda] | None = None) -> sp.Expr:
+    """`functions` are the graphs drawn in the question's figure, so a check can say f(3) or f(x) = g(x)."""
+    functions = functions or {}
     text = text.replace("−", "-").replace("·", "*").replace("×", "*")
     if not _ALLOWED_CHARS.match(text) or "__" in text:
         raise UnsafeExpression(f"expression has characters outside the allowed set: {text!r}")
     for name in re.findall(r"[A-Za-z]+", text):
-        if name not in _ALLOWED_NAMES and name != variable:
+        if name not in _ALLOWED_NAMES and name != variable and name not in functions:
             raise UnsafeExpression(f"unknown name {name!r} in {text!r}")
-    local = dict(_ALLOWED_NAMES)
+    local = {**_ALLOWED_NAMES, **functions}
     if variable:
         local[variable] = sp.Symbol(variable, real=True)
     return parse_expr(text, local_dict=local, global_dict={"Integer": sp.Integer, "Float": sp.Float, "Rational": sp.Rational, "Symbol": sp.Symbol}, transformations=_TRANSFORMS)
 
 
+def figure_functions(figure: Figure | None) -> dict[str, sp.Lambda]:
+    """The figure's graphs that have a one-letter name, as functions of x a check can call."""
+    out: dict[str, sp.Lambda] = {}
+    for item in figure.items if figure else []:
+        if item.type in ("function", "region") and re.fullmatch(r"[a-z]", item.label) and item.label not in "exy":
+            out[item.label] = sp.Lambda(X, _parse(item.expr, "x"))
+    return out
+
+
 def _solutions(question: GeneratedQuestion) -> list[float]:
     c = question.check
+    functions = figure_functions(question.figure)
     if c.kind == "evaluate":
-        value = _parse(c.expression, "")
+        value = _parse(c.expression, "", functions)
         return [float(sp.N(value))]
 
     if not re.fullmatch(r"[a-zA-Z]", c.variable or ""):
@@ -65,7 +83,7 @@ def _solutions(question: GeneratedQuestion) -> list[float]:
         raise ValueError("solve checks need exactly one '='")
     lhs, rhs = c.expression.split("=")
     x = sp.Symbol(c.variable, real=True)
-    eq = sp.Eq(_parse(lhs, c.variable), _parse(rhs, c.variable))
+    eq = sp.Eq(_parse(lhs, c.variable, functions), _parse(rhs, c.variable, functions))
     sols = sp.solveset(eq, x, domain=sp.S.Reals)
     if not isinstance(sols, sp.FiniteSet):
         raise ValueError("check does not have a finite set of real solutions")
@@ -95,9 +113,83 @@ def parse_number(text: str) -> float | None:
         return None
 
 
+def _on_grid(v: float, grid: float) -> bool:
+    half = grid / 2
+    return abs(v / half - round(v / half)) < 1e-6
+
+
+def _coordinates(label: str) -> tuple[float, float] | None:
+    m = re.fullmatch(r"\s*\(\s*([^,()]+?)\s*,\s*([^,()]+?)\s*\)\s*", label)
+    if not m:
+        return None
+    a, b = parse_number(m.group(1)), parse_number(m.group(2))
+    return None if a is None or b is None else (a, b)
+
+
+def check_figure(fig: Figure) -> str:
+    """Why the figure is wrong or unreadable, or '' if it is fine."""
+    if not (fig.x_min < fig.x_max and fig.y_min < fig.y_max):
+        return "figure ranges are empty: x_min must be below x_max and y_min below y_max"
+    w, h = fig.x_max - fig.x_min, fig.y_max - fig.y_min
+    for axis, span, step in (("x", w, fig.x_grid), ("y", h, fig.y_grid)):
+        if step <= 0 or not GRID_LINES[0] <= span / step <= GRID_LINES[1]:
+            return f"{axis}_grid {step:g} gives too few or too many grid lines for the {axis} range; aim for 6 to 20"
+    if not fig.alt.strip():
+        return "figure needs alt text"
+    if not 1 <= len(fig.items) <= FIGURE_MAX_ITEMS:
+        return f"figure needs 1 to {FIGURE_MAX_ITEMS} items"
+
+    names = [i.label for i in fig.items if i.type in ("function", "region") and i.label]
+    if len(names) != len(set(names)):
+        return "two graphs in the figure share a name"
+    labeled: list[tuple[float, float]] = []
+    for item in fig.items:
+        need = {"point": 1, "line": 2, "segment": 2}.get(item.type, 0)
+        if len(item.points) != need:
+            return f"a '{item.type}' needs exactly {need} points"
+        if item.type in ("function", "region"):
+            if (item.type == "region") != bool(item.side):
+                return "only a 'region' has a side, and it needs one ('above' or 'below')"
+            try:
+                f = sp.lambdify(X, _parse(item.expr, "x"), modules="math")
+            except Exception as e:
+                return f"figure expression {item.expr!r} could not be read: {e}"
+            visible = 0
+            for k in range(41):
+                try:
+                    y = float(f(fig.x_min + w * k / 40))
+                except Exception:
+                    continue
+                visible += fig.y_min <= y <= fig.y_max
+            if visible < 8:
+                return f"the graph of y = {item.expr} is mostly outside the figure's ranges"
+        if item.type == "line" and (item.points[0].x, item.points[0].y) == (item.points[1].x, item.points[1].y):
+            return "a 'line' needs two different points"
+        for p in item.points:
+            if not (fig.x_min <= p.x <= fig.x_max and fig.y_min <= p.y <= fig.y_max):
+                return f"point ({p.x:g}, {p.y:g}) is outside the figure's ranges"
+            if not (_on_grid(p.x, fig.x_grid) and _on_grid(p.y, fig.y_grid)):
+                return f"point ({p.x:g}, {p.y:g}) is not on the grid, so a student cannot read it; move it or give it in the prompt"
+        if item.type == "point":
+            p = item.points[0]
+            at = _coordinates(item.label)
+            if at and (abs(at[0] - p.x) > 1e-6 or abs(at[1] - p.y) > 1e-6):
+                return f"point labeled {item.label} is drawn at ({p.x:g}, {p.y:g})"
+            if item.label:
+                for qx, qy in labeled:
+                    if abs(p.x - qx) / w < LABEL_GAP and abs(p.y - qy) / h < LABEL_GAP:
+                        return "two labeled points are too close together to read"
+                labeled.append((p.x, p.y))
+    return ""
+
+
 def check_question(q: GeneratedQuestion) -> CheckResult:
     if not q.steps:
         return CheckResult(False, "missing solution steps")
+    if q.figure:
+        problem = check_figure(q.figure)
+        if problem:
+            return CheckResult(False, problem)
     tol = max(q.tolerance, 1e-6)
 
     if q.type == "choice":

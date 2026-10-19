@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import Figure from "../components/Figure";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { explainStep, getDeck, getQuestions, getSession } from "../lib/db";
 import { formatClock, verdict, type Verdict } from "../lib/pace";
@@ -270,6 +271,7 @@ export default function Results() {
               <div>
                 {x.q.prompt} {x.q.math && <span className="mono" style={{ fontWeight: 700 }}>{x.q.math}</span>}
               </div>
+              {x.q.figure && <Figure figure={x.q.figure} small />}
               {!x.ok && (
                 <div className="ans">
                   <span className="muted">Your answer</span>

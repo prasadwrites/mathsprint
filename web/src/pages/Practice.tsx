@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import Figure from "../components/Figure";
 import { Chip, Icon } from "../components/TopBar";
 import { finishSession, getQuestions, getSession, saveAnswer, saveNavigation } from "../lib/db";
 import { formatClock, pace, pressureBackground, stage } from "../lib/pace";
@@ -184,6 +185,7 @@ export default function Practice() {
 
         <div className="panel qcard">
           <div className="qtext">{q.prompt}</div>
+          {q.figure && <Figure figure={q.figure} />}
           {q.math && <div className="qmath">{q.math}</div>}
           {q.type === "choice" ? (
             <div className="choices" role="group" aria-label="Choices">

@@ -117,6 +117,18 @@ textarea { min-height: 72px; resize: vertical; }
 .qcard { padding: 28px 24px; display: flex; flex-direction: column; gap: 22px; }
 .qtext { font-size: clamp(20px, 3.4vw, 26px); font-family: var(--f-display); font-weight: 500; }
 .qmath { font-family: var(--f-mono); font-size: clamp(22px, 4vw, 30px); font-weight: 700; overflow-x: auto; }
+/* Question figures: a coordinate plane drawn from the question's figure spec. */
+.figure { margin: 0; width: 100%; }
+.figure svg { display: block; width: 100%; height: auto; font-family: var(--f-mono); }
+.figure.small { margin-top: 8px; }
+.fig-plot { fill: var(--surface); stroke: var(--line); }
+.fig-grid line { stroke: var(--line); stroke-width: 1; }
+.fig-axis line { stroke: var(--muted); stroke-width: 1.6; }
+.fig-ticks text { font-size: 11px; fill: var(--muted); }
+.fig-axis-name { font-size: 13px; font-style: italic; font-weight: 700; fill: var(--muted); font-family: var(--f-body); }
+.fig-label { font-size: 15px; font-weight: 700; font-family: var(--f-body); fill: var(--ink); }
+/* A halo in the page color keeps labels readable where they cross grid lines or graphs. */
+.fig-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 .answer-input { font-family: var(--f-mono) !important; font-size: 22px !important; padding: 14px 16px !important; }
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .choices button { font-family: var(--f-mono); font-size: 18px; padding: 14px; text-align: left; }

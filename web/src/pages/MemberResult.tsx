@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
+import Figure from "../components/Figure";
 import TopBar, { Chip } from "../components/TopBar";
 import { getTestResults } from "../lib/db";
 import { formatClock } from "../lib/pace";
@@ -209,6 +210,7 @@ export default function MemberResult() {
                 <p>
                   {q.prompt} <span className="mono">{q.math}</span>
                 </p>
+                {q.figure && <Figure figure={q.figure} small />}
                 <div className="ans">
                   <span className="muted">Their answer</span>
                   <b>{t.answers[r.i] || "–"}</b>

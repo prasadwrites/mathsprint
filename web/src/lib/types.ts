@@ -5,6 +5,34 @@ export interface SolutionStep {
   expression: string;
 }
 
+export interface FigurePoint {
+  x: number;
+  y: number;
+}
+
+/** One thing drawn on a coordinate plane. Graphs come pre-sampled by the server as flat x, y, x, y lists. */
+export interface FigureItem {
+  type: "function" | "region" | "line" | "segment" | "point";
+  label: string;
+  dashed: boolean;
+  points: FigurePoint[];
+  expr?: string;
+  paths?: { xy: number[] }[];
+  side?: "above" | "below";
+}
+
+export interface Figure {
+  kind: "plane";
+  alt: string;
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+  xGrid: number;
+  yGrid: number;
+  items: FigureItem[];
+}
+
 export interface Question {
   id: string;
   order: number;
@@ -20,6 +48,8 @@ export interface Question {
   difficulty: Exclude<Difficulty, "Mixed">;
   steps: SolutionStep[];
   verified: boolean;
+  /** A graph to show with the question; absent for text-only questions. */
+  figure?: Figure | null;
 }
 
 export interface Deck {
@@ -247,7 +277,7 @@ export interface TestTaker {
 
 export interface TestResults {
   test: GroupTest;
-  questions: { prompt: string; math: string; type: string; answerDisplay: string; concept: string }[];
+  questions: { prompt: string; math: string; type: string; answerDisplay: string; concept: string; figure?: Figure | null }[];
   takers: TestTaker[];
   overall: {
     assigned: number;
@@ -271,7 +301,7 @@ export interface OpenTest {
   status: TestTaker["status"];
   elapsedSec?: number;
   remainingSec?: number | null;
-  questions?: { prompt: string; math: string; type: "numeric" | "choice"; choices: string[]; answerCount: number }[];
+  questions?: { prompt: string; math: string; figure?: Figure | null; type: "numeric" | "choice"; choices: string[]; answerCount: number }[];
   result?: OwnTestResult;
 }
 
@@ -279,7 +309,7 @@ export interface OwnTestResult {
   score: number;
   total: number;
   usedSec: number;
-  questions: { prompt: string; math: string; answer: string; correct: boolean; answerDisplay: string; steps: SolutionStep[]; sec?: number | null }[];
+  questions: { prompt: string; math: string; figure?: Figure | null; answer: string; correct: boolean; answerDisplay: string; steps: SolutionStep[]; sec?: number | null }[];
 }
 
 /** Groups and group tests come with Pro and Pro Max. The server checks this too. */

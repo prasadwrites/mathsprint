@@ -1,6 +1,6 @@
 """Structured shape of a generated deck. Claude fills this in; SymPy checks it."""
 
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -27,6 +27,43 @@ class Check(BaseModel):
     )
 
 
+class Point(BaseModel):
+    x: float
+    y: float
+
+
+class FigureItem(BaseModel):
+    """One thing drawn on a coordinate plane."""
+
+    type: Literal["function", "region", "line", "segment", "point"] = Field(
+        description="'function': the graph of y = expr. 'region': y = expr with the area above or below it shaded, "
+        "for inequalities. 'line': the infinite line through two points. 'segment': the segment between two points. "
+        "'point': a dot at one point."
+    )
+    expr: str = Field(description="For 'function' and 'region': the right-hand side of y = ..., in SymPy syntax using x. '' otherwise.")
+    points: List[Point] = Field(description="'point': exactly one. 'line' and 'segment': exactly two. [] for 'function' and 'region'.")
+    label: str = Field(
+        description="A short name drawn beside it: a function name such as 'f' or 'g', a point name such as 'A', "
+        "or a point's coordinates such as '(2, 5)'. '' for none. Never label the unknown the student must find."
+    )
+    side: Literal["", "above", "below"] = Field(description="For 'region': which side of the curve is shaded. '' otherwise.")
+    dashed: bool = Field(description="Draw a dashed line, e.g. for a strict inequality (< or >) or an asymptote.")
+
+
+class Figure(BaseModel):
+    """A coordinate-plane picture. The app draws it; nothing here is free-form drawing."""
+
+    kind: Literal["plane"]
+    alt: str = Field(description="One or two sentences describing the picture for a student who cannot see it, without giving the answer away.")
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+    x_grid: float = Field(description="Spacing of the vertical grid lines and x-axis numbers, usually 1; 2 or 5 for wider views.")
+    y_grid: float = Field(description="Spacing of the horizontal grid lines and y-axis numbers; differs from x_grid when y values are much larger, e.g. 10 or 20 for exponential growth.")
+    items: List[FigureItem] = Field(description="1 to 8 things to draw.")
+
+
 class GeneratedQuestion(BaseModel):
     prompt: str = Field(description="The instruction shown to the student, e.g. 'Solve for x:' or a full word problem.")
     math: str = Field(description="The expression or equation in readable Unicode, or '' for word problems.")
@@ -42,6 +79,10 @@ class GeneratedQuestion(BaseModel):
     difficulty: Literal["Easy", "Medium", "Hard"]
     steps: List[SolutionStep]
     check: Check
+    figure: Optional[Figure] = Field(
+        default=None,
+        description="A graph the student needs to see, or null for questions that are text only.",
+    )
 
 
 class GeneratedDeck(BaseModel):

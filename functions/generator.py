@@ -36,7 +36,23 @@ and set `tolerance` accordingly. Solution steps are short, concrete, and in the
 order a strong student would write them; each step's `expression` shows the
 working after that step.
 
-Write `math` with readable Unicode (x², √, −, ·), not SymPy syntax."""
+Write `math` with readable Unicode (x², √, −, ·), not SymPy syntax.
+
+Figures: when a question is about a graph (reading slope, intercepts, a vertex,
+zeros, where graphs cross, which region is shaded, transformations), give it a
+`figure`: a coordinate plane the app draws for you. Otherwise `figure` is null.
+Decks can mix both kinds; on a graph topic most questions should have a figure.
+- Name each graph with one letter (f, g, h) and use those names in the `check`,
+  so the answer is computed from what is drawn: 'f(3)' to evaluate, 'f(x) = 0'
+  for zeros, 'f(x) = g(x)' for intersections, 'diff(f(x), x) = 0' for a vertex.
+- Every point the student must read off the picture (intercepts, a vertex,
+  where graphs cross, a line's two marked points) lies on the grid, at whole or
+  half grid steps, so it can be read exactly. Every 'point' item must too.
+- Pick ranges that show every key feature with some margin, 6 to 20 grid lines
+  per axis; y_grid can differ from x_grid when y values are large. Keep labeled points apart so their labels don't overlap.
+- Never label or mark the value the student is asked to find, and don't
+  repeat the graph's equation in the prompt when the student must read it off.
+- Use a 'region' with dashed true for a strict inequality (< or >)."""
 
 
 class GenerationError(RuntimeError):
@@ -65,7 +81,7 @@ class DeckResult:
 def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
     response = client.beta.messages.parse(
         model=MODEL,
-        max_tokens=16000,
+        max_tokens=20000,  # room for figures; kept under the SDK's non-streaming limit
         system=SYSTEM,
         messages=[{"role": "user", "content": prompt}],
         output_format=GeneratedDeck,
@@ -91,6 +107,7 @@ def _initial_prompt(req: DeckRequest) -> str:
         f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
         f"Level: {req.level}. Difficulty: {mix}.",
         "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
+        "Add a figure to each question that is about a graph; leave it null for the rest.",
     ]
     if req.parts > 1:
         lines.append(
@@ -210,9 +227,11 @@ def explain_step(question: dict, step_index: int | None, style: str, client: ant
         if step_index is not None and 0 <= step_index < len(steps)
         else "The student does not understand the solution."
     )
+    figure = (question.get("figure") or {}).get("alt", "")
     prompt = (
         f"Question: {question.get('prompt', '')} {question.get('math', '')}\n"
-        f"Answer: {question.get('answerDisplay', '')}\n"
+        + (f"The question shows this graph: {figure}\n" if figure else "")
+        + f"Answer:{question.get('answerDisplay', '')}\n"
         "Worked solution:\n"
         + "\n".join(f"{i + 1}. {s['description']}  {s['expression']}" for i, s in enumerate(steps))
         + f"\n\n{focus}\n{EXPLAIN_STYLES.get(style, EXPLAIN_STYLES['simple'])}\n"
