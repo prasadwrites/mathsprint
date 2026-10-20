@@ -9,8 +9,8 @@ import math
 
 import sympy as sp
 
-from schema import Figure
-from validator import X, _parse
+from schema import Diagram, Figure
+from validator import X, _parse, diagram_points
 
 SAMPLES = 240
 
@@ -69,4 +69,23 @@ def figure_doc(fig: Figure | None) -> dict | None:
         "xGrid": fig.x_grid,
         "yGrid": fig.y_grid,
         "items": items,
+    }
+
+
+def diagram_doc(d: Diagram | None) -> dict | None:
+    """A geometry diagram with its exact coordinates turned into numbers the app can draw."""
+    if not d:
+        return None
+    exact = diagram_points(d)
+    return {
+        "kind": "geometry",
+        "alt": d.alt,
+        "points": [
+            {"name": p.name, "x": round(float(sp.N(exact[p.name].x)), 6), "y": round(float(sp.N(exact[p.name].y)), 6), "show": p.show}
+            for p in d.points
+        ],
+        "items": [
+            {"type": i.type, "of": i.of, "text": i.text, "count": i.count, "dashed": i.dashed, "shaded": i.shaded}
+            for i in d.items
+        ],
     }

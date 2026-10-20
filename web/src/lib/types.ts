@@ -21,7 +21,8 @@ export interface FigureItem {
   side?: "above" | "below";
 }
 
-export interface Figure {
+/** A coordinate plane with graphs. */
+export interface PlaneFigure {
   kind: "plane";
   alt: string;
   xMin: number;
@@ -32,6 +33,33 @@ export interface Figure {
   yGrid: number;
   items: FigureItem[];
 }
+
+export interface DiagramPoint {
+  name: string;
+  x: number;
+  y: number;
+  show: boolean;
+}
+
+/** One mark in a geometry diagram; `of` names the points it uses, in order. */
+export interface DiagramItem {
+  type: "polygon" | "segment" | "circle" | "right_angle" | "angle_mark" | "angle_label" | "length_label" | "ticks";
+  of: string[];
+  text: string;
+  count: number;
+  dashed: boolean;
+  shaded: boolean;
+}
+
+/** A geometry diagram, drawn to scale. */
+export interface GeometryFigure {
+  kind: "geometry";
+  alt: string;
+  points: DiagramPoint[];
+  items: DiagramItem[];
+}
+
+export type Figure = PlaneFigure | GeometryFigure;
 
 export interface Question {
   id: string;
@@ -48,8 +76,10 @@ export interface Question {
   difficulty: Exclude<Difficulty, "Mixed">;
   steps: SolutionStep[];
   verified: boolean;
-  /** A graph to show with the question; absent for text-only questions. */
+  /** A graph or diagram to show with the question; absent for text-only questions. */
   figure?: Figure | null;
+  /** The answer is a point (x, y), so its two values are graded in order. */
+  pair?: boolean;
 }
 
 export interface Deck {
@@ -301,7 +331,7 @@ export interface OpenTest {
   status: TestTaker["status"];
   elapsedSec?: number;
   remainingSec?: number | null;
-  questions?: { prompt: string; math: string; figure?: Figure | null; type: "numeric" | "choice"; choices: string[]; answerCount: number }[];
+  questions?: { prompt: string; math: string; figure?: Figure | null; type: "numeric" | "choice"; choices: string[]; answerCount: number; pair?: boolean }[];
   result?: OwnTestResult;
 }
 

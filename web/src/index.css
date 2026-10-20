@@ -129,6 +129,7 @@ textarea { min-height: 72px; resize: vertical; }
 .fig-label { font-size: 15px; font-weight: 700; font-family: var(--f-body); fill: var(--ink); }
 /* A halo in the page color keeps labels readable where they cross grid lines or graphs. */
 .fig-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.dia-label { fill: var(--accent); }
 .answer-input { font-family: var(--f-mono) !important; font-size: 22px !important; padding: 14px 16px !important; }
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .choices button { font-family: var(--f-mono); font-size: 18px; padding: 14px; text-align: left; }

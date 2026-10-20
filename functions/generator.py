@@ -52,7 +52,26 @@ Decks can mix both kinds; on a graph topic most questions should have a figure.
   per axis; y_grid can differ from x_grid when y values are large. Keep labeled points apart so their labels don't overlap.
 - Never label or mark the value the student is asked to find, and don't
   repeat the graph's equation in the prompt when the student must read it off.
-- Use a 'region' with dashed true for a strict inequality (< or >)."""
+- Use a 'region' with dashed true for a strict inequality (< or >).
+
+Diagrams: when a question is about a shape (triangles, special right triangles,
+similar figures, angles and parallel lines, polygons, circles, arcs and
+sectors, area and perimeter), give it a `diagram` instead. A question never has
+both a figure and a diagram; text-only questions have neither.
+- Give each point exact coordinates in SymPy syntax ('3*sqrt(3)', not 5.196),
+  so the drawing is to scale and every length and angle is exact.
+- Every number you label must match the drawing; label the unknown 'x' or '?'.
+- Use the drawn points in the `check`: dist(A, B), angle(A, B, C) in degrees at
+  B, area(A, B, C, ...) and perimeter(A, B, C, ...) for polygons in order, and
+  px(A), py(A) for coordinates. Example: the hypotenuse is 'dist(A, B)'.
+- Mark right angles with 'right_angle', equal sides with 'ticks' of the same
+  count. Keep shapes in sensible proportions and points apart.
+
+Answers: when the exact answer has a root or π, write answer_display in exact
+form (6√3, 16π) and set `tolerance` to 0.01, so students may type the exact form
+or a decimal. When the answer is a point (a midpoint, a vertex, an
+intersection), set `pair` to true, answer_values to [x, y], and use a check of
+kind 'point' with the expression 'x, y'."""
 
 
 class GenerationError(RuntimeError):
@@ -107,7 +126,7 @@ def _initial_prompt(req: DeckRequest) -> str:
         f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
         f"Level: {req.level}. Difficulty: {mix}.",
         "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
-        "Add a figure to each question that is about a graph; leave it null for the rest.",
+        "Add a figure to each question about a graph and a diagram to each question about a shape; leave both null for the rest.",
     ]
     if req.parts > 1:
         lines.append(
@@ -230,7 +249,7 @@ def explain_step(question: dict, step_index: int | None, style: str, client: ant
     figure = (question.get("figure") or {}).get("alt", "")
     prompt = (
         f"Question: {question.get('prompt', '')} {question.get('math', '')}\n"
-        + (f"The question shows this graph: {figure}\n" if figure else "")
+        + (f"The question shows this picture: {figure}\n" if figure else "")
         + f"Answer:{question.get('answerDisplay', '')}\n"
         "Worked solution:\n"
         + "\n".join(f"{i + 1}. {s['description']}  {s['expression']}" for i, s in enumerate(steps))

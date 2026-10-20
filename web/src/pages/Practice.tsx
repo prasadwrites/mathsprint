@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import Figure from "../components/Figure";
 import { Chip, Icon } from "../components/TopBar";
 import { finishSession, getQuestions, getSession, saveAnswer, saveNavigation } from "../lib/db";
+import { answerHint } from "../lib/grading";
 import { formatClock, pace, pressureBackground, stage } from "../lib/pace";
 import { moveTo, secondsOn } from "../lib/timing";
 import type { EndReason, PracticeSession, Question } from "../lib/types";
@@ -11,7 +12,7 @@ const TICK_MS = 250;
 
 /** "x =" in front of the answer box when a solve question has one obvious variable. */
 function answerPrefix(q: Question) {
-  if (q.type !== "numeric" || !/^(solve|find)/i.test(q.prompt)) return "";
+  if (q.type !== "numeric" || q.pair || !/^(solve|find)/i.test(q.prompt)) return "";
   const vars = new Set(q.math.match(/(?<![A-Za-z])[a-z](?![A-Za-z])/g) ?? []);
   return vars.size === 1 ? `${[...vars][0]} =` : "";
 }
@@ -206,16 +207,14 @@ export default function Practice() {
                   className="answer-input"
                   type="text"
                   autoComplete="off"
-                  placeholder={q.answerValues.length > 1 ? "e.g. 2, -3" : "e.g. 5"}
+                  placeholder={answerHint(q.answerValues.length, q.pair).placeholder}
                   value={answer}
                   onChange={(e) => setAnswer(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && next()}
                 />
               </div>
               <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
-                {q.answerValues.length > 1
-                  ? "Separate answers with commas. Fractions like 1/2 are fine."
-                  : "Enter a number. Fractions like 1/2 are fine."}
+                {answerHint(q.answerValues.length, q.pair).help}
               </p>
             </div>
           )}
