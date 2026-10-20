@@ -35,8 +35,6 @@ from firebase_functions import https_fn, options
 import accounts
 import groups
 from accounts import AccessDenied
-from figures import diagram_doc, figure_doc
-from generator import DeckRequest, GenerationError, explain_step as _explain, generate_deck as _generate
 
 initialize_app()
 options.set_global_options(region="us-central1", max_instances=10)
@@ -149,6 +147,11 @@ def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool, co
 
 @https_fn.on_call(secrets=["ANTHROPIC_API_KEY", "DECK_ACCESS_CODE"], timeout_sec=1800, memory=options.MemoryOption.GB_1)
 def generate_deck(req: https_fn.CallableRequest) -> dict:
+    # Imported here, not at the top: anthropic and SymPy are slow to load, and Firebase gives a deploy
+    # only 10 seconds to load this file and list its functions.
+    from figures import diagram_doc, figure_doc
+    from generator import DeckRequest, GenerationError, generate_deck as _generate
+
     uid = _require_user(req)
     admin = accounts.is_admin(req.auth.token)
     data = req.data or {}
@@ -226,6 +229,8 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
 
 @https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=120)
 def explain_step(req: https_fn.CallableRequest) -> dict:
+    from generator import GenerationError, explain_step as _explain  # slow to load; see generate_deck
+
     uid = _require_user(req)
     data = req.data or {}
     db = firestore.client()
