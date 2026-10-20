@@ -35,6 +35,7 @@ from firebase_functions import https_fn, options
 import accounts
 import groups
 from accounts import AccessDenied
+from figures import figure_doc
 from generator import DeckRequest, GenerationError, explain_step as _explain, generate_deck as _generate
 
 initialize_app()
@@ -214,6 +215,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             "steps": [s.model_dump() for s in q.steps],
             "check": q.check.model_dump(),
             "verified": True,
+            **({"figure": figure_doc(q.figure)} if q.figure else {}),
         })
     batch.commit()
 
@@ -839,7 +841,7 @@ def get_test_results(req: https_fn.CallableRequest) -> dict:
     takers.sort(key=lambda t: t["email"])
     return {
         "test": _test_row(db, test),
-        "questions": [{k: q.get(k) for k in ("prompt", "math", "type", "answerDisplay", "concept")} for q in questions],
+        "questions": [{k: q.get(k) for k in ("prompt", "math", "type", "answerDisplay", "concept", "figure")} for q in questions],
         "takers": takers,
         "overall": groups.overall(takers, len(questions)),
     }
@@ -915,6 +917,7 @@ def _own_result(questions: list[dict], taker: dict) -> dict:
         "questions": [{
             "prompt": q.get("prompt", ""),
             "math": q.get("math", ""),
+            "figure": q.get("figure"),
             "answer": answers.get(str(i), ""),
             "correct": bool(results.get(str(i))),
             "answerDisplay": q.get("answerDisplay", ""),
@@ -952,6 +955,7 @@ def open_test(req: https_fn.CallableRequest) -> dict:
         "questions": [{
             "prompt": q.get("prompt", ""),
             "math": q.get("math", ""),
+            "figure": q.get("figure"),
             "type": q.get("type", "numeric"),
             "choices": q.get("choices") or [],
             "answerCount": len(q.get("answerValues") or []) or 1,

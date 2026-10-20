@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import Figure from "../components/Figure";
 import { Brand, Chip, Icon } from "../components/TopBar";
 import { openTest, submitTest } from "../lib/db";
 import { formatClock } from "../lib/pace";
@@ -65,6 +66,7 @@ function Result({ test, result }: { test: OpenTest; result: OwnTestResult }) {
             <p>
               {q.prompt} <span className="mono">{q.math}</span>
             </p>
+            {q.figure && <Figure figure={q.figure} small />}
             <div className="ans">
               <span className="muted">Your answer</span>
               <b>{q.answer || "–"}</b>
@@ -224,6 +226,7 @@ function Questions({ token, code, test, onDone }: { token: string; code: string;
 
       <div className="panel qcard">
         <div className="qtext">{q.prompt}</div>
+        {q.figure && <Figure figure={q.figure} />}
         {q.math && <div className="qmath">{q.math}</div>}
         {q.type === "choice" ? (
           <div className="choices" role="group" aria-label="Choices">

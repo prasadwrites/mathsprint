@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import Figure from "../components/Figure";
 import DeleteDeck from "../components/DeleteDeck";
 import AssignTest from "../components/AssignTest";
 import TopBar, { Chip, Icon } from "../components/TopBar";
@@ -101,6 +102,7 @@ export default function DeckReview() {
                 <span className="n">{i + 1}</span>
                 <span className="q">
                   {q.prompt} <span className="mono">{q.math}</span>
+                  {q.figure && <Figure figure={q.figure} small />}
                 </span>
                 <span className="row" style={{ gap: 6 }}>
                   <Chip>{q.concept}</Chip>
