@@ -332,6 +332,9 @@ function AccountRow({
 const planLabel = (id: PlanId) => PLANS.find((p) => p.id === id)?.label ?? id;
 
 function RequestItem({ r, onReply }: { r: UpgradeRequest; onReply: (reply: string, approve: boolean) => Promise<void> }) {
+  // Messages stay folded away until the admin opens them.
+  const [open, setOpen] = useState(false);
+  const count = r.thread?.length ?? 0;
   return (
     <li className={`request ${r.status === "pending" ? "pending" : ""}`}>
       <div className="row spread">
@@ -350,25 +353,30 @@ function RequestItem({ r, onReply }: { r: UpgradeRequest; onReply: (reply: strin
         Sent {when(r.createdAt)}
         {r.status === "replied" && r.userRead ? " · they've seen your reply" : ""}
       </span>
-      <Conversation r={r} viewer="admin" />
-      <ReplyBox label={`Reply to ${r.email}`} placeholder={r.approved ? "Write a message back" : "Write a message back (optional when you approve)"} onSend={onReply}>
-        {(text, busy, send) =>
-          r.approved ? (
-            <button type="submit" className="btn-small btn-primary" disabled={busy || !text}>
-              Send reply
-            </button>
-          ) : (
-            <>
-              <button type="button" className="btn-small btn-primary" disabled={busy} onClick={() => send(true)}>
-                Upgrade to {planLabel(r.requestedPlan)} and reply
+      <button type="button" className="btn-link" style={{ alignSelf: "flex-start" }} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? "Hide messages" : `Show messages (${count})`}
+      </button>
+      {open && <Conversation r={r} viewer="admin" />}
+      {open && (
+        <ReplyBox label={`Reply to ${r.email}`} placeholder={r.approved ? "Write a message back" : "Write a message back (optional when you approve)"} onSend={onReply}>
+          {(text, busy, send) =>
+            r.approved ? (
+              <button type="submit" className="btn-small btn-primary" disabled={busy || !text}>
+                Send reply
               </button>
-              <button type="submit" className="btn-small" disabled={busy || !text}>
-                Reply without upgrading
-              </button>
-            </>
-          )
-        }
-      </ReplyBox>
+            ) : (
+              <>
+                <button type="button" className="btn-small btn-primary" disabled={busy} onClick={() => send(true)}>
+                  Upgrade to {planLabel(r.requestedPlan)} and reply
+                </button>
+                <button type="submit" className="btn-small" disabled={busy || !text}>
+                  Reply without upgrading
+                </button>
+              </>
+            )
+          }
+        </ReplyBox>
+      )}
     </li>
   );
 }
