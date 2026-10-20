@@ -1,5 +1,6 @@
 import { useId } from "react";
-import type { Figure as FigureSpec, FigureItem } from "../lib/types";
+import type { Figure as FigureSpec, FigureItem, PlaneFigure } from "../lib/types";
+import Diagram from "./Diagram";
 
 const W = 400;
 const PAD = 14;
@@ -15,8 +16,13 @@ function ticks(min: number, max: number, step: number) {
 
 const fmt = (n: number) => (n < 0 ? `−${Math.abs(n)}` : `${n}`);
 
-/** Draws a question's coordinate plane. The server has already checked and sampled everything in it. */
+/** Draws a question's graph or geometry diagram. The server has already checked everything in it. */
 export default function Figure({ figure, small = false }: { figure: FigureSpec; small?: boolean }) {
+  return figure.kind === "geometry" ? <Diagram diagram={figure} small={small} /> : <Plane figure={figure} small={small} />;
+}
+
+/** A coordinate plane with graphs, which the server has already sampled. */
+function Plane({ figure, small }: { figure: PlaneFigure; small: boolean }) {
   const clip = `fig${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const { xMin, xMax, yMin, yMax, xGrid, yGrid } = figure;
   const H = Math.round(W * Math.min(1, Math.max(0.55, (yMax - yMin) / (xMax - xMin))));

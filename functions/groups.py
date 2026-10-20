@@ -5,6 +5,7 @@ Plain Python so it can be tested without Firebase; main.py does the Firestore re
 
 from __future__ import annotations
 
+import math
 import re
 import secrets
 
@@ -66,19 +67,25 @@ def code_matches(given: object, code: str) -> bool:
 
 
 # Grading, the same rules as web/src/lib/grading.ts. Test answers are graded here so students never see the key.
-_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:\s*/\s*-?\d+(?:\.\d+)?)?")
+# A number as a student types it: 5, -3, 1/2, 2.5, 6√3, √2/2, 4π, 2π/3.
+_NUMBER = re.compile(r"(-?)(\d+(?:\.\d+)?)?(?:\s*√\s*\(?(\d+(?:\.\d+)?)\)?)?(?:\s*(π))?(?:\s*/\s*(-?\d+(?:\.\d+)?))?")
 
 
 def parse_numbers(text: str) -> list[float]:
-    s = re.sub("[−–]", "-", text)
+    s = re.sub("[−–]", "-", text).replace("*", "")
+    s = re.sub(r"sqrt\s*", "√", s, flags=re.I)
+    s = re.sub(r"pi", "π", s, flags=re.I)
     out: list[float] = []
-    for m in _NUMBER.findall(s):
-        if "/" in m:
-            a, b = (float(x) for x in m.split("/"))
-            if b:
-                out.append(a / b)
-        else:
-            out.append(float(m))
+    for m in _NUMBER.finditer(s):
+        sign, coef, root, pi, den = m.groups()
+        if not (coef or root or pi):
+            continue
+        value = (float(coef) if coef else 1) * (math.sqrt(float(root)) if root else 1) * (math.pi if pi else 1)
+        if den is not None:
+            if not float(den):
+                continue
+            value /= float(den)
+        out.append(-value if sign else value)
     return out
 
 
@@ -88,8 +95,12 @@ def is_correct(q: dict, answer: object) -> bool:
     if q.get("type") == "choice":
         return answer == q.get("answerChoice")
     tol = max(float(q.get("tolerance") or 0), 1e-6)
-    got = {round(n * 1e6) / 1e6 for n in parse_numbers(answer)}
     expected = q.get("answerValues") or []
+    if q.get("pair"):
+        # A point: both coordinates, in order.
+        got_pair = parse_numbers(answer)
+        return len(got_pair) == len(expected) == 2 and all(abs(g - a) <= tol for g, a in zip(got_pair, expected))
+    got = {round(n * 1e6) / 1e6 for n in parse_numbers(answer)}
     if len(got) != len(expected):
         return False
     return all(any(abs(g - a) <= tol for g in got) for a in expected)

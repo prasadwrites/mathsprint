@@ -81,3 +81,15 @@ def test_clean_times_clamps_and_fits_the_server_clock():
 def test_clean_counts_are_small_whole_numbers():
     assert groups.clean_counts([2, "3", -1, 10**9, "x"], 6) == [2, 3, 0, 999, 0, 0]
     assert groups.clean_counts(None, 2) == [0, 0]
+
+
+def test_grading_reads_roots_pi_and_points():
+    import math
+    assert groups.is_correct({"type": "numeric", "answerValues": [6 * math.sqrt(3)], "tolerance": 0}, "6√3")
+    assert groups.is_correct({"type": "numeric", "answerValues": [4 * math.pi], "tolerance": 0}, "4pi")
+    assert groups.is_correct({"type": "numeric", "answerValues": [math.sqrt(2) / 2], "tolerance": 0}, "sqrt(2)/2")
+    assert groups.is_correct({"type": "numeric", "answerValues": [2 * math.sqrt(5)], "tolerance": 0}, "2 sqrt(5)")
+    point = {"type": "numeric", "answerValues": [2, 5], "tolerance": 0, "pair": True}
+    assert groups.is_correct(point, "(2, 5)")
+    assert not groups.is_correct(point, "(5, 2)")
+    assert groups.is_correct({**point, "answerValues": [3, 3]}, "(3, 3)")

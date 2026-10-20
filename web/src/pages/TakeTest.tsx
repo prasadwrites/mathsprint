@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import Figure from "../components/Figure";
 import { Brand, Chip, Icon } from "../components/TopBar";
 import { openTest, submitTest } from "../lib/db";
+import { answerHint } from "../lib/grading";
 import { formatClock } from "../lib/pace";
 import type { OpenTest, OwnTestResult } from "../lib/types";
 
@@ -246,14 +247,14 @@ function Questions({ token, code, test, onDone }: { token: string; code: string;
                 type="text"
                 autoComplete="off"
                 autoFocus
-                placeholder={q.answerCount > 1 ? "e.g. 2, -3" : "e.g. 5"}
+                placeholder={answerHint(q.answerCount, q.pair).placeholder}
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !last && setI(i + 1)}
               />
             </div>
             <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
-              {q.answerCount > 1 ? "Separate answers with commas. Fractions like 1/2 are fine." : "Enter a number. Fractions like 1/2 are fine."}
+              {answerHint(q.answerCount, q.pair).help}
             </p>
           </div>
         )}

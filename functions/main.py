@@ -35,7 +35,7 @@ from firebase_functions import https_fn, options
 import accounts
 import groups
 from accounts import AccessDenied
-from figures import figure_doc
+from figures import diagram_doc, figure_doc
 from generator import DeckRequest, GenerationError, explain_step as _explain, generate_deck as _generate
 
 initialize_app()
@@ -216,6 +216,8 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             "check": q.check.model_dump(),
             "verified": True,
             **({"figure": figure_doc(q.figure)} if q.figure else {}),
+            **({"figure": diagram_doc(q.diagram)} if q.diagram else {}),
+            **({"pair": True} if q.pair else {}),
         })
     batch.commit()
 
@@ -959,6 +961,7 @@ def open_test(req: https_fn.CallableRequest) -> dict:
             "type": q.get("type", "numeric"),
             "choices": q.get("choices") or [],
             "answerCount": len(q.get("answerValues") or []) or 1,
+            "pair": bool(q.get("pair")),
         } for q in questions],
     }
 

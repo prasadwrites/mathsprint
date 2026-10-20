@@ -13,9 +13,10 @@ class SolutionStep(BaseModel):
 class Check(BaseModel):
     """A machine-checkable restatement of the question, written in SymPy syntax."""
 
-    kind: Literal["solve", "evaluate"] = Field(
+    kind: Literal["solve", "evaluate", "point"] = Field(
         description="'solve' for an equation whose real solutions are the answer; "
-        "'evaluate' for an expression whose numeric value is the answer."
+        "'evaluate' for an expression whose numeric value is the answer; "
+        "'point' for an answer that is a point: two expressions 'x, y' giving its coordinates."
     )
     expression: str = Field(
         description="SymPy syntax using ** for powers and * for products. "
@@ -64,6 +65,39 @@ class Figure(BaseModel):
     items: List[FigureItem] = Field(description="1 to 8 things to draw.")
 
 
+class GeoPoint(BaseModel):
+    name: str = Field(description="One capital letter, e.g. 'A'. Checks refer to points by these names.")
+    x: str = Field(description="Exact x-coordinate in SymPy syntax, e.g. '4' or '3*sqrt(3)'.")
+    y: str = Field(description="Exact y-coordinate in SymPy syntax.")
+    show: bool = Field(description="Draw a dot and the point's name. False for helper points the student shouldn't see named.")
+
+
+class DiagramItem(BaseModel):
+    """One mark in a geometry diagram. `of` names the points it uses, in order."""
+
+    type: Literal["polygon", "segment", "circle", "right_angle", "angle_mark", "angle_label", "length_label", "ticks"] = Field(
+        description="'polygon': 3+ vertices in order. 'segment': 2 points. 'circle': [center, a point on the circle]. "
+        "'right_angle': [A, B, C] puts a square corner at B. 'angle_mark': [A, B, C] draws an arc at B. "
+        "'angle_label': [A, B, C] writes `text` in the angle at B. 'length_label': [A, B] writes `text` beside AB. "
+        "'ticks': [A, B] draws `count` tick marks on AB; segments with the same count are equal."
+    )
+    of: List[str] = Field(description="Point names this item uses.")
+    text: str = Field(
+        description="For labels: a number the drawing must match (e.g. '8', '40°', '6√3'), or the unknown ('x', '?'). '' otherwise."
+    )
+    count: int = Field(description="For 'ticks' and 'angle_mark': 1 to 3 marks. 0 otherwise.")
+    dashed: bool = Field(description="Draw dashed, e.g. a height or a hidden edge.")
+    shaded: bool = Field(description="Fill a polygon or circle, for 'shaded region' questions.")
+
+
+class Diagram(BaseModel):
+    """A geometry diagram drawn to scale from exact coordinates."""
+
+    alt: str = Field(description="One or two sentences describing the diagram for a student who cannot see it, without giving the answer away.")
+    points: List[GeoPoint] = Field(description="2 to 12 named points. The app picks the scale; only shapes and ratios matter.")
+    items: List[DiagramItem] = Field(description="1 to 16 marks.")
+
+
 class GeneratedQuestion(BaseModel):
     prompt: str = Field(description="The instruction shown to the student, e.g. 'Solve for x:' or a full word problem.")
     math: str = Field(description="The expression or equation in readable Unicode, or '' for word problems.")
@@ -81,7 +115,16 @@ class GeneratedQuestion(BaseModel):
     check: Check
     figure: Optional[Figure] = Field(
         default=None,
-        description="A graph the student needs to see, or null for questions that are text only.",
+        description="A graph on a coordinate plane the student needs to see, or null.",
+    )
+    diagram: Optional[Diagram] = Field(
+        default=None,
+        description="A geometry diagram (triangles, circles, polygons, angles) the student needs to see, or null. "
+        "Never both a figure and a diagram.",
+    )
+    pair: bool = Field(
+        default=False,
+        description="True when the answer is a point (x, y): answer_values is [x, y] in that order and the check kind is 'point'.",
     )
 
 
