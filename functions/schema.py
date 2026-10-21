@@ -138,6 +138,14 @@ class GeneratedQuestion(BaseModel):
     )
     picture_error: SkipJsonSchema[str] = Field(default="", exclude=True)
 
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        # Claude always writes every field: optional ones make the API's output grammar bigger.
+        # The defaults above are for code and tests.
+        schema = handler.resolve_ref_schema(handler(core_schema))
+        schema["required"] = list(schema["properties"])
+        return schema
+
     @model_validator(mode="before")
     @classmethod
     def _parse_pictures(cls, data: Any) -> Any:
