@@ -24,7 +24,11 @@ function storeCode(code: string | null) {
   }
 }
 
-const steps = (count: number) => [
+// Matches the server's limit; base64 makes the upload a third bigger, still well inside a function request.
+const MAX_PDF_MB = 10;
+
+const steps = (count: number, pdf: boolean) => [
+  ...(pdf ? ["Reading your PDF"] : []),
   `Writing ${count} questions with Claude`,
   "Writing step-by-step solutions",
   "Checking answers with SymPy",
@@ -53,7 +57,28 @@ export default function CreateDeck() {
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
-  const STEPS = steps(count);
+  const [pdf, setPdf] = useState<{ name: string; data: string } | null>(null);
+  const STEPS = steps(count, !!pdf);
+
+  const pickPdf = (file: File | undefined) => {
+    setError("");
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setError("That file isn't a PDF.");
+      return;
+    }
+    if (file.size > MAX_PDF_MB * 1024 * 1024) {
+      setError(`That PDF is too large. Upload one under ${MAX_PDF_MB} MB.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPdf({ name: file.name, data: String(reader.result).split(",")[1] ?? "" });
+      setAsked(true);
+    };
+    reader.onerror = () => setError("That file couldn't be read. Try another one.");
+    reader.readAsDataURL(file);
+  };
 
   // The pipeline runs server-side in one call; advance the checklist so the wait is legible.
   useEffect(() => {
@@ -67,7 +92,16 @@ export default function CreateDeck() {
     setBusy(true);
     setError("");
     try {
-      const res = await generateDeck({ topic, count: clamp(count), difficulty, level: level || "High school or college", notes, accessCode: accessCode.trim() });
+      const res = await generateDeck({
+        topic,
+        count: clamp(count),
+        difficulty,
+        // With a PDF, an empty level lets the server use the course the PDF is pitched at.
+        level: level || (pdf ? "" : "High school or college"),
+        notes,
+        accessCode: accessCode.trim(),
+        ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
+      });
       if (needsCode) storeCode(accessCode.trim());
       refresh();
       navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
@@ -93,10 +127,22 @@ export default function CreateDeck() {
               <div className="bubble bot">What would you like to practice?</div>
               {asked ? (
                 <>
-                  <div className="bubble me">{topic}</div>
-                  <div className="bubble bot">Good choice. A few quick details and I'll write it.</div>
+                  {pdf ? (
+                    <>
+                      <div className="bubble me row" style={{ gap: 6 }}>
+                        <Icon name="file" /> {pdf.name}
+                      </div>
+                      <div className="bubble bot">I'll read it and write new questions on the same topics, in the same style. A few quick details first.</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="bubble me">{topic}</div>
+                      <div className="bubble bot">Good choice. A few quick details and I'll write it.</div>
+                    </>
+                  )}
                 </>
               ) : (
+                <>
                 <form
                   className="row"
                   onSubmit={(e) => {
@@ -117,6 +163,25 @@ export default function CreateDeck() {
                     Next
                   </button>
                 </form>
+                <div className="row" style={{ gap: 10 }}>
+                  <label className="btn" style={{ margin: 0 }}>
+                    <Icon name="file" /> Upload a PDF
+                    <input
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      hidden
+                      onChange={(e) => {
+                        pickPdf(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <span className="muted" style={{ fontSize: 14 }}>
+                    A worksheet, class notes or textbook pages, up to {MAX_PDF_MB} MB
+                  </span>
+                </div>
+                {error && <p className="error">{error}</p>}
+                </>
               )}
             </div>
 
@@ -128,6 +193,14 @@ export default function CreateDeck() {
                   submit();
                 }}
               >
+                {pdf && (
+                  <div>
+                    <label htmlFor="focus">
+                      Focus on <span className="muted">(optional)</span>
+                    </label>
+                    <input id="focus" type="text" placeholder="e.g. Only the section on related rates" value={topic} onChange={(e) => setTopic(e.target.value)} />
+                  </div>
+                )}
                 <div className="grid2">
                   <div>
                     <label htmlFor="count">How many questions?</label>
@@ -147,7 +220,7 @@ export default function CreateDeck() {
                   </div>
                   <div>
                     <label htmlFor="level">Grade or level</label>
-                    <input id="level" type="text" placeholder="e.g. AP Calculus BC or Calculus II" value={level} onChange={(e) => setLevel(e.target.value)} />
+                    <input id="level" type="text" placeholder={pdf ? "Taken from the PDF if left blank" : "e.g. AP Calculus BC or Calculus II"} value={level} onChange={(e) => setLevel(e.target.value)} />
                   </div>
                 </div>
                 <div>
@@ -222,8 +295,16 @@ export default function CreateDeck() {
                   {busy ? (
                     <span className="muted">{count > 20 ? "Big decks are written in parts and can take several minutes" : "Usually under a minute for 10 questions"}</span>
                   ) : (
-                    <button type="button" className="btn-link" onClick={() => setAsked(false)}>
-                      Change topic
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => {
+                        setAsked(false);
+                        setPdf(null);
+                        setError("");
+                      }}
+                    >
+                      {pdf ? "Choose another file" : "Change topic"}
                     </button>
                   )}
                 </div>

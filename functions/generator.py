@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 
 import anthropic
+from pydantic import BaseModel, Field
 
 from schema import GeneratedDeck, GeneratedQuestion, picture_formats
 from validator import check_question
@@ -111,6 +113,8 @@ class DeckRequest:
     difficulty: str  # Easy | Medium | Hard | Mixed
     level: str
     notes: str = ""
+    # What Claude read in a PDF the student uploaded; the questions are written to match it.
+    source: str = ""
     part: int = 1
     parts: int = 1
 
@@ -193,6 +197,12 @@ def _initial_prompt(req: DeckRequest) -> str:
         "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
         "Add a figure to each question about a graph and a diagram to each question about a shape; leave both '' for the rest.",
     ]
+    if req.source:
+        lines.append(
+            "Base the deck on this summary of material the student uploaded. Cover its topics in proportion, "
+            "match its notation and the style of its problems, and write new problems rather than copying its own:\n"
+            + req.source
+        )
     if req.parts > 1:
         lines.append(
             f"This is part {req.part} of {req.parts} of a larger deck written in parallel. "
@@ -203,6 +213,59 @@ def _initial_prompt(req: DeckRequest) -> str:
     if req.notes.strip():
         lines.append(f"Student's extra instructions: {req.notes.strip()}")
     return "\n".join(lines)
+
+
+MAX_PDF_BYTES = 10 * 1024 * 1024
+MAX_PDF_PAGES = 100
+
+
+class PdfSource(BaseModel):
+    is_math: bool = Field(description="True if the document contains math a student could practice.")
+    topic: str = Field(description="A short name for what it covers, under 80 characters, e.g. 'Related rates' or 'Unit 4: Exponential functions'.")
+    level: str = Field(description="The course or grade it suits, e.g. 'Algebra II' or 'AP Calculus AB'; '' if unclear.")
+    summary: str = Field(
+        description="Under 400 words: each topic and skill covered, the notation and methods used, "
+        "and two or three representative problems written out in full."
+    )
+
+
+def read_pdf(data: bytes, topic_hint: str = "", client: anthropic.Anthropic | None = None) -> PdfSource:
+    """Reads an uploaded PDF (worksheet, notes, textbook pages) into a short brief the deck is written from."""
+    if not data.startswith(b"%PDF"):
+        raise GenerationError("That file isn't a PDF.")
+    if len(data) > MAX_PDF_BYTES:
+        raise GenerationError("That PDF is too large. Upload one under 10 MB.")
+    client = client or anthropic.Anthropic()
+    ask = "Read this document so math practice questions can be written from it."
+    if topic_hint:
+        ask += f" The student wants to focus on: {topic_hint}"
+    try:
+        response = client.beta.messages.parse(
+            model=MODEL,
+            max_tokens=4000,
+            messages=[{"role": "user", "content": [
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": base64.b64encode(data).decode()}},
+                {"type": "text", "text": ask},
+            ]}],
+            output_format=PdfSource,
+            output_config={"effort": "low"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.BadRequestError as e:
+        detail = str(getattr(e, "message", e))
+        log.warning("PDF rejected: %s", detail)
+        if "page" in detail.lower():
+            raise GenerationError(f"That PDF has too many pages. Upload one with at most {MAX_PDF_PAGES}.", detail) from e
+        raise GenerationError("That PDF couldn't be read. Try another file, or type the topic instead.", detail) from e
+    except anthropic.APIError as e:
+        raise api_error(e) from e
+    source = response.parsed_output
+    if response.stop_reason == "refusal" or source is None:
+        raise GenerationError("That PDF couldn't be read. Try another file, or type the topic instead.")
+    if not source.is_math:
+        raise GenerationError("That PDF doesn't seem to have any math to practice.")
+    return source
 
 
 def _repair_prompt(req: DeckRequest, failed: list[tuple[GeneratedQuestion, str]]) -> str:
