@@ -353,3 +353,5 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .tbar.timed { grid-template-columns: 28px 1fr 48px 48px; }
 .tbar.wide { grid-template-columns: minmax(90px, 160px) 1fr 56px; }
 .legend i.mark { width: 2px; height: 14px; border-radius: 0; background: var(--ink); opacity: .6; }
+.btn-link.danger { color: var(--bad); }
+.msg .msg-delete { align-self: flex-start; padding: 0; font-size: 12px; }

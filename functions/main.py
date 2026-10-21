@@ -546,6 +546,39 @@ def admin_reply_upgrade(req: https_fn.CallableRequest) -> dict:
 
 
 @https_fn.on_call()
+def admin_delete_upgrade(req: https_fn.CallableRequest) -> dict:
+    """Deletes a whole upgrade request, or with `index` and `at` just that one message. The student loses it too.
+    A plan already approved stays as it is."""
+    _require_admin(req)
+    data = req.data or {}
+    request_id = _clean(data.get("id"), 128)
+    if not request_id:
+        raise _invalid("Pick a request.")
+    db = firestore.client()
+    ref = db.collection("upgradeRequests").document(request_id)
+    if "index" not in data:
+        if not ref.get().exists:
+            raise _not_found("That request no longer exists.")
+        ref.delete()
+        return {"ok": True}
+
+    @firestore.transactional
+    def run(transaction) -> None:
+        snap = ref.get(transaction=transaction)
+        if not snap.exists:
+            raise _not_found("That request no longer exists.")
+        thread = _thread(snap.to_dict())
+        i = data.get("index")
+        # The time stamp guards against a message that moved because another one arrived or went.
+        if not isinstance(i, int) or not 0 <= i < len(thread) or thread[i].get("at") != data.get("at"):
+            raise _not_found("That message has changed. Reload the page and try again.")
+        transaction.update(ref, {"thread": thread[:i] + thread[i + 1:], "updatedAt": firestore.SERVER_TIMESTAMP})
+
+    run(db.transaction())
+    return {"ok": True}
+
+
+@https_fn.on_call()
 def reply_upgrade(req: https_fn.CallableRequest) -> dict:
     uid = _require_user(req)
     data = req.data or {}

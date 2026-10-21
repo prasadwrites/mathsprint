@@ -3,6 +3,7 @@ import TopBar, { Chip } from "../components/TopBar";
 import { useAccount } from "../App";
 import {
   adminDeleteAccount,
+  adminDeleteUpgrade,
   adminEndPromotion,
   adminListAccounts,
   adminOfferPromotion,
@@ -331,9 +332,20 @@ function AccountRow({
 
 const planLabel = (id: PlanId) => PLANS.find((p) => p.id === id)?.label ?? id;
 
-function RequestItem({ r, onReply }: { r: UpgradeRequest; onReply: (reply: string, approve: boolean) => Promise<void> }) {
+function RequestItem({
+  r,
+  onReply,
+  onDelete,
+}: {
+  r: UpgradeRequest;
+  onReply: (reply: string, approve: boolean) => Promise<void>;
+  /** With a message, deletes just that one; without, the whole request. */
+  onDelete: (message?: { index: number; at: number | null }) => Promise<void>;
+}) {
   // Messages stay folded away until the admin opens them.
   const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
   const count = r.thread?.length ?? 0;
   return (
     <li className={`request ${r.status === "pending" ? "pending" : ""}`}>
@@ -353,10 +365,45 @@ function RequestItem({ r, onReply }: { r: UpgradeRequest; onReply: (reply: strin
         Sent {when(r.createdAt)}
         {r.status === "replied" && r.userRead ? " · they've seen your reply" : ""}
       </span>
-      <button type="button" className="btn-link" style={{ alignSelf: "flex-start" }} aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? "Hide messages" : `Show messages (${count})`}
-      </button>
-      {open && <Conversation r={r} viewer="admin" />}
+      <div className="row" style={{ gap: 16 }}>
+        <button type="button" className="btn-link" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? "Hide messages" : `Show messages (${count})`}
+        </button>
+        {!confirm && (
+          <button type="button" className="btn-link danger" onClick={() => setConfirm(true)}>
+            Delete request
+          </button>
+        )}
+      </div>
+      {confirm && (
+        <div className="confirm-delete">
+          <span>
+            Delete this request and all its messages? It's gone for {r.displayName || r.email} too.
+            {r.approved ? " Their plan stays as it is." : ""}
+          </span>
+          <div className="row" style={{ gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-small btn-danger-solid"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await onDelete();
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? "Deleting…" : "Delete request"}
+            </button>
+            <button type="button" className="btn btn-small" onClick={() => setConfirm(false)}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+      {open && <Conversation r={r} viewer="admin" onDelete={(index, m) => onDelete({ index, at: m.at })} />}
       {open && (
         <ReplyBox label={`Reply to ${r.email}`} placeholder={r.approved ? "Write a message back" : "Write a message back (optional when you approve)"} onSend={onReply}>
           {(text, busy, send) =>
@@ -420,6 +467,16 @@ function Requests({ onChange }: { onChange: () => void }) {
                 onChange();
               } catch (e) {
                 setError((e as Error).message || "The reply didn't send. Try again.");
+              }
+            }}
+            onDelete={async (message) => {
+              try {
+                await adminDeleteUpgrade(r.id, message);
+                setError("");
+                await load();
+                onChange();
+              } catch (e) {
+                setError((e as Error).message || "That didn't delete. Try again.");
               }
             }}
           />
