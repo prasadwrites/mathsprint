@@ -4,7 +4,11 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from generator import DeckRequest, generate_deck  # noqa: E402
+import anthropic  # noqa: E402
+import httpx  # noqa: E402
+import pytest  # noqa: E402
+
+from generator import UNAVAILABLE, DeckRequest, GenerationError, generate_deck  # noqa: E402
 from schema import Check, GeneratedDeck, GeneratedQuestion, SolutionStep  # noqa: E402
 
 
@@ -80,3 +84,36 @@ def test_small_decks_are_one_call():
     client = ThreadSafeFakeClient()
     generate_deck(DeckRequest("Quadratics", 20, "Medium", "Algebra II"), client)
     assert len(client.prompts) == 1 and "larger deck" not in client.prompts[0]
+
+
+class FailingClient:
+    """beta.messages.parse always raises the given Anthropic API error."""
+
+    def __init__(self, error):
+        self.beta = SimpleNamespace(messages=SimpleNamespace(parse=lambda **kw: (_ for _ in ()).throw(error)))
+
+
+def api_status_error(cls, status, message):
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return cls(message, response=httpx.Response(status, request=request), body=None)
+
+
+def test_api_errors_become_messages_with_the_cause_kept_for_the_admin():
+    error = api_status_error(anthropic.BadRequestError, 400, "Your credit balance is too low to access the Anthropic API.")
+    with pytest.raises(GenerationError) as e:
+        generate_deck(DeckRequest(topic="t", count=2, difficulty="Medium", level="HS"), client=FailingClient(error))
+    assert str(e.value) == UNAVAILABLE
+    assert "credit balance is too low" in e.value.detail
+
+
+def test_a_busy_api_asks_the_student_to_retry():
+    error = api_status_error(anthropic.InternalServerError, 529, "Overloaded")
+    with pytest.raises(GenerationError, match="busy"):
+        generate_deck(DeckRequest(topic="t", count=2, difficulty="Medium", level="HS"), client=FailingClient(error))
+
+
+def test_a_big_deck_whose_parts_all_fail_reports_the_cause():
+    error = api_status_error(anthropic.AuthenticationError, 401, "invalid x-api-key")
+    with pytest.raises(GenerationError) as e:
+        generate_deck(DeckRequest(topic="t", count=45, difficulty="Medium", level="HS"), client=FailingClient(error))
+    assert "invalid x-api-key" in e.value.detail

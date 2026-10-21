@@ -75,7 +75,29 @@ kind 'point' with the expression 'x, y'."""
 
 
 class GenerationError(RuntimeError):
-    pass
+    """A deck or explanation that couldn't be made, with a message fit to show the student.
+
+    `detail` is the underlying cause (an Anthropic API error, for example), shown to the admin only."""
+
+    def __init__(self, message: str, detail: str = ""):
+        super().__init__(message)
+        self.detail = detail
+
+
+UNAVAILABLE = "Claude is unavailable right now. Please try again later."
+
+
+def api_error(e: anthropic.APIError) -> GenerationError:
+    """Turns an Anthropic API failure into a message for the student, keeping the real cause for the admin and the logs."""
+    status = getattr(e, "status_code", None)
+    detail = f"Anthropic API {status or 'connection'} error ({type(e).__name__}): {getattr(e, 'message', e)}"
+    log.error(detail)
+    if isinstance(e, anthropic.RateLimitError):
+        return GenerationError("Lots of decks are being built right now. Try again in a minute.", detail)
+    if isinstance(e, (anthropic.APIConnectionError, anthropic.InternalServerError)) or status == 529:
+        return GenerationError("Claude is busy right now. Try again in a few minutes.", detail)
+    # A rejected key, an empty credit balance, a model the account can't use: only the admin can fix these.
+    return GenerationError(UNAVAILABLE, detail)
 
 
 @dataclass
@@ -98,17 +120,20 @@ class DeckResult:
 
 
 def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
-    response = client.beta.messages.parse(
-        model=MODEL,
-        max_tokens=20000,  # room for figures; kept under the SDK's non-streaming limit
-        system=SYSTEM,
-        messages=[{"role": "user", "content": prompt}],
-        output_format=GeneratedDeck,
-        output_config={"effort": "medium"},
-        # If a request is declined by a safety classifier, retry on a fallback model.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-    )
+    try:
+        response = client.beta.messages.parse(
+            model=MODEL,
+            max_tokens=20000,  # room for figures; kept under the SDK's non-streaming limit
+            system=SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+            output_format=GeneratedDeck,
+            output_config={"effort": "medium"},
+            # If a request is declined by a safety classifier, retry on a fallback model.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIError as e:
+        raise api_error(e) from e
     if response.stop_reason == "refusal":
         raise GenerationError("Claude declined to write this deck. Try rewording the topic.")
     if response.stop_reason == "max_tokens" or response.parsed_output is None:
@@ -169,7 +194,7 @@ def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -
     def run(part: DeckRequest) -> DeckResult | Exception:
         try:
             return _generate_part(part, client)
-        except (GenerationError, anthropic.APIError) as e:
+        except GenerationError as e:
             log.warning("part %d of %d failed: %s", part.part, part.parts, e)
             return e
 
@@ -179,10 +204,7 @@ def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -
     # A part that fails costs only its questions; the deck fails only if every part did.
     done = [r for r in results if isinstance(r, DeckResult)]
     if not done:
-        first = results[0]
-        if isinstance(first, GenerationError):
-            raise first
-        raise GenerationError("Claude couldn't be reached. Try again in a moment.") from first
+        raise results[0]
     first = done[0].deck
     topics = list(dict.fromkeys(t for r in done for t in r.deck.topics))[:5]
     deck = GeneratedDeck(title=first.title, topics=topics, questions=[q for r in done for q in r.deck.questions])
@@ -256,14 +278,17 @@ def explain_step(question: dict, step_index: int | None, style: str, client: ant
         + f"\n\n{focus}\n{EXPLAIN_STYLES.get(style, EXPLAIN_STYLES['simple'])}\n"
         "Write plain text with Unicode math. No headings."
     )
-    response = client.beta.messages.create(
-        model=MODEL,
-        max_tokens=4000,
-        messages=[{"role": "user", "content": prompt}],
-        output_config={"effort": "low"},
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-    )
+    try:
+        response = client.beta.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"effort": "low"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIError as e:
+        raise api_error(e) from e
     if response.stop_reason == "refusal":
         raise GenerationError("Claude could not explain this step.")
     return "".join(b.text for b in response.content if b.type == "text").strip()
