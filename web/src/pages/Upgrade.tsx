@@ -11,8 +11,19 @@ export const when = (ms: number | null) =>
   ms ? new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
 /** The messages on one request or report, oldest first. `viewer` decides which side reads as "You". */
-export function Conversation({ r, viewer }: { r: { thread: RequestMessage[]; displayName: string; email: string; requestedPlan?: PlanId }; viewer: "student" | "admin" }) {
-  if (!r.thread.length) return <p className="small muted">No note.</p>;
+export function Conversation({
+  r,
+  viewer,
+  onDelete,
+}: {
+  r: { thread: RequestMessage[]; displayName: string; email: string; requestedPlan?: PlanId };
+  viewer: "student" | "admin";
+  /** Shows a Delete link on each message, with a confirm step. */
+  onDelete?: (index: number, m: RequestMessage) => Promise<void>;
+}) {
+  const [confirm, setConfirm] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!r.thread.length) return <p className="small muted">No messages.</p>;
   return (
     <ol className="conversation">
       {r.thread.map((m, i) => {
@@ -26,6 +37,35 @@ export function Conversation({ r, viewer }: { r: { thread: RequestMessage[]; dis
             {m.approved && r.requestedPlan && <span className="small"><b>Upgraded to {label(r.requestedPlan)}.</b></span>}
             {m.resolved && <span className="small"><b>Marked as resolved.</b></span>}
             {m.text && <p>{m.text}</p>}
+            {onDelete &&
+              (confirm === i ? (
+                <span className="row small" style={{ gap: 8 }}>
+                  Delete this message?
+                  <button
+                    type="button"
+                    className="btn-link danger"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await onDelete(i, m);
+                        setConfirm(null);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button type="button" className="btn-link" onClick={() => setConfirm(null)}>
+                    Keep
+                  </button>
+                </span>
+              ) : (
+                <button type="button" className="btn-link small muted msg-delete" aria-label={`Delete message from ${who}`} onClick={() => setConfirm(i)}>
+                  Delete
+                </button>
+              ))}
           </li>
         );
       })}

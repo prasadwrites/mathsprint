@@ -182,6 +182,11 @@ export async function listUpgradeRequests(markRead = false) {
   return (await httpsCallable<{ markRead: boolean }, { requests: UpgradeRequest[] }>(functions, "list_upgrade_requests")({ markRead })).data.requests;
 }
 
+/** Deletes a whole request, or just one message when `message` names it by position and time. */
+export async function adminDeleteUpgrade(id: string, message?: { index: number; at: number | null }) {
+  await httpsCallable<object, { ok: boolean }>(functions, "admin_delete_upgrade")(message ? { id, ...message } : { id });
+}
+
 export async function adminReplyUpgrade(args: { id: string; reply: string; approve: boolean }) {
   await httpsCallable<typeof args, { ok: boolean }>(functions, "admin_reply_upgrade")(args);
 }
