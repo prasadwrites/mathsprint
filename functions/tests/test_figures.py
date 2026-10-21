@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -125,3 +126,37 @@ def test_figure_doc_skips_where_undefined():
 
 def test_questions_without_figures_are_unchanged():
     assert figure_doc(None) is None
+
+
+def test_claude_sends_pictures_as_json_text_so_the_output_grammar_stays_small():
+    from anthropic.lib._parse._transform import transform_schema
+
+    from schema import GeneratedDeck
+
+    defs = transform_schema(GeneratedDeck)["$defs"]
+    assert "Figure" not in defs and "Diagram" not in defs
+    assert defs["GeneratedQuestion"]["properties"]["figure"]["type"] == "string"
+
+
+def test_figure_json_text_is_parsed_and_checked():
+    fig = plane(PARABOLA).model_dump_json()
+    parsed = GeneratedQuestion.model_validate_json(
+        q(None, Check(kind="evaluate", expression="f(2)", variable="", domain="real")).model_dump_json()
+        .replace('"figure":null', '"figure":' + json.dumps(fig))
+    )
+    assert parsed.figure == plane(PARABOLA)
+    assert check_question(parsed).ok
+
+
+def test_unreadable_figure_json_fails_the_check_so_it_gets_repaired():
+    raw = q(None, Check(kind="evaluate", expression="5", variable="", domain="real")).model_dump()
+    parsed = GeneratedQuestion.model_validate({**raw, "figure": "{not json"})
+    assert parsed.figure is None
+    result = check_question(parsed)
+    assert not result.ok and "figure" in result.reason
+
+
+def test_empty_picture_text_means_none():
+    raw = q(None, Check(kind="evaluate", expression="5", variable="", domain="real")).model_dump()
+    parsed = GeneratedQuestion.model_validate({**raw, "figure": "", "diagram": ""})
+    assert parsed.figure is None and parsed.diagram is None and not parsed.picture_error

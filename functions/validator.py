@@ -327,6 +327,8 @@ def check_diagram(d: Diagram) -> str:
 def check_question(q: GeneratedQuestion) -> CheckResult:
     if not q.steps:
         return CheckResult(False, "missing solution steps")
+    if q.picture_error:
+        return CheckResult(False, q.picture_error)
     if q.figure and q.diagram:
         return CheckResult(False, "a question has a figure or a diagram, not both")
     if q.diagram:
