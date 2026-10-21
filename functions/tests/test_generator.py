@@ -117,3 +117,32 @@ def test_a_big_deck_whose_parts_all_fail_reports_the_cause():
     with pytest.raises(GenerationError) as e:
         generate_deck(DeckRequest(topic="t", count=45, difficulty="Medium", level="HS"), client=FailingClient(error))
     assert "invalid x-api-key" in e.value.detail
+
+
+class GrammarTooLargeClient:
+    """Rejects the structured-output call like the API does, then answers the plain call with JSON text."""
+
+    def __init__(self, deck_json):
+        self.deck_json, self.plain_systems = deck_json, []
+        error = api_status_error(anthropic.BadRequestError, 400, "The compiled grammar is too large, which would cause performance issues.")
+        self.beta = SimpleNamespace(messages=SimpleNamespace(
+            parse=lambda **kw: (_ for _ in ()).throw(error),
+            create=self._create,
+        ))
+
+    def _create(self, **kw):
+        self.plain_systems.append(kw["system"])
+        text = SimpleNamespace(type="text", text="Here it is:\n```json\n" + self.deck_json + "\n```")
+        return SimpleNamespace(stop_reason="end_turn", content=[text])
+
+
+def test_a_rejected_output_schema_falls_back_to_plain_json():
+    client = GrammarTooLargeClient(deck(make_q([2, 3])).model_dump_json())
+    result = generate_deck(DeckRequest(topic="t", count=1, difficulty="Medium", level="HS"), client=client)
+    assert [q.answer_values for q in result.deck.questions] == [[2, 3]]
+    assert "JSON Schema" in client.plain_systems[0]
+
+
+def test_garbled_plain_json_is_a_readable_error():
+    with pytest.raises(GenerationError, match="garbled"):
+        generate_deck(DeckRequest(topic="t", count=1, difficulty="Medium", level="HS"), client=GrammarTooLargeClient("{oops"))

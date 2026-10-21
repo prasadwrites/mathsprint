@@ -123,6 +123,10 @@ class DeckResult:
     failures: list[str] = field(default_factory=list)
 
 
+def _too_large(e: anthropic.APIError) -> bool:
+    return isinstance(e, anthropic.BadRequestError) and "grammar is too large" in str(e)
+
+
 def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
     try:
         response = client.beta.messages.parse(
@@ -137,12 +141,44 @@ def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
             fallbacks="default",
         )
     except anthropic.APIError as e:
+        if _too_large(e):
+            # The API refuses to compile the deck schema into a grammar: ask for the same JSON as plain text instead.
+            log.warning("output schema rejected as too large; asking for plain JSON")
+            return _ask_plain(client, prompt)
         raise api_error(e) from e
     if response.stop_reason == "refusal":
         raise GenerationError("Claude declined to write this deck. Try rewording the topic.")
     if response.stop_reason == "max_tokens" or response.parsed_output is None:
         raise GenerationError("The deck came back incomplete. Try fewer questions.")
     return response.parsed_output
+
+
+def _ask_plain(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
+    """The same request without constrained output: the deck's JSON Schema goes in the instructions."""
+    try:
+        response = client.beta.messages.create(
+            model=MODEL,
+            max_tokens=20000,
+            system=SYSTEM + "\n\nReply with one JSON object and nothing else, no code fences, matching this JSON Schema:\n"
+            + json.dumps(GeneratedDeck.model_json_schema()),
+            messages=[{"role": "user", "content": prompt}],
+            output_config={"effort": "medium"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIError as e:
+        raise api_error(e) from e
+    if response.stop_reason == "refusal":
+        raise GenerationError("Claude declined to write this deck. Try rewording the topic.")
+    if response.stop_reason == "max_tokens":
+        raise GenerationError("The deck came back incomplete. Try fewer questions.")
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    start, end = text.find("{"), text.rfind("}")
+    try:
+        return GeneratedDeck.model_validate_json(text[start : end + 1])
+    except ValueError as e:
+        log.warning("plain JSON deck didn't parse: %s", e)
+        raise GenerationError("The deck came back garbled. Try again.") from e
 
 
 def _initial_prompt(req: DeckRequest) -> str:
