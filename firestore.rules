@@ -75,6 +75,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Head-to-head challenges (with their copy of the questions) and each friend's attempt. Only the Cloud Functions
+    // read or write these, so the answer key never reaches the friend's browser.
+    match /challenges/{token}/{document=**} {
+      allow read, write: if false;
+    }
+    match /challengeAttempts/{token} {
+      allow read, write: if false;
+    }
+
     // Problem reports and plan promotions. Read and written only through functions.
     match /reports/{reportId} {
       allow read, write: if false;

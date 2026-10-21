@@ -4,12 +4,82 @@ import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import DeleteDeck from "../components/DeleteDeck";
 import PromotionOffer from "../components/PromotionOffer";
-import { addSampleDeck, listDecks, listSessions } from "../lib/db";
+import { addSampleDeck, listChallenges, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
 import { formatClock } from "../lib/pace";
-import type { Deck, PracticeSession } from "../lib/types";
+import type { ChallengeOutcome, Deck, PlayedChallenge, PracticeSession, SentChallenge } from "../lib/types";
 
 const tone = (pct: number) => (pct >= 80 ? "good" : pct >= 60 ? "warn" : "bad");
+
+/** The challenger's view of a friend's outcome is the opposite of the friend's. */
+const FLIP: Record<ChallengeOutcome, ChallengeOutcome> = { win: "loss", loss: "win", tie: "tie" };
+const OUTCOME_CHIP: Record<ChallengeOutcome, ["good" | "miss" | "neutral", string]> = { win: ["good", "Won"], loss: ["miss", "Lost"], tie: ["neutral", "Tie"] };
+
+function Challenges({ sent, played }: { sent: SentChallenge[]; played: PlayedChallenge[] }) {
+  if (!sent.length && !played.length) return null;
+  const wins = sent.reduce((n, c) => n + c.friends.filter((f) => f.outcome === "loss").length, 0) + played.filter((p) => p.outcome === "win").length;
+  const games = sent.reduce((n, c) => n + c.friends.filter((f) => f.outcome).length, 0) + played.length;
+  return (
+    <section className="stack" id="challenges">
+      <div className="row spread">
+        <h2>Challenges</h2>
+        {games > 0 && <span className="muted">{wins} won of {games}</span>}
+      </div>
+      <div className="decks">
+        {played.map((p) => {
+          const [tone, label] = OUTCOME_CHIP[p.outcome];
+          return (
+            <article key={p.attempt} className="panel deck-card">
+              <div>
+                <div className="row spread">
+                  <h3>vs {p.from}</h3>
+                  <Chip tone={tone}>{label}</Chip>
+                </div>
+                <div className="meta">{p.deckTitle} · their challenge</div>
+              </div>
+              <div className="mono">
+                You {p.score}/{p.total} in {formatClock(p.usedSec)} · {p.from} {p.theirScore}/{p.total} in {formatClock(p.theirSec)}
+              </div>
+            </article>
+          );
+        })}
+        {sent.map((c) => {
+          const done = c.friends.filter((f) => f.status === "completed" && f.outcome);
+          return (
+            <article key={c.token} className="panel deck-card">
+              <div>
+                <h3>{c.deckTitle}</h3>
+                <div className="meta">
+                  Your challenge · {c.score}/{c.total} in {formatClock(c.usedSec)}
+                </div>
+              </div>
+              {done.length ? (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {done.map((f, k) => {
+                    const [tone, label] = OUTCOME_CHIP[FLIP[f.outcome!]];
+                    return (
+                      <li key={k} className="row spread" style={{ flexWrap: "nowrap" }}>
+                        <span style={{ overflowWrap: "anywhere" }}>
+                          {f.name} <span className="mono muted">{f.score}/{c.total} · {formatClock(f.usedSec ?? 0)}</span>
+                        </span>
+                        <Chip tone={tone}>{label}</Chip>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="muted">
+                  {c.friends.length ? `${c.friends.length} playing now.` : "No one has played yet."}{" "}
+                  <Link to={`/sessions/${c.sessionId}/results`}>Get the link</Link>
+                </p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function formatHours(sec: number) {
   if (sec > 0 && sec < 60) return `${Math.round(sec)}s`;
@@ -30,11 +100,16 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [topic, setTopic] = useState("");
   const [adding, setAdding] = useState(false);
+  const [challenges, setChallenges] = useState<{ sent: SentChallenge[]; played: PlayedChallenge[] }>({ sent: [], played: [] });
 
   useEffect(() => {
     listDecks(user.uid).then(setDecks);
     listSessions(user.uid).then(setSessions);
   }, [user.uid]);
+  // After the account loads, so a challenge played before signing up has been saved to it.
+  useEffect(() => {
+    if (account) listChallenges().then(setChallenges).catch(() => {});
+  }, [account]);
 
   useEffect(() => {
     if (hash && decks) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: "smooth" });
@@ -159,6 +234,8 @@ export default function Dashboard() {
             </div>
           )}
         </section>
+
+        <Challenges sent={challenges.sent} played={challenges.played} />
 
         <section className="tiles" id="progress" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
           <div className="panel stack">

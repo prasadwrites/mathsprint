@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import ChallengeFriend from "../components/ChallengeFriend";
 import Figure from "../components/Figure";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { explainStep, getDeck, getQuestions, getSession } from "../lib/db";
@@ -251,6 +252,8 @@ export default function Results() {
             </Link>
           )}
         </div>
+
+        <ChallengeFriend sessionId={s.id} />
 
         <section className="panel">
           <h2>Review test</h2>

@@ -22,6 +22,10 @@ report_problem, list_reports, reply_report - A signed-in user reports a problem;
 admin_reply_report    - Admin only: answer a problem report, optionally marking it resolved.
 admin_offer_promotion, admin_end_promotion - Admin only: offer a bigger plan for some months, or end it early.
 respond_promotion     - The user accepts or declines an offer; an accepted plan lasts for its term, then the old plan is back.
+create_challenge      - A student turns a finished practice session into a link that challenges a friend to beat their score.
+open_challenge, submit_challenge - No sign-in: a friend plays the same questions, graded here, and sees both results.
+claim_challenge       - A friend who signs up after playing saves their result to their new account.
+list_challenges       - The challenges a student sent, with every friend's result, and the ones they played and saved.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from firebase_admin import auth, firestore, initialize_app
 from firebase_functions import https_fn, options
 
 import accounts
+import challenges
 import groups
 from accounts import AccessDenied
 
@@ -428,6 +433,11 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
             writer.delete(r.reference)
     for t in db.collection("tests").where("ownerUid", "==", uid).stream():
         db.recursive_delete(t.reference)  # the test and its copy of the questions
+    for c in db.collection("challenges").where("challengerUid", "==", uid).stream():
+        db.recursive_delete(c.reference)  # the challenge and its copy of the questions
+    for field in ("challengerUid", "claimedUid"):
+        for r in db.collection("challengeAttempts").where(field, "==", uid).stream():
+            writer.delete(r.reference)
     for ref in (_account_ref(db, uid), db.collection("accessCodes").document(uid), db.collection("users").document(uid)):
         writer.delete(ref)
     writer.close()
@@ -1043,6 +1053,290 @@ def submit_test(req: https_fn.CallableRequest) -> dict:
 
     taker = run(db.transaction())
     return {**_test_meta(test, taker), "result": _own_result(questions, taker)}
+
+
+# Head-to-head challenges. The challenger is signed in; the friend who plays doesn't need to be.
+
+
+def _challenge_row(doc) -> dict:
+    r = doc.to_dict()
+    return {
+        "token": doc.id,
+        "sessionId": r.get("sessionId"),
+        "deckTitle": r.get("deckTitle", ""),
+        "from": r.get("challengerName", ""),
+        "score": r.get("score", 0),
+        "total": r.get("total", 0),
+        "usedSec": r.get("usedSec", 0),
+        "timeLimitSec": r.get("timeLimitSec", 0),
+        "brag": challenges.brag(r.get("challengerName", ""), r.get("score", 0), r.get("total", 0), r.get("usedSec", 0), r.get("deckTitle", "")),
+        "createdAt": _ms(r.get("createdAt")),
+    }
+
+
+@https_fn.on_call(timeout_sec=60)
+def create_challenge(req: https_fn.CallableRequest) -> dict:
+    """Makes a challenge link from one of the caller's finished sessions, or returns the one already made for it.
+    The session's answers are graded again here, since the browser wrote the session's score."""
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    session = _owned_by(db, "sessions", (req.data or {}).get("sessionId"), uid, "ownerId", "That practice session no longer exists.")
+    s = session.to_dict()
+    if s.get("status") != "completed":
+        raise _invalid("Finish the session first.")
+    existing = next(iter(db.collection("challenges").where("sessionId", "==", session.id).limit(1).stream()), None)
+    if existing is not None:
+        return _challenge_row(existing)
+
+    deck = db.collection("decks").document(str(s.get("deckId") or "")).get()
+    if not deck.exists:
+        raise _not_found("That deck no longer exists.")
+    by_id = {q.id: q.to_dict() for q in deck.reference.collection("questions").stream()}
+    questions = [by_id[i] for i in (s.get("questionIds") or []) if i in by_id]
+    if not questions:
+        raise _invalid("That session has no questions.")
+    graded = groups.grade(questions, groups.clean_answers(s.get("answers"), len(questions)))
+    limit = max(0, int(s.get("timeLimitSec") or 0))
+    who = req.auth.token or {}
+    name = challenges.clean_name((who.get("name") or "").split(" ")[0] or (who.get("email") or "").split("@")[0])
+
+    ref = db.collection("challenges").document(challenges.new_token())
+    writer = db.bulk_writer()
+    for i, q in enumerate(questions):
+        q = {k: v for k, v in q.items() if k != "check"}
+        writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    writer.close()
+    ref.set({  # written last, so a link only works once its questions exist
+        "challengerUid": uid,
+        "challengerName": name,
+        "sessionId": session.id,
+        "deckTitle": s.get("deckTitle") or deck.get("title") or "",
+        "total": len(questions),
+        "score": graded["score"],
+        "results": graded["results"],
+        "usedSec": challenges.challenger_time(s.get("usedSec"), limit),
+        "timeLimitSec": limit,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return _challenge_row(ref.get())
+
+
+def _owned_by(db, collection: str, doc_id: object, uid: str, field: str, missing: str):
+    doc_id = _clean(doc_id, 128)
+    snap = db.collection(collection).document(doc_id).get() if doc_id else None
+    if snap is None or not snap.exists or snap.get(field) != uid:
+        raise _not_found(missing)
+    return snap
+
+
+def _challenge(db, token: object):
+    token = _clean(token, 64)
+    snap = db.collection("challenges").document(token).get() if token else None
+    if snap is None or not snap.exists:
+        raise _not_found("This challenge link doesn't work. Ask your friend for a new one.")
+    return snap
+
+
+def _attempt(db, challenge, attempt_token: object):
+    attempt_token = _clean(attempt_token, 64)
+    snap = db.collection("challengeAttempts").document(attempt_token).get() if attempt_token else None
+    if snap is None or not snap.exists or snap.get("challengeId") != challenge.id:
+        return None
+    return snap
+
+
+def _face_off(challenge, questions: list[dict], attempt: dict) -> dict:
+    """Both results side by side, with the friend's own answers and the worked solutions."""
+    c = challenge.to_dict()
+    mine, theirs = attempt.get("results") or {}, c.get("results") or {}
+    answers, times = attempt.get("answers") or {}, attempt.get("times") or []
+    return {
+        "outcome": challenges.outcome(attempt, c),
+        "name": attempt.get("name", ""),
+        "score": attempt.get("score", 0),
+        "usedSec": attempt.get("usedSec", 0),
+        "claimed": bool(attempt.get("claimedUid")),
+        "questions": [{
+            "prompt": q.get("prompt", ""),
+            "math": q.get("math", ""),
+            "figure": q.get("figure"),
+            "answer": answers.get(str(i), ""),
+            "correct": bool(mine.get(str(i))),
+            "theirsCorrect": bool(theirs.get(str(i))),
+            "answerDisplay": q.get("answerDisplay", ""),
+            "steps": q.get("steps") or [],
+            "sec": times[i] if i < len(times) else None,
+        } for i, q in enumerate(questions)],
+    }
+
+
+def _challenge_meta(challenge) -> dict:
+    c = challenge.to_dict()
+    return {
+        "title": c.get("deckTitle", ""),
+        "from": c.get("challengerName", ""),
+        "score": c.get("score", 0),
+        "total": c.get("total", 0),
+        "usedSec": c.get("usedSec", 0),
+        "timeLimitSec": c.get("timeLimitSec", 0),
+    }
+
+
+@https_fn.on_call()
+def open_challenge(req: https_fn.CallableRequest) -> dict:
+    """With just the link: who sent it and the score to beat. With start: begins a new attempt under the friend's name.
+    With an attempt token: carries on that attempt, or shows its result if it's finished."""
+    db = firestore.client()
+    data = req.data or {}
+    challenge = _challenge(db, data.get("token"))
+    meta = _challenge_meta(challenge)
+    attempt = _attempt(db, challenge, data.get("attempt"))
+    if attempt is None and not data.get("start"):
+        return meta
+    questions = _test_questions(challenge.reference)
+    now = _now_ms()
+    if attempt is None:
+        attempts = db.collection("challengeAttempts").where("challengeId", "==", challenge.id)
+        if _count(attempts) >= challenges.MAX_ATTEMPTS:
+            raise _denied("This challenge has been played as many times as it can. Ask your friend for a new one.")
+        ref = db.collection("challengeAttempts").document(challenges.new_token())
+        a = {
+            "challengeId": challenge.id,
+            "challengerUid": challenge.get("challengerUid"),
+            "name": challenges.clean_name(data.get("name")),
+            "status": "started",
+            "startedAtMs": now,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        }
+        ref.set(a)
+        attempt_id = ref.id
+    else:
+        a, attempt_id = attempt.to_dict(), attempt.id
+    if a.get("status") == "completed":
+        return {**meta, "attempt": attempt_id, "result": _face_off(challenge, questions, a)}
+    limit = int(meta["timeLimitSec"] or 0)
+    elapsed = (now - int(a.get("startedAtMs") or now)) / 1000
+    return {
+        **meta,
+        "attempt": attempt_id,
+        "name": a.get("name", ""),
+        "elapsedSec": elapsed,
+        "remainingSec": max(0, limit - elapsed) if limit else None,
+        "questions": [{
+            "prompt": q.get("prompt", ""),
+            "math": q.get("math", ""),
+            "figure": q.get("figure"),
+            "type": q.get("type", "numeric"),
+            "choices": q.get("choices") or [],
+            "answerCount": len(q.get("answerValues") or []) or 1,
+            "pair": bool(q.get("pair")),
+        } for q in questions],
+    }
+
+
+@https_fn.on_call()
+def submit_challenge(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    data = req.data or {}
+    challenge = _challenge(db, data.get("token"))
+    attempt = _attempt(db, challenge, data.get("attempt"))
+    if attempt is None:
+        raise _not_found("This attempt no longer exists. Open the challenge link again.")
+    questions = _test_questions(challenge.reference)
+    ref = attempt.reference
+
+    @firestore.transactional
+    def run(transaction) -> dict:
+        a = _txn_data(transaction, ref)
+        if a.get("status") == "completed":
+            return a  # a second tab or a retry: keep the first answers
+        now = _now_ms()
+        limit = int(challenge.get("timeLimitSec") or 0)
+        used = (now - int(a.get("startedAtMs") or now)) / 1000
+        answers = groups.clean_answers(data.get("answers"), len(questions))
+        graded = groups.grade(questions, answers)
+        changes = {
+            "status": "completed",
+            "answers": answers,
+            "results": graded["results"],
+            "score": graded["score"],
+            "usedSec": round(min(used, limit) if limit else used),
+            "times": groups.clean_times(data.get("times"), len(questions), used),
+            "completedAt": firestore.SERVER_TIMESTAMP,
+        }
+        changes["outcome"] = challenges.outcome(changes, challenge.to_dict())
+        transaction.update(ref, changes)
+        return {**a, **changes}
+
+    a = run(db.transaction())
+    return {**_challenge_meta(challenge), "attempt": attempt.id, "result": _face_off(challenge, questions, a)}
+
+
+@https_fn.on_call()
+def claim_challenge(req: https_fn.CallableRequest) -> dict:
+    """Saves a finished attempt to the signed-in account. An attempt is saved to one account only, and never to the
+    challenger's own."""
+    uid = _require_user(req)
+    db = firestore.client()
+    data = req.data or {}
+    challenge = _challenge(db, data.get("token"))
+    attempt = _attempt(db, challenge, data.get("attempt"))
+    if attempt is None or attempt.get("status") != "completed":
+        raise _not_found("That result no longer exists.")
+    if challenge.get("challengerUid") == uid:
+        return {"saved": False}
+    ref = attempt.reference
+
+    @firestore.transactional
+    def run(transaction) -> bool:
+        a = _txn_data(transaction, ref)
+        if a.get("claimedUid"):
+            return a.get("claimedUid") == uid
+        transaction.update(ref, {"claimedUid": uid, "claimedAt": firestore.SERVER_TIMESTAMP})
+        return True
+
+    return {"saved": run(db.transaction()), "outcome": attempt.get("outcome")}
+
+
+@https_fn.on_call()
+def list_challenges(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    db = firestore.client()
+    sent = []
+    for c in db.collection("challenges").where("challengerUid", "==", uid).stream():
+        row = _challenge_row(c)
+        row["friends"] = sorted(({
+            "name": a.get("name", ""),
+            "status": a.get("status", "started"),
+            "score": a.get("score"),
+            "usedSec": a.get("usedSec"),
+            "outcome": a.get("outcome"),
+        } for a in (d.to_dict() for d in db.collection("challengeAttempts").where("challengeId", "==", c.id).stream())),
+            key=lambda f: (f["status"] != "completed", -(f["score"] or 0), f["usedSec"] or 0))
+        sent.append(row)
+    sent.sort(key=lambda r: -(r["createdAt"] or 0))
+    played = []
+    for a in db.collection("challengeAttempts").where("claimedUid", "==", uid).stream():
+        c = db.collection("challenges").document(a.get("challengeId")).get()
+        if not c.exists:
+            continue
+        played.append({
+            "token": c.id,
+            "attempt": a.id,
+            "deckTitle": c.get("deckTitle"),
+            "from": c.get("challengerName"),
+            "theirScore": c.get("score"),
+            "theirSec": c.get("usedSec"),
+            "score": a.get("score"),
+            "usedSec": a.get("usedSec"),
+            "total": c.get("total"),
+            "outcome": a.get("outcome"),
+            "playedAt": _ms(a.get("completedAt")),
+        })
+    played.sort(key=lambda r: -(r["playedAt"] or 0))
+    return {"sent": sent, "played": played}
 
 
 # Problem reports. A signed-in user writes to the admin; either side can keep writing back.

@@ -344,3 +344,65 @@ export interface OwnTestResult {
 
 /** Groups and group tests come with Pro and Pro Max. The server checks this too. */
 export const canUseGroups = (a: AccountSummary | null) => !!a && (a.isAdmin || a.plan === "pro" || a.plan === "promax");
+
+/** A finished session shared as a link (/c/TOKEN) that dares friends to beat its score. */
+export interface Challenge {
+  token: string;
+  sessionId: string;
+  deckTitle: string;
+  from: string;
+  score: number;
+  total: number;
+  usedSec: number;
+  timeLimitSec: number;
+  /** "I got 16/20 in 7:10 on SAT Geometry. Beat me!" */
+  brag: string;
+  createdAt: number | null;
+}
+
+export type ChallengeOutcome = "win" | "loss" | "tie";
+
+/** A challenge the student sent, with how each friend did. `outcome` is the friend's. */
+export interface SentChallenge extends Challenge {
+  friends: { name: string; status: "started" | "completed"; score: number | null; usedSec: number | null; outcome: ChallengeOutcome | null }[];
+}
+
+/** A challenge a friend played and saved to their account. */
+export interface PlayedChallenge {
+  token: string;
+  attempt: string;
+  deckTitle: string;
+  from: string;
+  theirScore: number;
+  theirSec: number;
+  score: number;
+  usedSec: number;
+  total: number;
+  outcome: ChallengeOutcome;
+  playedAt: number | null;
+}
+
+/** What a friend sees: the score to beat, then the questions (without answers), then both results. */
+export interface OpenChallenge {
+  title: string;
+  from: string;
+  score: number;
+  total: number;
+  usedSec: number;
+  timeLimitSec: number;
+  attempt?: string;
+  name?: string;
+  elapsedSec?: number;
+  remainingSec?: number | null;
+  questions?: NonNullable<OpenTest["questions"]>;
+  result?: ChallengeResult;
+}
+
+export interface ChallengeResult {
+  outcome: ChallengeOutcome;
+  name: string;
+  score: number;
+  usedSec: number;
+  claimed: boolean;
+  questions: (OwnTestResult["questions"][number] & { theirsCorrect: boolean })[];
+}
