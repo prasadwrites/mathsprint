@@ -18,8 +18,8 @@ assign_test           - Pro and Pro Max: assign a deck to a group, with a link a
 list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
 open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
 delete_deck           - The owner deletes one of their decks with its questions and practice history. The plan count stays.
-share_deck, list_deck_shares, unshare_deck - The owner shares a deck with another registered user by email, sees who has it,
-                        and takes it back; someone it was shared with can remove it from their decks.
+share_deck, list_deck_shares, unshare_deck - Pro and Pro Max: the owner shares a deck with another registered user by email,
+                        sees who has it, and takes it back; someone it was shared with can remove it from their decks.
 report_problem, list_reports, reply_report - A signed-in user reports a problem; the user and admin write back and forth.
 admin_reply_report    - Admin only: answer a problem report, optionally marking it resolved.
 admin_offer_promotion, admin_end_promotion - Admin only: offer a bigger plan for some months, or end it early.
@@ -1723,8 +1723,10 @@ def share_deck(req: https_fn.CallableRequest) -> dict:
     uid = _require_user(req)
     db = firestore.client()
     account = _load_account(db, req)
-    if account.get("status") == "suspended":
-        raise _denied("Your account is suspended.")
+    try:
+        sharing.check_can_share_decks(account, accounts.is_admin(req.auth.token))
+    except AccessDenied as e:
+        raise _denied(str(e))
     data = req.data or {}
     deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
     try:

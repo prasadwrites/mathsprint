@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAccount } from "../App";
 import { listDeckShares, shareDeck, unshareDeck } from "../lib/db";
-import type { Deck, DeckShare } from "../lib/types";
+import { canShareDecks, type Deck, type DeckShare } from "../lib/types";
 
-/** On the owner's deck page: share the deck with other registered users by email, and see or remove who has it. */
+/** On the owner's deck page: share the deck with other registered users by email (Pro and Pro Max), and see or remove who has it. */
 export default function ShareDeck({ deck }: { deck: Deck }) {
+  const { account } = useAccount();
+  const allowed = canShareDecks(account);
   const [shares, setShares] = useState<DeckShare[] | null>(null);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -46,6 +49,16 @@ export default function ShareDeck({ deck }: { deck: Deck }) {
     }
   };
 
+  if (!account) return null;
+  // Without Pro, only an owner who shared before (say, before a promotion ended) still sees who has the deck.
+  if (!allowed && !shares?.length) {
+    return (
+      <div className="note">
+        Share this deck with classmates or students by their email with Pro or Pro Max. <Link to="/upgrade">Upgrade</Link>
+      </div>
+    );
+  }
+
   return (
     <section className="panel stack" id="share">
       <div>
@@ -54,22 +67,29 @@ export default function ShareDeck({ deck }: { deck: Deck }) {
           Enter the email someone uses to sign in to MathSprint. The deck shows up in their decks so they can practice it, and it doesn't count toward their plan.
         </p>
       </div>
-      <form
-        className="row"
-        style={{ alignItems: "flex-end" }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        <div style={{ flex: "1 1 240px" }}>
-          <label htmlFor="share-email">Their registered email</label>
-          <input id="share-email" type="email" inputMode="email" autoComplete="off" required placeholder="classmate@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <button className="btn btn-primary" type="submit" disabled={busy || !email.trim()}>
-          {busy ? "Sharing…" : "Share"}
-        </button>
-      </form>
+      {!allowed && (
+        <p className="note">
+          Sharing with more people is part of Pro and Pro Max. <Link to="/upgrade">Upgrade</Link>
+        </p>
+      )}
+      {allowed && (
+        <form
+          className="row"
+          style={{ alignItems: "flex-end" }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <div style={{ flex: "1 1 240px" }}>
+            <label htmlFor="share-email">Their registered email</label>
+            <input id="share-email" type="email" inputMode="email" autoComplete="off" required placeholder="classmate@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" type="submit" disabled={busy || !email.trim()}>
+            {busy ? "Sharing…" : "Share"}
+          </button>
+        </form>
+      )}
       {error && (
         <p className="error" role="alert">
           {error}

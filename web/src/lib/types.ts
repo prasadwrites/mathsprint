@@ -356,6 +356,8 @@ export interface OwnTestResult {
 
 /** Groups and group tests come with Pro and Pro Max. The server checks this too. */
 export const canUseGroups = (a: AccountSummary | null) => !!a && (a.isAdmin || a.plan === "pro" || a.plan === "promax");
+/** Same plans as groups; the server checks too. */
+export const canShareDecks = canUseGroups;
 
 /** A finished session shared as a link (/c/TOKEN) that dares friends to beat its score. */
 export interface Challenge {

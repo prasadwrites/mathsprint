@@ -33,3 +33,22 @@ def test_who_can_unshare():
     assert sharing.can_unshare("owner", "owner", "u2")
     assert sharing.can_unshare("u2", "owner", "u2")
     assert not sharing.can_unshare("u3", "owner", "u2")
+
+
+def test_only_pro_and_pro_max_can_share():
+    assert not sharing.can_share_decks({"plan": "free"}, False)
+    assert sharing.can_share_decks({"plan": "pro"}, False)
+    assert sharing.can_share_decks({"plan": "promax"}, False)
+    assert sharing.can_share_decks({"plan": "free"}, True)  # the admin
+    with pytest.raises(AccessDenied, match="Pro and Pro Max"):
+        sharing.check_can_share_decks({"plan": "free"}, False)
+    with pytest.raises(AccessDenied, match="suspended"):
+        sharing.check_can_share_decks({"plan": "pro", "status": "suspended"}, False)
+
+
+def test_a_running_promotion_counts():
+    import time
+    account = {"plan": "free", "promo": {"plan": "pro", "endsAt": int(time.time() * 1000) + 86_400_000}}
+    assert sharing.can_share_decks(account, False)
+    expired = {"plan": "free", "promo": {"plan": "pro", "endsAt": 1}}
+    assert not sharing.can_share_decks(expired, False)

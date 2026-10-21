@@ -3,14 +3,27 @@
 Plain Python so it can be tested without Firebase; main.py does the lookups and writes. The deck stays the owner's:
 the recipient's uid goes in the deck's sharedWith list, which lets them read it and its questions (see
 firestore.rules) and practice it with their own sessions. Sharing costs no generation, so it doesn't count toward the
-recipient's plan or need an access code.
+recipient's plan or need an access code. Only Pro and Pro Max owners (and the admin) can share; anyone can receive.
 """
 
 from __future__ import annotations
 
-from accounts import AccessDenied, clean_invite_email
+from accounts import AccessDenied, clean_invite_email, plan_for, plan_id
 
 MAX_SHARES = 50  # people one deck can be shared with
+SHARE_PLANS = {"pro", "promax"}
+
+
+def can_share_decks(account: dict, admin: bool) -> bool:
+    """plan_id is the plan in effect, so a running promotion to Pro counts."""
+    return admin or plan_id(account) in SHARE_PLANS
+
+
+def check_can_share_decks(account: dict, admin: bool) -> None:
+    if account.get("status") == "suspended":
+        raise AccessDenied("Your account is suspended.")
+    if not can_share_decks(account, admin):
+        raise AccessDenied(f"Sharing decks is part of Pro and Pro Max. You're on {plan_for(account).label}.")
 
 
 def clean_share_email(email: object, own_email: str) -> str:
