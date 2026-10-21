@@ -3,7 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import Figure from "../components/Figure";
 import TimedQuestions, { loadLocal, saveLocal } from "../components/TimedQuestions";
 import { Brand, Chip, Icon } from "../components/TopBar";
-import { challengeStoreKey, rememberClaim } from "../lib/challenge";
+import ShareButtons from "../components/ShareButtons";
+import { challengeCard, challengeLink, challengeStoreKey, rememberClaim } from "../lib/challenge";
 import { openChallenge, submitChallenge } from "../lib/db";
 import { formatClock } from "../lib/pace";
 import type { ChallengeResult, OpenChallenge } from "../lib/types";
@@ -14,7 +15,14 @@ const HEADLINE = {
   tie: () => "It's a tie",
 };
 
-function FaceOff({ c, result }: { c: OpenChallenge; result: ChallengeResult }) {
+function shareText(c: OpenChallenge, r: ChallengeResult) {
+  const score = `${r.score}/${c.total} vs ${c.score}/${c.total}`;
+  if (r.outcome === "win") return `I beat ${c.from} on ${c.title}: ${score}. Think you can beat me?`;
+  if (r.outcome === "loss") return `${c.from} beat me on ${c.title}: ${score}. Can you do better?`;
+  return `${c.from} and I tied on ${c.title}: ${score}. Can you beat us?`;
+}
+
+function FaceOff({ token, c, result }: { token: string; c: OpenChallenge; result: ChallengeResult }) {
   const side = (label: string, score: number, sec: number, won: boolean) => (
     <div className={`faceoff-side ${won ? "won" : ""}`}>
       <span className="eyebrow">{label}</span>
@@ -40,6 +48,13 @@ function FaceOff({ c, result }: { c: OpenChallenge; result: ChallengeResult }) {
         <span className="faceoff-vs">vs</span>
         {side(c.from, c.score, c.usedSec, result.outcome === "loss")}
       </div>
+
+      {result.share && (
+        <div className="panel stack">
+          <h2>Share your result</h2>
+          <ShareButtons link={challengeLink(token, result.share)} text={shareText(c, result)} card={challengeCard(token, result.share)} />
+        </div>
+      )}
 
       <div className="panel stack cta-panel">
         <h2>{result.outcome === "win" ? "Save your win" : "Get your rematch"}</h2>
@@ -146,7 +161,7 @@ export default function PlayChallenge() {
       <div className="stack">
         <Brand small />
         {c?.result ? (
-          <FaceOff c={c} result={c.result} />
+          <FaceOff token={token} c={c} result={c.result} />
         ) : c?.questions && c.attempt ? (
           <TimedQuestions
             storeKey={key}
