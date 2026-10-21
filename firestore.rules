@@ -13,19 +13,25 @@ service cloud.firestore {
       return signedIn() && request.auth.token.email == "prasad.writes@gmail.com" && request.auth.token.email_verified == true;
     }
 
+    // People a deck was shared with (by the share_deck function) can read it and practice it.
+    function sharedWithMe(data) { return signedIn() && request.auth.uid in data.get("sharedWith", []) && active(); }
+
     // AI decks are written only by the generate_deck function (admin access), which
     // enforces the plan's limits. Students can add the sample deck themselves and
-    // can only see their own decks.
+    // can see their own decks and the ones shared with them.
     match /decks/{deckId} {
-      allow read, delete: if owns(resource.data);
-      allow create: if owns(request.resource.data) && request.resource.data.source == "sample";
+      allow read: if owns(resource.data) || sharedWithMe(resource.data);
+      allow delete: if owns(resource.data);
+      allow create: if owns(request.resource.data) && request.resource.data.source == "sample"
+        && !("sharedWith" in request.resource.data);
+      // Only the sharing functions change who a deck is shared with.
       allow update: if owns(resource.data)
-        && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.source == resource.data.source;
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["ownerId", "source", "sharedWith", "sharedBy"]);
 
       match /questions/{questionId} {
         function deckPath() { return /databases/$(database)/documents/decks/$(deckId); }
-        allow read: if signedIn() && get(deckPath()).data.ownerId == request.auth.uid && active();
+        allow read: if signedIn() && active()
+          && (get(deckPath()).data.ownerId == request.auth.uid || request.auth.uid in get(deckPath()).data.get("sharedWith", []));
         // getAfter, so a deck and its questions can be written in one batch. Only sample
         // decks are written from the app; AI decks come from the function.
         allow write: if signedIn() && active()

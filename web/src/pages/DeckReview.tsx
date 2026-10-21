@@ -3,6 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import Figure from "../components/Figure";
 import DeleteDeck from "../components/DeleteDeck";
 import AssignTest from "../components/AssignTest";
+import ShareDeck from "../components/ShareDeck";
+import RemoveSharedDeck from "../components/RemoveSharedDeck";
+import { useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { getDeck, getQuestions } from "../lib/db";
 import { formatClock } from "../lib/pace";
@@ -18,6 +21,7 @@ export default function DeckReview() {
   const { deckId = "" } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const user = useUser();
   const [deck, setDeck] = useState<Deck | null | undefined>(undefined);
   const [questions, setQuestions] = useState<Question[]>([]);
 
@@ -30,6 +34,7 @@ export default function DeckReview() {
   if (deck === undefined) return <><TopBar back={back} /><main className="page"><span className="spinner" /></main></>;
   if (deck === null) return <><TopBar back={back} /><main className="page"><p>This deck doesn't exist or isn't yours.</p></main></>;
 
+  const mine = deck.ownerId === user.uid;
   const dropped = Number(params.get("dropped") || 0);
   const verified = questions.length > 0 && questions.every((q) => q.verified);
   const spread = LEVELS.map(([l, c]) => ({ l, c, n: questions.filter((q) => q.difficulty === l).length }));
@@ -55,6 +60,7 @@ export default function DeckReview() {
             <div className="eyebrow">
               {deck.level} · {deck.difficulty}
               {deck.createdAt && ` · Created ${deck.createdAt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`}
+              {!mine && ` · Shared with you${deck.sharedBy ? ` by ${deck.sharedBy}` : ""}`}
             </div>
             <h1>{deck.title}</h1>
           </div>
@@ -67,7 +73,11 @@ export default function DeckReview() {
             <Link className="btn btn-primary btn-big" to={`/decks/${deck.id}/practice`}>
               <Icon name="play" /> Start practice
             </Link>
-            <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
+            {mine ? (
+              <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
+            ) : (
+              <RemoveSharedDeck deck={deck} onRemoved={() => navigate("/#decks", { replace: true })} />
+            )}
           </div>
         </div>
 
@@ -89,7 +99,8 @@ export default function DeckReview() {
           </div>
         </div>
 
-        <AssignTest deck={deck} suggestedSec={questions.length * 90} />
+        {mine && <ShareDeck deck={deck} />}
+        {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} />}
 
         <div className="panel">
           <div className="row spread">
