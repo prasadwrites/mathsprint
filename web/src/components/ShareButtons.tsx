@@ -29,35 +29,46 @@ export default function ShareButtons({ link, text, card }: { link: string; text:
   const [busy, setBusy] = useState(false);
   const message = `${text} ${link}`;
 
-  const copy = async (done: string) => {
-    try {
-      await navigator.clipboard.writeText(message);
-      setNote(done);
-    } catch {
-      setNote("Couldn't copy. Select the link and copy it yourself.");
-    }
+  /** Every button copies the message with its link first, so it can be pasted into the post, caption or story.
+   * Started before anything else in the click, while the browser still allows it. */
+  const copyMessage = () =>
+    navigator.clipboard?.writeText(message).then(
+      () => true,
+      () => false,
+    ) ?? Promise.resolve(false);
+
+  const shareTo = (url: string, where: string) => {
+    const copied = copyMessage();
+    open(url);
+    copied.then((ok) => setNote(ok ? `Your message and link are copied. Paste them into your ${where} post.` : `Copy this into your ${where} post: ${message}`));
+  };
+
+  const copy = async () => {
+    setNote((await copyMessage()) ? "Your message and link are copied. Paste them in a text or group chat." : `Couldn't copy. Copy this yourself: ${message}`);
   };
 
   // Instagram has no share link on the web. On a phone, hand the story-sized card to the share sheet, which lists
   // Instagram; elsewhere save the card so it can be posted from the phone.
   const instagram = async () => {
+    const copied = copyMessage();
     setBusy(true);
     setNote("");
     try {
       const res = await fetch(`${card}${card.includes("?") ? "&" : "?"}size=story`);
       if (!res.ok) throw new Error();
       const file = new File([await res.blob()], "mathsprint-challenge.png", { type: "image/png" });
-      await navigator.clipboard?.writeText(link).catch(() => {});
+      const ok = await copied;
+      const paste = ok ? "Your message and link are copied: paste them as the caption, or add a Link sticker to your story and paste the link." : `Add this to your post: ${message}`;
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file] }).catch(() => {});
-        setNote("Pick Instagram, then add a Link sticker to your story and paste your link (it's copied).");
+        await navigator.share({ files: [file], text: message }).catch(() => {});
+        setNote(`Pick Instagram. ${paste}`);
       } else {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(file);
         a.download = file.name;
         a.click();
         URL.revokeObjectURL(a.href);
-        setNote("Saved the picture. Post it to your Instagram story from your phone, and add a Link sticker with your link (it's copied).");
+        setNote(`Saved the picture. Post it to Instagram from your phone. ${paste}`);
       }
     } catch {
       setNote("Couldn't get the picture right now. Try again in a moment.");
@@ -69,19 +80,22 @@ export default function ShareButtons({ link, text, card }: { link: string; text:
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="share-buttons">
-        <button className="btn share-fb" onClick={() => open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`)}>
+        <button className="btn share-fb" onClick={() => shareTo(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`, "Facebook")}>
           <Facebook /> Facebook
         </button>
         <button className="btn share-ig" onClick={instagram} disabled={busy}>
           <Instagram /> {busy ? "Getting picture…" : "Instagram"}
         </button>
-        <button className="btn" onClick={() => open(`https://wa.me/?text=${encodeURIComponent(message)}`)}>WhatsApp</button>
-        <button className="btn" onClick={() => open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(link)}`)}>X</button>
-        <button className="btn" onClick={() => copy("Copied. Paste it in a text or group chat.")}>
+        <button className="btn" onClick={() => shareTo(`https://wa.me/?text=${encodeURIComponent(message)}`, "WhatsApp")}>WhatsApp</button>
+        <button className="btn" onClick={() => shareTo(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(link)}`, "X")}>X</button>
+        <button className="btn" onClick={copy}>
           Copy message
         </button>
         {typeof navigator.share === "function" && (
-          <button className="btn" onClick={() => navigator.share({ title: "MathSprint challenge", text, url: link }).catch(() => {})}>
+          <button className="btn" onClick={() => {
+              copyMessage();
+              navigator.share({ title: "MathSprint challenge", text, url: link }).catch(() => {});
+            }}>
             More…
           </button>
         )}
