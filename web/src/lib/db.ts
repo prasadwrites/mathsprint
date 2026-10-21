@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, Challenge, OpenChallenge, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -114,6 +114,27 @@ export async function openTest(token: string, code?: string) {
 
 export async function submitTest(token: string, code: string, answers: Record<string, string>, track: { times: number[]; visits: number[]; changes: number[] }) {
   return (await httpsCallable<object, OpenTest>(functions, "submit_test")({ token, code, answers, ...track })).data;
+}
+
+export async function createChallenge(sessionId: string) {
+  return (await httpsCallable<{ sessionId: string }, Challenge>(functions, "create_challenge", { timeout: 60_000 })({ sessionId })).data;
+}
+
+/** No sign-in. Just the token: the score to beat. With start or an attempt: the questions, or the finished result. */
+export async function openChallenge(args: { token: string; attempt?: string; start?: boolean; name?: string }) {
+  return (await httpsCallable<typeof args, OpenChallenge>(functions, "open_challenge")(args)).data;
+}
+
+export async function submitChallenge(token: string, attempt: string, answers: Record<string, string>, times: number[]) {
+  return (await httpsCallable<object, OpenChallenge>(functions, "submit_challenge")({ token, attempt, answers, times })).data;
+}
+
+export async function claimChallenge(token: string, attempt: string) {
+  return (await httpsCallable<{ token: string; attempt: string }, { saved: boolean }>(functions, "claim_challenge")({ token, attempt })).data;
+}
+
+export async function listChallenges() {
+  return (await httpsCallable<void, { sent: SentChallenge[]; played: PlayedChallenge[] }>(functions, "list_challenges")()).data;
 }
 
 export async function reportProblem(message: string, page: string) {

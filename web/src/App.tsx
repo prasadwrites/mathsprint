@@ -2,7 +2,8 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useActivityHeartbeat } from "./lib/activity";
-import { getAccount } from "./lib/db";
+import { claimChallenge, getAccount } from "./lib/db";
+import { clearClaim, pendingClaim } from "./lib/challenge";
 import { clearInvite, pendingInvite } from "./lib/invite";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
@@ -16,6 +17,7 @@ import Practice from "./pages/Practice";
 import PracticeSetup from "./pages/PracticeSetup";
 import Plans from "./pages/Plans";
 import Report from "./pages/Report";
+import PlayChallenge from "./pages/PlayChallenge";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
 import TestResults from "./pages/TestResults";
@@ -43,12 +45,13 @@ function AdminOnly() {
 }
 
 export default function App() {
-  // Pages anyone can open without signing in: a group member's test, and the plan comparison.
+  // Pages anyone can open without signing in: a group member's test, a friend's challenge, and the plan comparison.
   const { pathname } = useLocation();
-  if (pathname.startsWith("/t/") || pathname === "/plans") {
+  if (pathname.startsWith("/t/") || pathname.startsWith("/c/") || pathname === "/plans") {
     return (
       <Routes>
         <Route path="/t/:token" element={<TakeTest />} />
+        <Route path="/c/:token" element={<PlayChallenge />} />
         <Route path="/plans" element={<Plans />} />
       </Routes>
     );
@@ -64,8 +67,12 @@ function SignedInApp() {
 
   const refresh = useCallback(() => {
     getAccount(pendingInvite()?.token)
-      .then((a) => {
+      .then(async (a) => {
         clearInvite(); // the server has seen it; it only counts for a brand new account anyway
+        // A challenge played before signing in: save it to this account before the home page lists challenges.
+        const claim = pendingClaim();
+        if (claim) await claimChallenge(claim.token, claim.attempt).catch(() => {});
+        clearClaim();
         setAccount(a);
       })
       .catch(() => setAccount(null));
