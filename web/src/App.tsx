@@ -1,9 +1,10 @@
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useActivityHeartbeat } from "./lib/activity";
-import { claimChallenge, getAccount } from "./lib/db";
+import { claimChallenge, claimPublicTest, getAccount } from "./lib/db";
 import { clearClaim, pendingClaim } from "./lib/challenge";
+import { clearPublicClaim, pendingPublicClaim } from "./lib/publicTest";
 import { clearInvite, pendingInvite } from "./lib/invite";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
@@ -18,6 +19,7 @@ import PracticeSetup from "./pages/PracticeSetup";
 import Plans from "./pages/Plans";
 import Report from "./pages/Report";
 import PlayChallenge from "./pages/PlayChallenge";
+import PlayPublicTest from "./pages/PlayPublicTest";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
 import TestResults from "./pages/TestResults";
@@ -45,15 +47,19 @@ function AdminOnly() {
 }
 
 export default function App() {
-  // Pages anyone can open without signing in: a group member's test, a friend's challenge, and the plan comparison.
+  // Pages anyone can open without signing in: a group member's test, a friend's challenge, a public test link, and the
+  // plan comparison.
   const { pathname } = useLocation();
-  if (pathname.startsWith("/t/") || pathname.startsWith("/c/") || pathname.startsWith("/play/") || pathname === "/plans") {
+  if (["/t/", "/c/", "/play/", "/p/", "/quiz/"].some((p) => pathname.startsWith(p)) || pathname === "/plans") {
     return (
       <Routes>
         <Route path="/t/:token" element={<TakeTest />} />
         <Route path="/c/:token" element={<PlayChallenge />} />
         {/* Where /c/ sends visitors if its link-preview function can't reach the site. */}
         <Route path="/play/:token" element={<PlayChallenge />} />
+        <Route path="/p/:token" element={<PlayPublicTest />} />
+        {/* Where /p/ sends visitors if its link-preview function can't reach the site. */}
+        <Route path="/quiz/:token" element={<PlayPublicTest />} />
         <Route path="/plans" element={<Plans />} />
       </Routes>
     );
@@ -64,6 +70,8 @@ export default function App() {
 function SignedInApp() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  // A ref, since navigate changes on every route change and refresh must not.
+  const navigate = useRef(useNavigate());
   useEffect(() => onAuthStateChanged(auth, setUser), []);
   useActivityHeartbeat(!!user);
 
@@ -75,7 +83,12 @@ function SignedInApp() {
         const claim = pendingClaim();
         if (claim) await claimChallenge(claim.token, claim.attempt).catch(() => {});
         clearClaim();
+        // A public test played before signing in: put it on the leaderboard, then show the player their place.
+        const pub = pendingPublicClaim();
+        clearPublicClaim();
+        const placed = pub && (await claimPublicTest(pub.token, pub.attempt).catch(() => null));
         setAccount(a);
+        if (pub && placed?.saved) navigate.current(`/p/${pub.token}`);
       })
       .catch(() => setAccount(null));
   }, []);

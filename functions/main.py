@@ -29,6 +29,12 @@ open_challenge, submit_challenge - No sign-in: a friend plays the same questions
 claim_challenge       - A friend who signs up after playing saves their result to their new account.
 list_challenges       - The challenges a student sent, with every friend's result, and the ones they played and saved.
 challenge_page        - Serves /c/TOKEN with link-preview tags for Facebook and others, and /c/TOKEN/card.png, the score card.
+create_public_test, list_public_tests, public_test_players, remove_public_player, delete_public_test, set_public_samples -
+                        Admin only: public links to a deck's test, everyone who played each one, taking a result off
+                        the leaderboard, and sample players that fill a new leaderboard until real players join.
+open_public_test, submit_public_test - No sign-in: anyone plays a public link under a name, graded here.
+claim_public_test     - A player who signs up after playing puts their result on that test's leaderboard.
+public_test_page      - Serves /p/TOKEN with the leaderboard in its link preview, and /p/TOKEN/card.png, the leaderboard card.
 """
 
 from __future__ import annotations
@@ -46,6 +52,7 @@ import accounts
 import cards
 import challenges
 import groups
+import leaderboards
 import sharing
 from accounts import AccessDenied
 
@@ -484,9 +491,17 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
     for field in ("challengerUid", "claimedUid"):
         for r in db.collection("challengeAttempts").where(field, "==", uid).stream():
             writer.delete(r.reference)
+    boards = set()
+    for r in db.collection("publicAttempts").where("claimedUid", "==", uid).stream():
+        boards.add(r.get("testId"))
+        writer.delete(r.reference)
     for ref in (_account_ref(db, uid), db.collection("accessCodes").document(uid), db.collection("users").document(uid)):
         writer.delete(ref)
     writer.close()
+    for test_id in boards:  # their names come off the leaderboards they were on
+        test = db.collection("publicTests").document(test_id)
+        if test.get().exists:
+            _refresh_board(db, test)
     return {"ok": True, "decks": len(decks), "sessions": len(sessions)}
 
 
@@ -1447,6 +1462,368 @@ def challenge_page(req: https_fn.Request) -> https_fn.Response:
             challenges.preview_description(c, a),
             f"https://{host}/c/{token}{share}",
             f"https://{host}/c/{token}/card.png{share}",
+        )
+    return https_fn.Response(page, mimetype="text/html", headers={"Cache-Control": "public, max-age=0, s-maxage=300"})
+
+
+# Public test links with a leaderboard. The admin makes them; anyone plays with a name and no account; a result goes on
+# the leaderboard once its player signs up and claims it. Hosting sends /p/** to public_test_page (firebase.json).
+
+
+def _public_test(db, token: object):
+    token = _clean(token, 64)
+    snap = db.collection("publicTests").document(token).get() if token else None
+    if snap is None or not snap.exists:
+        raise _not_found("This test link doesn't work anymore.")
+    return snap
+
+
+def _public_attempt(db, test, attempt_token: object):
+    attempt_token = _clean(attempt_token, 64)
+    snap = db.collection("publicAttempts").document(attempt_token).get() if attempt_token else None
+    if snap is None or not snap.exists or snap.get("testId") != test.id:
+        return None
+    return snap
+
+
+def _refresh_board(db, test_ref) -> list[dict]:
+    """Rebuilds the leaderboard kept on the test from every claimed result. Runs on each claim, which is rare, so a
+    visitor's page and the share card read one document."""
+    claimed = db.collection("publicAttempts").where("testId", "==", test_ref.id).where("ranked", "==", True).stream()
+    rows = leaderboards.board([{
+        "uid": a.get("claimedUid"),
+        "name": a.get("name"),
+        "score": a.get("score"),
+        "usedSec": a.get("usedSec"),
+        "at": a.get("completedAtMs"),
+    } for a in (d.to_dict() for d in claimed)], test_ref.get().get("samples") or [])
+    test_ref.update({"board": rows})
+    return rows
+
+
+def _public_meta(test) -> dict:
+    t = test.to_dict()
+    return {
+        "title": t.get("deckTitle", ""),
+        "total": t.get("total", 0),
+        "timeLimitSec": t.get("timeLimitSec", 0),
+        # Sample players look like everyone else here; only the admin sees which they are.
+        "board": [{k: r[k] for k in ("name", "score", "usedSec")} for r in (t.get("board") or [])[: leaderboards.SHOWN]],
+        "ranked": len(t.get("board") or []),
+    }
+
+
+def _public_result(test, questions: list[dict], a: dict) -> dict:
+    """The player's own score and answers. Unlike a challenge, the correct answers and solutions stay hidden, so they
+    can't be passed around to climb the leaderboard."""
+    board = test.get("board") or []
+    rank = leaderboards.rank_of(board, int(a.get("score") or 0), int(a.get("usedSec") or 0), int(a.get("completedAtMs") or 0))
+    answers, results, times = a.get("answers") or {}, a.get("results") or {}, a.get("times") or []
+    return {
+        "name": a.get("name", ""),
+        "score": a.get("score", 0),
+        "usedSec": a.get("usedSec", 0),
+        "claimed": bool(a.get("claimedUid")),
+        "rank": rank,
+        "questions": [{
+            "prompt": q.get("prompt", ""),
+            "math": q.get("math", ""),
+            "figure": q.get("figure"),
+            "answer": answers.get(str(i), ""),
+            "correct": bool(results.get(str(i))),
+            "sec": times[i] if i < len(times) else None,
+        } for i, q in enumerate(questions)],
+    }
+
+
+def _public_row(db, doc) -> dict:
+    t = doc.to_dict()
+    attempts = db.collection("publicAttempts").where("testId", "==", doc.id)
+    return {
+        "token": doc.id,
+        "deckId": t.get("deckId"),
+        "deckTitle": t.get("deckTitle", ""),
+        "total": t.get("total", 0),
+        "timeLimitSec": t.get("timeLimitSec", 0),
+        "createdAt": _ms(t.get("createdAt")),
+        "plays": _count(attempts),
+        "finished": _count(attempts.where("status", "==", "completed")),
+        "board": (t.get("board") or [])[:3],
+        "ranked": len(t.get("board") or []),
+        "samples": len(t.get("samples") or []),
+        "samplesShowing": sum(1 for r in t.get("board") or [] if r.get("sample")),
+        "shareText": leaderboards.share_text(t),
+    }
+
+
+@https_fn.on_call(timeout_sec=120)
+def create_public_test(req: https_fn.CallableRequest) -> dict:
+    """Admin only: a public link to one of the admin's decks, with its own copy of the questions."""
+    uid = _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    deck = _owned_by(db, "decks", data.get("deckId"), uid, "ownerId", "That deck no longer exists.")
+    try:
+        limit = max(0, min(6 * 3600, int(data.get("timeLimitSec") or 0)))
+    except (TypeError, ValueError):
+        limit = 0
+    questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
+    if not questions:
+        raise _invalid("That deck has no questions.")
+    samples = leaderboards.sample_players(len(questions), limit) if data.get("fill", True) else []
+    ref = db.collection("publicTests").document(leaderboards.new_token())
+    writer = db.bulk_writer()
+    for i, q in enumerate(questions):
+        q = {k: v for k, v in q.items() if k != "check"}
+        writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    writer.close()
+    ref.set({  # written last, so a link only works once its questions exist
+        "ownerUid": uid,
+        "deckId": deck.id,
+        "deckTitle": deck.get("title") or "",
+        "total": len(questions),
+        "timeLimitSec": limit,
+        "samples": samples,
+        "board": leaderboards.board([], samples),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return _public_row(db, ref.get())
+
+
+@https_fn.on_call()
+def set_public_samples(req: https_fn.CallableRequest) -> dict:
+    """Admin only: fills a link's leaderboard with new sample players, or takes them all off."""
+    _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    test = _public_test(db, data.get("token"))
+    samples = leaderboards.sample_players(int(test.get("total") or 0), int(test.get("timeLimitSec") or 0)) if data.get("fill") else []
+    test.reference.update({"samples": samples})
+    _refresh_board(db, test.reference)
+    return _public_row(db, test.reference.get())
+
+
+@https_fn.on_call()
+def list_public_tests(req: https_fn.CallableRequest) -> dict:
+    """Admin only: the public links, newest first, optionally for one deck."""
+    _require_admin(req)
+    db = firestore.client()
+    deck_id = (req.data or {}).get("deckId")
+    docs = [d for d in db.collection("publicTests").stream() if not deck_id or d.get("deckId") == deck_id]
+    return {"tests": sorted((_public_row(db, d) for d in docs), key=lambda r: -(r["createdAt"] or 0))}
+
+
+@https_fn.on_call()
+def public_test_players(req: https_fn.CallableRequest) -> dict:
+    """Admin only: everyone who played a public link, signed up or not, best first."""
+    _require_admin(req)
+    db = firestore.client()
+    test = _public_test(db, (req.data or {}).get("token"))
+    rows = [{
+        "attempt": d.id,
+        "name": a.get("name", ""),
+        "status": a.get("status", "started"),
+        "score": a.get("score"),
+        "usedSec": a.get("usedSec"),
+        "registered": bool(a.get("claimedUid")),
+        "completedAt": a.get("completedAtMs"),
+    } for d, a in ((d, d.to_dict()) for d in db.collection("publicAttempts").where("testId", "==", test.id).stream())]
+    showing = {(r["name"], r["score"], r["usedSec"]) for r in test.get("board") or [] if r.get("sample")}
+    rows += [{
+        "attempt": s["id"],
+        "name": s["name"],
+        "status": "completed",
+        "score": s["score"],
+        "usedSec": s["usedSec"],
+        "registered": False,
+        "sample": True,
+        "showing": (s["name"], s["score"], s["usedSec"]) in showing,
+        "completedAt": None,
+    } for s in test.get("samples") or []]
+    rows.sort(key=lambda r: (r["status"] != "completed", -(r["score"] or 0), r["usedSec"] or 0, r["completedAt"] or 0))
+    return {"players": rows}
+
+
+@https_fn.on_call()
+def remove_public_player(req: https_fn.CallableRequest) -> dict:
+    """Admin only: takes one result (or one sample player) off a public link and its leaderboard, for a rude name, say."""
+    _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    test = _public_test(db, data.get("token"))
+    samples = test.get("samples") or []
+    if any(s["id"] == data.get("attempt") for s in samples):
+        test.reference.update({"samples": [s for s in samples if s["id"] != data.get("attempt")]})
+        _refresh_board(db, test.reference)
+        return {"ok": True}
+    attempt = _public_attempt(db, test, data.get("attempt"))
+    if attempt is None:
+        raise _not_found("That result no longer exists.")
+    attempt.reference.delete()
+    _refresh_board(db, test.reference)
+    return {"ok": True}
+
+
+@https_fn.on_call(timeout_sec=120)
+def delete_public_test(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    db = firestore.client()
+    test = _public_test(db, (req.data or {}).get("token"))
+    writer = db.bulk_writer()
+    for a in db.collection("publicAttempts").where("testId", "==", test.id).stream():
+        writer.delete(a.reference)
+    writer.close()
+    db.recursive_delete(test.reference)
+    return {"ok": True}
+
+
+@https_fn.on_call()
+def open_public_test(req: https_fn.CallableRequest) -> dict:
+    """No sign-in. With just the link: the test and its leaderboard. With start and a name: begins a new attempt.
+    With an attempt token: carries on that attempt, or shows its result if it's finished."""
+    db = firestore.client()
+    data = req.data or {}
+    test = _public_test(db, data.get("token"))
+    meta = _public_meta(test)
+    attempt = _public_attempt(db, test, data.get("attempt"))
+    if attempt is None and not data.get("start"):
+        return meta
+    questions = _test_questions(test.reference)
+    now = _now_ms()
+    if attempt is None:
+        name = leaderboards.clean_name(data.get("name"))
+        if not name:
+            raise _invalid("Enter your name. It's the name you'll have on the leaderboard.")
+        attempts = db.collection("publicAttempts").where("testId", "==", test.id)
+        if _count(attempts) >= leaderboards.MAX_ATTEMPTS:
+            raise _denied("This test has been played as many times as it can be.")
+        ref = db.collection("publicAttempts").document(leaderboards.new_token())
+        a = {"testId": test.id, "name": name, "status": "started", "startedAtMs": now, "createdAt": firestore.SERVER_TIMESTAMP}
+        ref.set(a)
+        attempt_id = ref.id
+    else:
+        a, attempt_id = attempt.to_dict(), attempt.id
+    if a.get("status") == "completed":
+        return {**meta, "attempt": attempt_id, "result": _public_result(test, questions, a)}
+    limit = int(meta["timeLimitSec"] or 0)
+    elapsed = (now - int(a.get("startedAtMs") or now)) / 1000
+    return {
+        **meta,
+        "attempt": attempt_id,
+        "name": a.get("name", ""),
+        "elapsedSec": elapsed,
+        "remainingSec": max(0, limit - elapsed) if limit else None,
+        "questions": [{
+            "prompt": q.get("prompt", ""),
+            "math": q.get("math", ""),
+            "figure": q.get("figure"),
+            "type": q.get("type", "numeric"),
+            "choices": q.get("choices") or [],
+            "answerCount": len(q.get("answerValues") or []) or 1,
+            "pair": bool(q.get("pair")),
+        } for q in questions],
+    }
+
+
+@https_fn.on_call()
+def submit_public_test(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    data = req.data or {}
+    test = _public_test(db, data.get("token"))
+    attempt = _public_attempt(db, test, data.get("attempt"))
+    if attempt is None:
+        raise _not_found("This attempt no longer exists. Open the test link again.")
+    questions = _test_questions(test.reference)
+    ref = attempt.reference
+
+    @firestore.transactional
+    def run(transaction) -> dict:
+        a = _txn_data(transaction, ref)
+        if a.get("status") == "completed":
+            return a  # a second tab or a retry: keep the first answers
+        now = _now_ms()
+        limit = int(test.get("timeLimitSec") or 0)
+        used = (now - int(a.get("startedAtMs") or now)) / 1000
+        answers = groups.clean_answers(data.get("answers"), len(questions))
+        graded = groups.grade(questions, answers)
+        changes = {
+            "status": "completed",
+            "answers": answers,
+            "results": graded["results"],
+            "score": graded["score"],
+            "usedSec": round(min(used, limit) if limit else used),
+            "times": groups.clean_times(data.get("times"), len(questions), used),
+            "completedAtMs": now,
+            "completedAt": firestore.SERVER_TIMESTAMP,
+        }
+        transaction.update(ref, changes)
+        return {**a, **changes}
+
+    a = run(db.transaction())
+    return {**_public_meta(test), "attempt": attempt.id, "result": _public_result(test, questions, a)}
+
+
+@https_fn.on_call()
+def claim_public_test(req: https_fn.CallableRequest) -> dict:
+    """Puts a finished result on the leaderboard under the signed-in account. A result is claimed by one account only;
+    an account that plays more than once keeps its best place."""
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    data = req.data or {}
+    test = _public_test(db, data.get("token"))
+    attempt = _public_attempt(db, test, data.get("attempt"))
+    if attempt is None or attempt.get("status") != "completed":
+        raise _not_found("That result no longer exists.")
+    ref = attempt.reference
+
+    @firestore.transactional
+    def run(transaction) -> bool:
+        a = _txn_data(transaction, ref)
+        if a.get("claimedUid"):
+            return a.get("claimedUid") == uid
+        transaction.update(ref, {"claimedUid": uid, "ranked": True, "claimedAt": firestore.SERVER_TIMESTAMP})
+        return True
+
+    saved = run(db.transaction())
+    board = _refresh_board(db, test.reference)
+    a = attempt.to_dict()
+    rank = leaderboards.rank_of(board, int(a.get("score") or 0), int(a.get("usedSec") or 0), int(a.get("completedAtMs") or 0))
+    return {"saved": saved, "rank": rank}
+
+
+@https_fn.on_request(memory=options.MemoryOption.MB_512, timeout_sec=30)
+def public_test_page(req: https_fn.Request) -> https_fn.Response:
+    """/p/TOKEN: the app, with the test's leaderboard in its link preview. /p/TOKEN/card.png?size=story: the card."""
+    parts = [p for p in req.path.split("/") if p]
+    rest = parts[parts.index("p") + 1:] if "p" in parts else []  # the emulator's URL has the function's name first
+    token = rest[0] if rest else ""
+    want_card = rest[1:] == ["card.png"]
+    db = firestore.client()
+    snap = db.collection("publicTests").document(_clean(token, 64)).get() if token else None
+    t = snap.to_dict() if snap is not None and snap.exists else None
+    host = challenges.public_host(req.headers.get("X-Forwarded-Host"), _SITE)
+
+    if want_card:
+        if t is None:
+            return https_fn.Response("Not found", status=404)
+        size = "story" if req.args.get("size") == "story" else "feed"
+        return https_fn.Response(cards.render_board(t, size, host), mimetype="image/png", headers={"Cache-Control": "public, max-age=600, s-maxage=600"})
+
+    try:
+        page = _index_html()
+    except Exception:  # Hosting unreachable: send the visitor to the same page without the preview
+        return https_fn.Response(status=302, headers={"Location": f"/quiz/{token}"})
+    if t is not None:
+        # The card's address changes with the leaderboard, so a site that already fetched it shows the new one.
+        version = f"?v={len(t.get('board') or [])}-{(t.get('board') or [{}])[0].get('score', 0)}"
+        page = challenges.with_preview(
+            page,
+            leaderboards.headline(t),
+            leaderboards.preview_description(t),
+            f"https://{host}/p/{token}",
+            f"https://{host}/p/{token}/card.png{version}",
         )
     return https_fn.Response(page, mimetype="text/html", headers={"Cache-Control": "public, max-age=0, s-maxage=300"})
 

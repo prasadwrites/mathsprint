@@ -21,10 +21,10 @@ function Instagram() {
 }
 
 /**
- * Sharing for a challenge or a friend's result. `link` is the page to share (its preview shows the score card);
+ * Sharing for a challenge, a friend's result, or a public test's leaderboard. `link` is the page to share (its preview shows the score card);
  * `card` is the card image's address without a size, used for Instagram, which takes pictures, not links.
  */
-export default function ShareButtons({ link, text, card }: { link: string; text: string; card: string }) {
+export default function ShareButtons({ link, text, card, title = "MathSprint challenge" }: { link: string; text: string; card: string; title?: string }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const message = `${text} ${link}`;
@@ -56,7 +56,7 @@ export default function ShareButtons({ link, text, card }: { link: string; text:
     try {
       const res = await fetch(`${card}${card.includes("?") ? "&" : "?"}size=story`);
       if (!res.ok) throw new Error();
-      const file = new File([await res.blob()], "mathsprint-challenge.png", { type: "image/png" });
+      const file = new File([await res.blob()], `${title.toLowerCase().replace(/\W+/g, "-")}.png`, { type: "image/png" });
       const ok = await copied;
       const paste = ok ? "Your message and link are copied: paste them as the caption, or add a Link sticker to your story and paste the link." : `Add this to your post: ${message}`;
       if (navigator.canShare?.({ files: [file] })) {
@@ -94,7 +94,7 @@ export default function ShareButtons({ link, text, card }: { link: string; text:
         {typeof navigator.share === "function" && (
           <button className="btn" onClick={() => {
               copyMessage();
-              navigator.share({ title: "MathSprint challenge", text, url: link }).catch(() => {});
+              navigator.share({ title, text, url: link }).catch(() => {});
             }}>
             More…
           </button>

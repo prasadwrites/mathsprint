@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, Challenge, OpenChallenge, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -145,6 +145,45 @@ export async function claimChallenge(token: string, attempt: string) {
 
 export async function listChallenges() {
   return (await httpsCallable<void, { sent: SentChallenge[]; played: PlayedChallenge[] }>(functions, "list_challenges")()).data;
+}
+
+/** Admin only: a public link to one of the admin's decks, which anyone can play from without an account. */
+export async function createPublicTest(deckId: string, timeLimitSec: number, fill: boolean) {
+  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec, fill })).data;
+}
+
+/** Admin only: new sample players on a link's leaderboard, or none. */
+export async function setPublicSamples(token: string, fill: boolean) {
+  return (await httpsCallable<object, PublicTest>(functions, "set_public_samples")({ token, fill })).data;
+}
+
+export async function listPublicTests(deckId?: string) {
+  return (await httpsCallable<object, { tests: PublicTest[] }>(functions, "list_public_tests")(deckId ? { deckId } : {})).data.tests;
+}
+
+export async function publicTestPlayers(token: string) {
+  return (await httpsCallable<object, { players: PublicPlayer[] }>(functions, "public_test_players")({ token })).data.players;
+}
+
+export async function removePublicPlayer(token: string, attempt: string) {
+  await httpsCallable(functions, "remove_public_player")({ token, attempt });
+}
+
+export async function deletePublicTest(token: string) {
+  await httpsCallable(functions, "delete_public_test", { timeout: 120_000 })({ token });
+}
+
+/** No sign-in. Just the token: the test and its leaderboard. With start and a name, or an attempt: the questions or the result. */
+export async function openPublicTest(args: { token: string; attempt?: string; start?: boolean; name?: string }) {
+  return (await httpsCallable<typeof args, OpenPublicTest>(functions, "open_public_test")(args)).data;
+}
+
+export async function submitPublicTest(token: string, attempt: string, answers: Record<string, string>, times: number[]) {
+  return (await httpsCallable<object, OpenPublicTest>(functions, "submit_public_test")({ token, attempt, answers, times })).data;
+}
+
+export async function claimPublicTest(token: string, attempt: string) {
+  return (await httpsCallable<object, { saved: boolean; rank: number }>(functions, "claim_public_test")({ token, attempt })).data;
 }
 
 export async function reportProblem(message: string, page: string) {

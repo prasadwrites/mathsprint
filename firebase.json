@@ -5,6 +5,7 @@
     "predeploy": ["npm --prefix web run build"],
     "rewrites": [
       { "source": "/c/**", "function": { "functionId": "challenge_page", "region": "us-central1" } },
+      { "source": "/p/**", "function": { "functionId": "public_test_page", "region": "us-central1" } },
       { "source": "**", "destination": "/index.html" }
     ]
   },

@@ -371,3 +371,20 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .share-buttons .btn { display: inline-flex; align-items: center; gap: 8px; }
 .share-fb { background: #1877f2; border-color: #1877f2; color: #fff; }
 .share-ig { background: linear-gradient(45deg, #f58529, #dd2a7b 50%, #8134af); border-color: transparent; color: #fff; }
+
+/* Public test leaderboard. */
+.board { list-style: none; margin: 0; padding: 0; }
+.board li { display: grid; grid-template-columns: 32px 1fr auto 56px; gap: 12px; align-items: center; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+.board li:last-child { border-bottom: none; }
+.board li.me { background: var(--good-soft); border-radius: 10px; }
+.board-name { font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+.board li .mono:last-child { text-align: right; }
+.board-place { width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; font-family: var(--f-mono); font-weight: 700; font-size: 14px; background: var(--chip); color: var(--ink); }
+.board-place.p1 { background: #c99212; color: #fff; }
+.board-place.p2 { background: #8a96a5; color: #fff; }
+.board-place.p3 { background: #b06e3c; color: #fff; }
+.rank-big { font-family: var(--f-display); font-size: 52px; font-weight: 800; line-height: 1; }
+.players { list-style: none; margin: 0; padding: 0; }
+.players li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.players li:last-child { border-bottom: none; }
+@media (max-width: 560px) { .players li { grid-template-columns: 1fr auto; } }

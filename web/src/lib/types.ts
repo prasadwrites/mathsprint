@@ -422,3 +422,73 @@ export interface ChallengeResult {
   share?: string | null;
   questions: (OwnTestResult["questions"][number] & { theirsCorrect: boolean })[];
 }
+
+/** One place on a public test's leaderboard. Only results whose players signed up are on it. */
+export interface BoardRow {
+  name: string;
+  score: number;
+  usedSec: number;
+  /** Only in the admin's view: a made-up player. */
+  sample?: boolean;
+}
+
+/** What anyone with a public test link sees: the leaderboard, then the questions (without answers), then their result. */
+export interface OpenPublicTest {
+  title: string;
+  total: number;
+  timeLimitSec: number;
+  /** The top places, best first. */
+  board: BoardRow[];
+  /** How many people are on the leaderboard. */
+  ranked: number;
+  attempt?: string;
+  name?: string;
+  elapsedSec?: number;
+  remainingSec?: number | null;
+  questions?: NonNullable<OpenTest["questions"]>;
+  result?: PublicTestResult;
+}
+
+export interface PublicTestResult {
+  name: string;
+  score: number;
+  usedSec: number;
+  claimed: boolean;
+  /** The place this result has on the leaderboard, or would have once its player signs up. */
+  rank: number;
+  /** The player's own answers. The correct answers stay hidden to keep the leaderboard fair. */
+  questions: { prompt: string; math: string; figure?: Figure | null; answer: string; correct: boolean; sec: number | null }[];
+}
+
+/** Admin only: a public link to a deck's test. */
+export interface PublicTest {
+  token: string;
+  deckId: string;
+  deckTitle: string;
+  total: number;
+  timeLimitSec: number;
+  createdAt: number | null;
+  plays: number;
+  finished: number;
+  /** The top three. */
+  board: BoardRow[];
+  ranked: number;
+  /** Made-up players filling the board until real ones join, and how many are on it now. */
+  samples: number;
+  samplesShowing: number;
+  /** An inviting line for social posts, with the current leader. */
+  shareText: string;
+}
+
+export interface PublicPlayer {
+  attempt: string;
+  name: string;
+  status: "started" | "completed";
+  score: number | null;
+  usedSec: number | null;
+  registered: boolean;
+  completedAt: number | null;
+  /** A made-up player, and whether it's still on the board or a real player has taken its place. */
+  sample?: boolean;
+  showing?: boolean;
+}
