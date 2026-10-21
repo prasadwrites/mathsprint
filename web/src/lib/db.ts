@@ -43,6 +43,9 @@ export interface GenerateInput {
   level: string;
   notes: string;
   accessCode: string;
+  /** A PDF to write the deck from, base64-encoded; `topic` is then an optional focus. */
+  pdf?: string;
+  pdfName?: string;
 }
 
 export async function generateDeck(input: GenerateInput) {

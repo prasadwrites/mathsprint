@@ -8,7 +8,7 @@ import anthropic  # noqa: E402
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 
-from generator import UNAVAILABLE, DeckRequest, GenerationError, generate_deck  # noqa: E402
+from generator import MAX_PDF_BYTES, UNAVAILABLE, DeckRequest, GenerationError, PdfSource, generate_deck, read_pdf  # noqa: E402
 from schema import Check, GeneratedDeck, GeneratedQuestion, SolutionStep  # noqa: E402
 
 
@@ -146,3 +146,50 @@ def test_a_rejected_output_schema_falls_back_to_plain_json():
 def test_garbled_plain_json_is_a_readable_error():
     with pytest.raises(GenerationError, match="garbled"):
         generate_deck(DeckRequest(topic="t", count=1, difficulty="Medium", level="HS"), client=GrammarTooLargeClient("{oops"))
+
+
+class PdfClient:
+    """Answers the PDF read with `source`, then decks as FakeClient does; records every request."""
+
+    def __init__(self, source, decks=()):
+        self.source, self.decks, self.calls = source, list(decks), []
+        self.beta = SimpleNamespace(messages=SimpleNamespace(parse=self._parse))
+
+    def _parse(self, **kw):
+        self.calls.append(kw)
+        if kw["output_format"] is PdfSource:
+            return SimpleNamespace(stop_reason="end_turn", parsed_output=self.source)
+        return SimpleNamespace(stop_reason="end_turn", parsed_output=self.decks.pop(0))
+
+
+PDF = b"%PDF-1.4 fake"
+
+
+def test_pdf_is_sent_as_a_document():
+    source = PdfSource(is_math=True, topic="Factoring", level="Algebra I", summary="Factor trinomials like x² − 5x + 6.")
+    client = PdfClient(source)
+    assert read_pdf(PDF, "just the trinomials", client) == source
+    block = client.calls[0]["messages"][0]["content"][0]
+    assert block["type"] == "document" and block["source"]["media_type"] == "application/pdf"
+    assert "just the trinomials" in client.calls[0]["messages"][0]["content"][1]["text"]
+
+
+def test_pdf_without_math_is_refused():
+    client = PdfClient(PdfSource(is_math=False, topic="", level="", summary=""))
+    with pytest.raises(GenerationError, match="doesn't seem to have any math"):
+        read_pdf(PDF, "", client)
+
+
+def test_non_pdf_and_huge_files_are_refused_without_calling_claude():
+    client = PdfClient(None)
+    with pytest.raises(GenerationError, match="isn't a PDF"):
+        read_pdf(b"hello", "", client)
+    with pytest.raises(GenerationError, match="too large"):
+        read_pdf(b"%PDF" + b"0" * MAX_PDF_BYTES, "", client)
+    assert client.calls == []
+
+
+def test_deck_prompt_includes_the_pdf_summary():
+    client = FakeClient([deck(make_q([2, 3]))])
+    generate_deck(DeckRequest("Factoring", 1, "Medium", "Algebra I", source="Factor trinomials like x² − 5x + 6."), client)
+    assert "material the student uploaded" in client.prompts[0] and "x² − 5x + 6" in client.prompts[0]

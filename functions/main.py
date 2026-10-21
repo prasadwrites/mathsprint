@@ -1,6 +1,6 @@
 """Cloud Functions for MathSprint (Python runtime).
 
-generate_deck         - Claude writes a deck, SymPy checks every answer, the deck is saved to Firestore.
+generate_deck         - Claude writes a deck (from a topic, an uploaded PDF, or both), SymPy checks every answer, the deck is saved to Firestore.
 explain_step          - Claude re-explains one solution step in the style the student picks.
 get_account           - The signed-in student's plan, usage and status (creates the account on first call).
 admin_list_accounts   - Admin only: every sign-in with its plan, usage, status and access code.
@@ -31,6 +31,7 @@ challenge_page        - Serves /c/TOKEN with link-preview tags for Facebook and 
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import time
@@ -170,7 +171,8 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
     account_code = code_doc.get("code") if code_doc.exists else None
     code_valid = accounts.code_ok(data.get("accessCode"), account_code, os.environ.get("DECK_ACCESS_CODE"), admin)
     topic = _clean(data.get("topic"), 200)
-    if not topic:
+    pdf = _pdf_bytes(data.get("pdf"))
+    if not topic and pdf is None:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Tell me what to practice.")
     try:
         count = max(accounts.MIN_QUESTIONS, min(accounts.MAX_QUESTIONS, int(data.get("count", 10))))
@@ -185,12 +187,21 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         topic=topic,
         count=count,
         difficulty=difficulty,
-        level=_clean(data.get("level"), 80) or "High school or college",
+        level=_clean(data.get("level"), 80),
         notes=_clean(data.get("notes"), 600),
     )
 
     try:
-        return _build_and_save(db, uid, topic, difficulty, request)
+        # Read only after the deck is reserved, so plan limits and access codes apply before any AI credit is spent.
+        if pdf is not None:
+            from generator import read_pdf
+
+            source = read_pdf(pdf, topic)
+            request.topic = topic or source.topic
+            request.level = request.level or source.level
+            request.source = source.summary
+        request.level = request.level or "High school or college"
+        return _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "")
     except Exception as e:
         # A deck that never got saved shouldn't count against the plan.
         _account_ref(db, uid).update({"decksCreated": firestore.Increment(-1)})
@@ -198,12 +209,24 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             message = f"{e} ({e.detail})" if admin and e.detail else str(e)
             raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, message)
         # Anything else would reach the app as a bare "INTERNAL"; log the cause and say something useful instead.
-        log.exception("generate_deck failed for topic %r", topic)
+        log.exception("generate_deck failed for topic %r", request.topic)
         detail = f" ({type(e).__name__}: {e})" if admin else ""
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INTERNAL, f"The deck couldn't be built. Try again.{detail}")
 
 
-def _build_and_save(db, uid: str, topic: str, difficulty: str, request) -> dict:
+def _pdf_bytes(value) -> bytes | None:
+    """The uploaded PDF, sent base64-encoded; None when there isn't one."""
+    if not value:
+        return None
+    if not isinstance(value, str):
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "That file couldn't be uploaded.")
+    try:
+        return base64.b64decode(value, validate=True)
+    except ValueError:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "That file couldn't be uploaded.")
+
+
+def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name: str = "") -> dict:
     from figures import diagram_doc, figure_doc
     from generator import generate_deck as _generate
 
@@ -220,6 +243,7 @@ def _build_and_save(db, uid: str, topic: str, difficulty: str, request) -> dict:
         "notes": request.notes,
         "questionCount": len(result.deck.questions),
         "source": "ai",
+        **({"sourcePdf": pdf_name or "PDF"} if request.source else {}),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
     for i, q in enumerate(result.deck.questions):

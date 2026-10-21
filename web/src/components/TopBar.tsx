@@ -12,7 +12,7 @@ export function Brand({ small }: { small?: boolean }) {
   );
 }
 
-export function Icon({ name, size = 18 }: { name: "back" | "sparkle" | "play" | "check" | "next" | "chevron" | "clock" | "more"; size?: number }) {
+export function Icon({ name, size = 18 }: { name: "back" | "sparkle" | "play" | "check" | "next" | "chevron" | "clock" | "more" | "file"; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", "aria-hidden": true } as const;
   const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
   switch (name) {
@@ -30,6 +30,8 @@ export function Icon({ name, size = 18 }: { name: "back" | "sparkle" | "play" | 
       return <svg {...common} {...stroke} strokeWidth={2.5}><path d="M9 6l6 6-6 6" /></svg>;
     case "clock":
       return <svg {...common} {...stroke}><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M9 2h6" /></svg>;
+    case "file":
+      return <svg {...common} {...stroke}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></svg>;
     case "more":
       return <svg {...common} fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>;
   }
