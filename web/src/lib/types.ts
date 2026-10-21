@@ -428,6 +428,8 @@ export interface BoardRow {
   name: string;
   score: number;
   usedSec: number;
+  /** Only in the admin's view: a made-up player. */
+  sample?: boolean;
 }
 
 /** What anyone with a public test link sees: the leaderboard, then the questions (without answers), then their result. */
@@ -471,6 +473,9 @@ export interface PublicTest {
   /** The top three. */
   board: BoardRow[];
   ranked: number;
+  /** Made-up players filling the board until real ones join, and how many are on it now. */
+  samples: number;
+  samplesShowing: number;
   /** An inviting line for social posts, with the current leader. */
   shareText: string;
 }
@@ -483,4 +488,7 @@ export interface PublicPlayer {
   usedSec: number | null;
   registered: boolean;
   completedAt: number | null;
+  /** A made-up player, and whether it's still on the board or a real player has taken its place. */
+  sample?: boolean;
+  showing?: boolean;
 }

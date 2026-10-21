@@ -29,8 +29,9 @@ open_challenge, submit_challenge - No sign-in: a friend plays the same questions
 claim_challenge       - A friend who signs up after playing saves their result to their new account.
 list_challenges       - The challenges a student sent, with every friend's result, and the ones they played and saved.
 challenge_page        - Serves /c/TOKEN with link-preview tags for Facebook and others, and /c/TOKEN/card.png, the score card.
-create_public_test, list_public_tests, public_test_players, remove_public_player, delete_public_test - Admin only: public
-                        links to a deck's test, everyone who played each one, and taking a result off the leaderboard.
+create_public_test, list_public_tests, public_test_players, remove_public_player, delete_public_test, set_public_samples -
+                        Admin only: public links to a deck's test, everyone who played each one, taking a result off
+                        the leaderboard, and sample players that fill a new leaderboard until real players join.
 open_public_test, submit_public_test - No sign-in: anyone plays a public link under a name, graded here.
 claim_public_test     - A player who signs up after playing puts their result on that test's leaderboard.
 public_test_page      - Serves /p/TOKEN with the leaderboard in its link preview, and /p/TOKEN/card.png, the leaderboard card.
@@ -1495,7 +1496,7 @@ def _refresh_board(db, test_ref) -> list[dict]:
         "score": a.get("score"),
         "usedSec": a.get("usedSec"),
         "at": a.get("completedAtMs"),
-    } for a in (d.to_dict() for d in claimed)])
+    } for a in (d.to_dict() for d in claimed)], test_ref.get().get("samples") or [])
     test_ref.update({"board": rows})
     return rows
 
@@ -1506,7 +1507,8 @@ def _public_meta(test) -> dict:
         "title": t.get("deckTitle", ""),
         "total": t.get("total", 0),
         "timeLimitSec": t.get("timeLimitSec", 0),
-        "board": (t.get("board") or [])[: leaderboards.SHOWN],
+        # Sample players look like everyone else here; only the admin sees which they are.
+        "board": [{k: r[k] for k in ("name", "score", "usedSec")} for r in (t.get("board") or [])[: leaderboards.SHOWN]],
         "ranked": len(t.get("board") or []),
     }
 
@@ -1548,6 +1550,8 @@ def _public_row(db, doc) -> dict:
         "finished": _count(attempts.where("status", "==", "completed")),
         "board": (t.get("board") or [])[:3],
         "ranked": len(t.get("board") or []),
+        "samples": len(t.get("samples") or []),
+        "samplesShowing": sum(1 for r in t.get("board") or [] if r.get("sample")),
         "shareText": leaderboards.share_text(t),
     }
 
@@ -1566,6 +1570,7 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
     questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
     if not questions:
         raise _invalid("That deck has no questions.")
+    samples = leaderboards.sample_players(len(questions), limit) if data.get("fill", True) else []
     ref = db.collection("publicTests").document(leaderboards.new_token())
     writer = db.bulk_writer()
     for i, q in enumerate(questions):
@@ -1578,10 +1583,24 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
         "deckTitle": deck.get("title") or "",
         "total": len(questions),
         "timeLimitSec": limit,
-        "board": [],
+        "samples": samples,
+        "board": leaderboards.board([], samples),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
     return _public_row(db, ref.get())
+
+
+@https_fn.on_call()
+def set_public_samples(req: https_fn.CallableRequest) -> dict:
+    """Admin only: fills a link's leaderboard with new sample players, or takes them all off."""
+    _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    test = _public_test(db, data.get("token"))
+    samples = leaderboards.sample_players(int(test.get("total") or 0), int(test.get("timeLimitSec") or 0)) if data.get("fill") else []
+    test.reference.update({"samples": samples})
+    _refresh_board(db, test.reference)
+    return _public_row(db, test.reference.get())
 
 
 @https_fn.on_call()
@@ -1609,17 +1628,34 @@ def public_test_players(req: https_fn.CallableRequest) -> dict:
         "registered": bool(a.get("claimedUid")),
         "completedAt": a.get("completedAtMs"),
     } for d, a in ((d, d.to_dict()) for d in db.collection("publicAttempts").where("testId", "==", test.id).stream())]
+    showing = {(r["name"], r["score"], r["usedSec"]) for r in test.get("board") or [] if r.get("sample")}
+    rows += [{
+        "attempt": s["id"],
+        "name": s["name"],
+        "status": "completed",
+        "score": s["score"],
+        "usedSec": s["usedSec"],
+        "registered": False,
+        "sample": True,
+        "showing": (s["name"], s["score"], s["usedSec"]) in showing,
+        "completedAt": None,
+    } for s in test.get("samples") or []]
     rows.sort(key=lambda r: (r["status"] != "completed", -(r["score"] or 0), r["usedSec"] or 0, r["completedAt"] or 0))
     return {"players": rows}
 
 
 @https_fn.on_call()
 def remove_public_player(req: https_fn.CallableRequest) -> dict:
-    """Admin only: takes one result off a public link and its leaderboard, for a rude name, say."""
+    """Admin only: takes one result (or one sample player) off a public link and its leaderboard, for a rude name, say."""
     _require_admin(req)
     db = firestore.client()
     data = req.data or {}
     test = _public_test(db, data.get("token"))
+    samples = test.get("samples") or []
+    if any(s["id"] == data.get("attempt") for s in samples):
+        test.reference.update({"samples": [s for s in samples if s["id"] != data.get("attempt")]})
+        _refresh_board(db, test.reference)
+        return {"ok": True}
     attempt = _public_attempt(db, test, data.get("attempt"))
     if attempt is None:
         raise _not_found("That result no longer exists.")

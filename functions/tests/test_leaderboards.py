@@ -74,3 +74,28 @@ def test_board_cards_render_at_both_sizes():
         for size, dims in cards.SIZES.items():
             img = Image.open(io.BytesIO(cards.render_board(t, size, "mathsprint-2b113.web.app")))
             assert img.format == "PNG" and img.size == dims
+
+
+def test_sample_players_look_real_and_leave_room_at_the_top():
+    import random
+
+    samples = leaderboards.sample_players(20, 1200, random.Random(1))
+    assert len(samples) == leaderboards.FILL
+    assert len({s["name"] for s in samples}) == leaderboards.FILL
+    for s in samples:
+        assert 9 <= s["score"] <= 17 and 20 <= s["usedSec"] <= 1080 and s["sample"]
+    rows = leaderboards.board([], samples)
+    assert len(rows) == leaderboards.FILL and all(r["sample"] for r in rows)
+
+
+def test_real_players_replace_samples_best_first_and_win_ties():
+    samples = [{"id": f"sample-{i}", "name": f"S{i}", "score": 10 + i, "usedSec": 300, "at": leaderboards.SEED_AT, "sample": True} for i in range(8)]
+    real = [{"uid": "a", "name": "Ana", "score": 17, "usedSec": 300, "at": 5}]
+    rows = leaderboards.board(real, samples)
+    assert len(rows) == 8
+    assert "S7" not in [r["name"] for r in rows]  # the best sample made room
+    assert rows[0]["name"] == "Ana"  # tied with S7's score and time, but real players win ties
+    assert "sample" not in rows[0]
+    many = [{"uid": str(i), "name": f"R{i}", "score": 1, "usedSec": 900, "at": i} for i in range(8)]
+    assert not any(r.get("sample") for r in leaderboards.board(many, samples))
+    assert {s["name"] for s in leaderboards.showing_samples(samples, 3)} == {"S0", "S1", "S2", "S3", "S4"}

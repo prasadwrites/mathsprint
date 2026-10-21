@@ -148,8 +148,13 @@ export async function listChallenges() {
 }
 
 /** Admin only: a public link to one of the admin's decks, which anyone can play from without an account. */
-export async function createPublicTest(deckId: string, timeLimitSec: number) {
-  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec })).data;
+export async function createPublicTest(deckId: string, timeLimitSec: number, fill: boolean) {
+  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec, fill })).data;
+}
+
+/** Admin only: new sample players on a link's leaderboard, or none. */
+export async function setPublicSamples(token: string, fill: boolean) {
+  return (await httpsCallable<object, PublicTest>(functions, "set_public_samples")({ token, fill })).data;
 }
 
 export async function listPublicTests(deckId?: string) {

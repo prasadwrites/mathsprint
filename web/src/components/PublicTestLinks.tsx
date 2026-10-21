@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Leaderboard from "./Leaderboard";
 import ShareButtons from "./ShareButtons";
 import { Chip } from "./TopBar";
-import { createPublicTest, deletePublicTest, listPublicTests, publicTestPlayers, removePublicPlayer } from "../lib/db";
+import { createPublicTest, deletePublicTest, listPublicTests, publicTestPlayers, removePublicPlayer, setPublicSamples } from "../lib/db";
 import { formatClock } from "../lib/pace";
 import { publicTestCard, publicTestLink } from "../lib/publicTest";
 import type { Deck, PublicPlayer, PublicTest } from "../lib/types";
@@ -35,12 +35,18 @@ function Players({ test, onChange }: { test: PublicTest; onChange: () => void })
           ) : (
             <span className="muted small">didn't finish</span>
           )}
-          {p.registered ? <Chip tone="good">On leaderboard</Chip> : <Chip>Not signed up</Chip>}
+          {p.sample ? (
+            <Chip tone={p.showing ? "warn" : "neutral"}>{p.showing ? "Sample, on leaderboard" : "Sample, replaced"}</Chip>
+          ) : p.registered ? (
+            <Chip tone="good">On leaderboard</Chip>
+          ) : (
+            <Chip>Not signed up</Chip>
+          )}
           <button
             type="button"
             className="btn-link danger"
             onClick={async () => {
-              if (!window.confirm(`Remove ${p.name}'s result${p.registered ? " from the leaderboard" : ""}?`)) return;
+              if (!window.confirm(p.sample ? `Remove the sample player ${p.name}?` : `Remove ${p.name}'s result${p.registered ? " from the leaderboard" : ""}?`)) return;
               await removePublicPlayer(test.token, p.attempt).catch(() => {});
               load();
               onChange();
@@ -57,6 +63,13 @@ function Players({ test, onChange }: { test: PublicTest; onChange: () => void })
 function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [filling, setFilling] = useState(false);
+  const samples = async (fill: boolean) => {
+    setFilling(true);
+    await setPublicSamples(test.token, fill).catch(() => {});
+    setFilling(false);
+    onChange();
+  };
   const link = publicTestLink(test.token);
   return (
     <div className="panel stack" style={{ boxShadow: "none" }}>
@@ -72,6 +85,16 @@ function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }
         <input type="text" readOnly value={link} aria-label="Public test link" onFocus={(e) => e.target.select()} />
       </div>
       {test.board.length > 0 && <Leaderboard rows={test.board} total={test.total} />}
+      <div className="row" style={{ gap: 8 }}>
+        <span className="muted small">
+          {test.samples
+            ? `${test.samplesShowing} of ${test.samples} sample players on the board. Real players take their places as they sign up; visitors can't tell them apart.`
+            : "No sample players."}
+        </span>
+        <button type="button" className="btn-link" disabled={filling} onClick={() => samples(!test.samples)}>
+          {filling ? "Saving…" : test.samples ? "Remove sample players" : "Add sample players"}
+        </button>
+      </div>
       <ShareButtons link={link} text={test.shareText} card={publicTestCard(test.token)} title="MathSprint leaderboard" />
       <details>
         <summary>Everyone who played</summary>
@@ -117,6 +140,7 @@ function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }
 export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; suggestedSec: number }) {
   const [tests, setTests] = useState<PublicTest[] | null>(null);
   const [timed, setTimed] = useState(true);
+  const [fill, setFill] = useState(true);
   const [minutes, setMinutes] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -132,7 +156,7 @@ export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; su
     setBusy(true);
     setError("");
     try {
-      const t = await createPublicTest(deck.id, timed ? minutes * 60 : 0);
+      const t = await createPublicTest(deck.id, timed ? minutes * 60 : 0, fill);
       setTests((ts) => [t, ...(ts ?? [])]);
     } catch (e) {
       setError((e as Error).message || "The link wasn't made. Try again.");
@@ -147,7 +171,8 @@ export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; su
         <h2>Public test link</h2>
         <p className="muted">
           Anyone with the link can take this deck as a test with just a name, no account. Players who sign up afterwards go on the leaderboard, ranked by
-          right answers, then time. Share it and the post shows the top of the leaderboard.
+          right answers, then time. Share it and the post shows the top of the leaderboard. Sample players fill a new board so the
+          first post isn't empty; they step aside as real players join.
         </p>
       </div>
       <form
@@ -177,6 +202,9 @@ export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; su
             </label>
           </div>
         </div>
+        <label className="radio" style={{ whiteSpace: "nowrap", paddingBottom: 10 }}>
+          <input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Start with sample players
+        </label>
         <button className="btn btn-primary" type="submit" disabled={busy}>
           {busy ? "Making the link…" : tests?.length ? "Make another link" : "Make a public link"}
         </button>
