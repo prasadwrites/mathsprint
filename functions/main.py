@@ -31,6 +31,7 @@ challenge_page        - Serves /c/TOKEN with link-preview tags for Facebook and 
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 import urllib.request
@@ -48,6 +49,8 @@ initialize_app()
 options.set_global_options(region="us-central1", max_instances=10)
 
 DIFFICULTIES = {"Easy", "Medium", "Hard", "Mixed"}
+
+log = logging.getLogger(__name__)
 
 
 def _require_user(req: https_fn.CallableRequest) -> str:
@@ -157,8 +160,7 @@ def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool, co
 def generate_deck(req: https_fn.CallableRequest) -> dict:
     # Imported here, not at the top: anthropic and SymPy are slow to load, and Firebase gives a deploy
     # only 10 seconds to load this file and list its functions.
-    from figures import diagram_doc, figure_doc
-    from generator import DeckRequest, GenerationError, generate_deck as _generate
+    from generator import DeckRequest, GenerationError
 
     uid = _require_user(req)
     admin = accounts.is_admin(req.auth.token)
@@ -188,14 +190,24 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
     )
 
     try:
-        result = _generate(request)
+        return _build_and_save(db, uid, topic, difficulty, request)
     except Exception as e:
         # A deck that never got saved shouldn't count against the plan.
         _account_ref(db, uid).update({"decksCreated": firestore.Increment(-1)})
         if isinstance(e, GenerationError):
-            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
-        raise
+            message = f"{e} ({e.detail})" if admin and e.detail else str(e)
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, message)
+        # Anything else would reach the app as a bare "INTERNAL"; log the cause and say something useful instead.
+        log.exception("generate_deck failed for topic %r", topic)
+        detail = f" ({type(e).__name__}: {e})" if admin else ""
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INTERNAL, f"The deck couldn't be built. Try again.{detail}")
 
+
+def _build_and_save(db, uid: str, topic: str, difficulty: str, request) -> dict:
+    from figures import diagram_doc, figure_doc
+    from generator import generate_deck as _generate
+
+    result = _generate(request)
     deck_ref = db.collection("decks").document()
     batch = db.batch()
     batch.set(deck_ref, {
@@ -257,7 +269,8 @@ def explain_step(req: https_fn.CallableRequest) -> dict:
     try:
         text = _explain(q.to_dict(), step, _clean(data.get("style"), 20) or "simple")
     except GenerationError as e:
-        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
+        message = f"{e} ({e.detail})" if accounts.is_admin(req.auth.token) and e.detail else str(e)
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, message)
     return {"explanation": text}
 
 
