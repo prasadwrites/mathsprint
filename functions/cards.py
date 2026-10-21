@@ -1,7 +1,8 @@
-"""Score card images for sharing a challenge on Facebook, Instagram and the like.
+"""Score card images for sharing a challenge or a public test's leaderboard on Facebook, Instagram and the like.
 
 Two sizes: "feed" (1200x630, what Facebook and X show for a link) and "story" (1080x1920, an Instagram or
-Facebook story). A card shows either the challenger's score to beat, or a friend's result against it.
+Facebook story). A challenge card shows either the challenger's score to beat, or a friend's result against it; a
+leaderboard card (render_board) shows a public test's top places.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import os
 from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFont
+
+import leaderboards
 
 SIZES = {"feed": (1200, 630), "story": (1080, 1920)}
 ACCENT = (37, 87, 214)
@@ -116,6 +119,87 @@ def render(c: dict, a: dict | None, size: str, host: str) -> bytes:
         d.text((w / 2, y), foot, font=_font("display", 50), fill=WHITE, anchor="mt")
         d.text((w / 2, y + 74), host, font=_fit(d, host, "text", 36, inner), fill=SOFT, anchor="mt")
         # Center the whole block, clear of the app's own buttons at the top and bottom of a story.
+        used = y + 74 + 50
+        block = img.crop((0, 0, w, used))
+        img = Image.new("RGB", (w, h), ACCENT)
+        img.paste(block, (0, max(0, (h - used) // 2)))
+    out = io.BytesIO()
+    img.save(out, "PNG", optimize=True)
+    return out.getvalue()
+
+
+MEDALS = [(201, 146, 18), (138, 150, 165), (176, 110, 60)]  # gold, silver, bronze for the top three
+
+
+def render_board(t: dict, size: str, host: str) -> bytes:
+    """A PNG card for a public test: its top places, and an invitation to take them on."""
+    w, h = SIZES.get(size, SIZES["feed"])
+    story = h > w
+    img = Image.new("RGB", (w, h), ACCENT)
+    d = ImageDraw.Draw(img)
+    pad = 72 if story else 60
+    inner = w - 2 * pad
+    rows = (t.get("board") or [])[: 8 if story else 3]
+    total = int(t.get("total") or 0)
+
+    y = pad
+    d.text((pad, y), "Math", font=_font("display", 44), fill=WHITE)
+    d.text((pad + d.textlength("Math", font=_font("display", 44)), y), "Sprint", font=_font("display", 44), fill=SOFT)
+
+    y += 90 if story else 74
+    title = f"LEADERBOARD · {str(t.get('deckTitle') or '').upper()}"
+    d.text((pad, y), title, font=_fit(d, title, "text", 30 if story else 26, inner), fill=SOFT)
+
+    y += 56 if story else 42
+    text = leaderboards.headline(t)
+    if story:
+        hfont = _font("display", 92)
+        for line in _wrap(d, text, hfont, inner)[:3]:
+            d.text((pad, y), line, font=hfont, fill=WHITE)
+            y += int(hfont.size * 1.12)
+    else:
+        hfont = _fit(d, text, "display", 58, inner)
+        d.text((pad, y), text, font=hfont, fill=WHITE)
+        y += int(hfont.size * 1.2)
+    sub = f"{total} questions · against the clock · play free, no account needed"
+    d.text((pad, y + (28 if story else 0)), sub, font=_fit(d, sub, "text", 34 if story else 24, inner), fill=SOFT)
+    y += 100 if story else 44
+
+    # The top places on a white panel.
+    row_h = 110 if story else 64
+    panel_h = (max(len(rows), 1) * row_h) + (60 if story else 28)
+    top = y + 30 if story else max(h - pad - panel_h, y + 10)
+    d.rounded_rectangle((pad, top, w - pad, top + panel_h), radius=28, fill=WHITE)
+    ry = top + (30 if story else 14)
+    if not rows:
+        msg = "Nobody's on the board yet. Be the first!"
+        d.text((w / 2, ry + row_h / 2), msg, font=_fit(d, msg, "display", 50 if story else 34, inner - 60), fill=INK, anchor="mm")
+    for i, r in enumerate(rows):
+        cy = ry + row_h / 2
+        left = pad + (36 if story else 28)
+        rad = 34 if story else 22
+        d.ellipse((left, cy - rad, left + 2 * rad, cy + rad), fill=MEDALS[i] if i < 3 else (221, 227, 234))
+        d.text((left + rad, cy), str(i + 1), font=_font("mono", 36 if story else 24), fill=WHITE if i < 3 else INK, anchor="mm")
+        score = f"{r.get('score', 0)}/{total}"
+        sec = f"{clock(r.get('usedSec'))}"
+        right = w - pad - (36 if story else 28)
+        tfont = _font("text", 36 if story else 24)
+        sfont = _font("mono", 50 if story else 34)
+        d.text((right, cy), sec, font=tfont, fill=INK, anchor="rm")
+        sx = right - d.textlength(sec, font=tfont) - (40 if story else 28)
+        d.text((sx, cy), score, font=sfont, fill=GOOD if i == 0 else INK, anchor="rm")
+        nx = left + 2 * rad + (28 if story else 20)
+        name = str(r.get("name") or "Player")
+        nfont = _fit(d, name, "display", 46 if story else 32, int(sx - d.textlength(score, font=sfont) - nx - 30))
+        d.text((nx, cy), name, font=nfont, fill=INK, anchor="lm")
+        if i < len(rows) - 1:
+            d.line((nx, ry + row_h, right, ry + row_h), fill=(232, 236, 241), width=2)
+        ry += row_h
+
+    if story:
+        y = top + panel_h + 80
+        d.text((w / 2, y), "Your name could be here", font=_font("display", 50), fill=WHITE, anchor="mt")
+        d.text((w / 2, y + 74), host, font=_fit(d, host, "text", 36, inner), fill=SOFT, anchor="mt")
         used = y + 74 + 50
         block = img.crop((0, 0, w, used))
         img = Image.new("RGB", (w, h), ACCENT)

@@ -90,6 +90,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Public test links (with their copy of the questions and their leaderboard) and each player's attempt. Only the
+    // Cloud Functions read or write these.
+    match /publicTests/{token}/{document=**} {
+      allow read, write: if false;
+    }
+    match /publicAttempts/{token} {
+      allow read, write: if false;
+    }
+
     // Problem reports and plan promotions. Read and written only through functions.
     match /reports/{reportId} {
       allow read, write: if false;

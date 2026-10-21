@@ -5,7 +5,8 @@ import DeleteDeck from "../components/DeleteDeck";
 import AssignTest from "../components/AssignTest";
 import ShareDeck from "../components/ShareDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
-import { useUser } from "../App";
+import PublicTestLinks from "../components/PublicTestLinks";
+import { useIsAdmin, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { getDeck, getQuestions } from "../lib/db";
 import { formatClock } from "../lib/pace";
@@ -22,6 +23,7 @@ export default function DeckReview() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const user = useUser();
+  const admin = useIsAdmin();
   const [deck, setDeck] = useState<Deck | null | undefined>(undefined);
   const [questions, setQuestions] = useState<Question[]>([]);
 
@@ -101,6 +103,7 @@ export default function DeckReview() {
 
         {mine && <ShareDeck deck={deck} />}
         {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} />}
+        {mine && admin && <PublicTestLinks deck={deck} suggestedSec={questions.length * 90} />}
 
         <div className="panel">
           <div className="row spread">

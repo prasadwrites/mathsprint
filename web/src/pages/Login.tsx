@@ -2,14 +2,16 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithP
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { pendingInvite } from "../lib/invite";
+import { pendingPublicClaim } from "../lib/publicTest";
 import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
 
 export default function Login() {
   const invite = pendingInvite();
+  const board = pendingPublicClaim();
   const [email, setEmail] = useState(invite?.email ?? "");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">(invite ? "signup" : "signin");
+  const [mode, setMode] = useState<"signin" | "signup">(invite || board ? "signup" : "signin");
   const [error, setError] = useState("");
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -44,6 +46,11 @@ export default function Login() {
           <p className="notice" role="status">
             <b>A friend invited you to MathSprint.</b>
             {invite.email ? ` Sign up with ${invite.email} so they get the credit.` : " Sign up with the email your invite was sent to so they get the credit."}
+          </p>
+        )}
+        {board && (
+          <p className="notice" role="status">
+            <b>Sign up to claim your spot on the {board.title} leaderboard.</b> Already have an account? Sign in and it goes on the board too.
           </p>
         )}
         <button className="btn-primary btn-big" onClick={() => run(() => signInWithPopup(auth, googleProvider))}>
