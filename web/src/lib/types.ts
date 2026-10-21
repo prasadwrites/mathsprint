@@ -404,5 +404,7 @@ export interface ChallengeResult {
   score: number;
   usedSec: number;
   claimed: boolean;
+  /** Public id for sharing this result; older results have none. */
+  share?: string | null;
   questions: (OwnTestResult["questions"][number] & { theirsCorrect: boolean })[];
 }

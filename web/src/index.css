@@ -367,3 +367,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .cta-panel { border-color: var(--accent); }
 .challenge-share { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .challenge-share input { flex: 1 1 220px; min-width: 0; }
+.share-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-buttons .btn { display: inline-flex; align-items: center; gap: 8px; }
+.share-fb { background: #1877f2; border-color: #1877f2; color: #fff; }
+.share-ig { background: linear-gradient(45deg, #f58529, #dd2a7b 50%, #8134af); border-color: transparent; color: #fff; }

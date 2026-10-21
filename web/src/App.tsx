@@ -47,11 +47,13 @@ function AdminOnly() {
 export default function App() {
   // Pages anyone can open without signing in: a group member's test, a friend's challenge, and the plan comparison.
   const { pathname } = useLocation();
-  if (pathname.startsWith("/t/") || pathname.startsWith("/c/") || pathname === "/plans") {
+  if (pathname.startsWith("/t/") || pathname.startsWith("/c/") || pathname.startsWith("/play/") || pathname === "/plans") {
     return (
       <Routes>
         <Route path="/t/:token" element={<TakeTest />} />
         <Route path="/c/:token" element={<PlayChallenge />} />
+        {/* Where /c/ sends visitors if its link-preview function can't reach the site. */}
+        <Route path="/play/:token" element={<PlayChallenge />} />
         <Route path="/plans" element={<Plans />} />
       </Routes>
     );

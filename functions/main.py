@@ -26,17 +26,20 @@ create_challenge      - A student turns a finished practice session into a link 
 open_challenge, submit_challenge - No sign-in: a friend plays the same questions, graded here, and sees both results.
 claim_challenge       - A friend who signs up after playing saves their result to their new account.
 list_challenges       - The challenges a student sent, with every friend's result, and the ones they played and saved.
+challenge_page        - Serves /c/TOKEN with link-preview tags for Facebook and others, and /c/TOKEN/card.png, the score card.
 """
 
 from __future__ import annotations
 
 import os
 import time
+import urllib.request
 
 from firebase_admin import auth, firestore, initialize_app
 from firebase_functions import https_fn, options
 
 import accounts
+import cards
 import challenges
 import groups
 from accounts import AccessDenied
@@ -1158,6 +1161,7 @@ def _face_off(challenge, questions: list[dict], attempt: dict) -> dict:
         "score": attempt.get("score", 0),
         "usedSec": attempt.get("usedSec", 0),
         "claimed": bool(attempt.get("claimedUid")),
+        "share": attempt.get("shareId"),  # a public id for this result's card; the attempt token stays private
         "questions": [{
             "prompt": q.get("prompt", ""),
             "math": q.get("math", ""),
@@ -1264,6 +1268,7 @@ def submit_challenge(req: https_fn.CallableRequest) -> dict:
             "score": graded["score"],
             "usedSec": round(min(used, limit) if limit else used),
             "times": groups.clean_times(data.get("times"), len(questions), used),
+            "shareId": challenges.new_token(),
             "completedAt": firestore.SERVER_TIMESTAMP,
         }
         changes["outcome"] = challenges.outcome(changes, challenge.to_dict())
@@ -1337,6 +1342,70 @@ def list_challenges(req: https_fn.CallableRequest) -> dict:
         })
     played.sort(key=lambda r: -(r["playedAt"] or 0))
     return {"sent": sent, "played": played}
+
+
+# Sharing. Hosting sends /c/** here (firebase.json), so a shared link shows the score card in its preview.
+_SITE = f"{os.environ.get('GCLOUD_PROJECT') or 'mathsprint-2b113'}.web.app"
+_index_cache: dict = {"html": "", "at": 0.0}
+
+
+def _index_html() -> str:
+    """The app's built index.html, from Hosting (its asset names change on every deploy), kept for five minutes."""
+    if _index_cache["html"] and time.time() - _index_cache["at"] < 300:
+        return _index_cache["html"]
+    with urllib.request.urlopen(f"https://{_SITE}/index.html", timeout=5) as r:  # noqa: S310 - our own site
+        page = r.read().decode("utf-8")
+    _index_cache.update(html=page, at=time.time())
+    return page
+
+
+def _shared_attempt(db, challenge, share_id: str) -> dict | None:
+    share_id = _clean(share_id, 64)
+    if not share_id:
+        return None
+    for a in db.collection("challengeAttempts").where("shareId", "==", share_id).limit(1).stream():
+        if a.get("challengeId") == challenge.id:
+            return a.to_dict()
+    return None
+
+
+@https_fn.on_request(memory=options.MemoryOption.MB_512, timeout_sec=30)
+def challenge_page(req: https_fn.Request) -> https_fn.Response:
+    """/c/TOKEN: the app, with this challenge's preview tags. /c/TOKEN/card.png?r=SHARE&size=story: the score card,
+    for the challenge or for one friend's shared result. ?r=SHARE on the page itself previews that result."""
+    parts = [p for p in req.path.split("/") if p]
+    rest = parts[parts.index("c") + 1:] if "c" in parts else []  # the emulator's URL has the function's name first
+    token = rest[0] if rest else ""
+    want_card = rest[1:] == ["card.png"]
+    db = firestore.client()
+    snap = db.collection("challenges").document(_clean(token, 64)).get() if token else None
+    if snap is None or not snap.exists:
+        if want_card:
+            return https_fn.Response("Not found", status=404)
+        snap = None
+    c = snap.to_dict() if snap else None
+    a = _shared_attempt(db, snap, req.args.get("r", "")) if snap else None
+    host = challenges.public_host(req.headers.get("X-Forwarded-Host"), _SITE)
+
+    if want_card:
+        size = "story" if req.args.get("size") == "story" else "feed"
+        png = cards.render(c, a, size, host)
+        return https_fn.Response(png, mimetype="image/png", headers={"Cache-Control": "public, max-age=600, s-maxage=600"})
+
+    try:
+        page = _index_html()
+    except Exception:  # Hosting unreachable: send the visitor to the same page without the preview
+        return https_fn.Response(status=302, headers={"Location": f"/play/{token}"})
+    if c is not None:
+        share = f"?r={req.args.get('r')}" if a is not None else ""
+        page = challenges.with_preview(
+            page,
+            cards.headline(c, a),
+            challenges.preview_description(c, a),
+            f"https://{host}/c/{token}{share}",
+            f"https://{host}/c/{token}/card.png{share}",
+        )
+    return https_fn.Response(page, mimetype="text/html", headers={"Cache-Control": "public, max-age=0, s-maxage=300"})
 
 
 # Problem reports. A signed-in user writes to the admin; either side can keep writing back.
