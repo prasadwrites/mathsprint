@@ -1,8 +1,10 @@
 """Structured shape of a generated deck. Claude fills this in; SymPy checks it."""
 
-from typing import List, Literal, Optional
+import json
+from typing import Annotated, Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, WithJsonSchema, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 
 class SolutionStep(BaseModel):
@@ -98,7 +100,16 @@ class Diagram(BaseModel):
     items: List[DiagramItem] = Field(description="1 to 16 marks.")
 
 
+def _as_json_text(description: str) -> WithJsonSchema:
+    return WithJsonSchema({"type": "string", "description": description})
+
+
+# `figure` and `diagram` travel as JSON text, not nested objects: the API compiles the whole output schema into a
+# grammar, and with both picture shapes inline it is too large to accept. They are parsed into Figure and Diagram
+# here; one that doesn't parse is left out and named in `picture_error`, so the question fails its check and goes
+# back to Claude for repair.
 class GeneratedQuestion(BaseModel):
+
     prompt: str = Field(description="The instruction shown to the student, e.g. 'Solve for x:' or a full word problem.")
     math: str = Field(description="The expression or equation in readable Unicode, or '' for word problems.")
     type: Literal["numeric", "choice"]
@@ -113,18 +124,45 @@ class GeneratedQuestion(BaseModel):
     difficulty: Literal["Easy", "Medium", "Hard"]
     steps: List[SolutionStep]
     check: Check
-    figure: Optional[Figure] = Field(
-        default=None,
-        description="A graph on a coordinate plane the student needs to see, or null.",
-    )
-    diagram: Optional[Diagram] = Field(
-        default=None,
-        description="A geometry diagram (triangles, circles, polygons, angles) the student needs to see, or null. "
-        "Never both a figure and a diagram.",
-    )
+    figure: Annotated[Optional[Figure], _as_json_text(
+        "A graph on a coordinate plane the student needs to see: a JSON object in the Figure format from the "
+        "instructions, or '' for none."
+    )] = None
+    diagram: Annotated[Optional[Diagram], _as_json_text(
+        "A geometry diagram (triangles, circles, polygons, angles) the student needs to see: a JSON object in the "
+        "Diagram format from the instructions, or '' for none. Never both a figure and a diagram."
+    )] = None
     pair: bool = Field(
         default=False,
         description="True when the answer is a point (x, y): answer_values is [x, y] in that order and the check kind is 'point'.",
+    )
+    picture_error: SkipJsonSchema[str] = Field(default="", exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _parse_pictures(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        for key, model in (("figure", Figure), ("diagram", Diagram)):
+            value = data.get(key)
+            if not isinstance(value, str):
+                continue
+            data[key] = None
+            if not value.strip() or value.strip() == "null":
+                continue
+            try:
+                data[key] = model.model_validate(json.loads(value))
+            except (ValueError, ValidationError) as e:
+                data["picture_error"] = f"the {key} is not valid {model.__name__} JSON: {str(e)[:300]}"
+        return data
+
+
+def picture_formats() -> str:
+    """The Figure and Diagram JSON formats, for the instructions."""
+    return (
+        "Figure format (JSON Schema):\n" + json.dumps(Figure.model_json_schema()) + "\n\n"
+        "Diagram format (JSON Schema):\n" + json.dumps(Diagram.model_json_schema())
     )
 
 

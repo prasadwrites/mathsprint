@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, replace
 
 import anthropic
 
-from schema import GeneratedDeck, GeneratedQuestion
+from schema import GeneratedDeck, GeneratedQuestion, picture_formats
 from validator import check_question
 
 MODEL = "claude-opus-5-5"
@@ -40,7 +40,8 @@ Write `math` with readable Unicode (x², √, −, ·), not SymPy syntax.
 
 Figures: when a question is about a graph (reading slope, intercepts, a vertex,
 zeros, where graphs cross, which region is shaded, transformations), give it a
-`figure`: a coordinate plane the app draws for you. Otherwise `figure` is null.
+`figure`: a coordinate plane the app draws for you, written as a JSON object in
+the Figure format below. Otherwise `figure` is ''.
 Decks can mix both kinds; on a graph topic most questions should have a figure.
 - Name each graph with one letter (f, g, h) and use those names in the `check`,
   so the answer is computed from what is drawn: 'f(3)' to evaluate, 'f(x) = 0'
@@ -56,7 +57,8 @@ Decks can mix both kinds; on a graph topic most questions should have a figure.
 
 Diagrams: when a question is about a shape (triangles, special right triangles,
 similar figures, angles and parallel lines, polygons, circles, arcs and
-sectors, area and perimeter), give it a `diagram` instead. A question never has
+sectors, area and perimeter), give it a `diagram` instead, a JSON object in the
+Diagram format below. A question never has
 both a figure and a diagram; text-only questions have neither.
 - Give each point exact coordinates in SymPy syntax ('3*sqrt(3)', not 5.196),
   so the drawing is to scale and every length and angle is exact.
@@ -71,7 +73,9 @@ Answers: when the exact answer has a root or π, write answer_display in exact
 form (6√3, 16π) and set `tolerance` to 0.01, so students may type the exact form
 or a decimal. When the answer is a point (a midpoint, a vertex, an
 intersection), set `pair` to true, answer_values to [x, y], and use a check of
-kind 'point' with the expression 'x, y'."""
+kind 'point' with the expression 'x, y'.
+
+""" + picture_formats()
 
 
 class GenerationError(RuntimeError):
@@ -151,7 +155,7 @@ def _initial_prompt(req: DeckRequest) -> str:
         f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
         f"Level: {req.level}. Difficulty: {mix}.",
         "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
-        "Add a figure to each question about a graph and a diagram to each question about a shape; leave both null for the rest.",
+        "Add a figure to each question about a graph and a diagram to each question about a shape; leave both '' for the rest.",
     ]
     if req.parts > 1:
         lines.append(
