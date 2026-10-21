@@ -6,6 +6,7 @@ import {
   getDocs,
   orderBy,
   query,
+  type QueryDocumentSnapshot,
   serverTimestamp,
   Timestamp,
   updateDoc,
@@ -14,16 +15,22 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, Challenge, OpenChallenge, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, Challenge, OpenChallenge, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
 
 const toDate = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
 
+/** The student's own decks, newest first, then the decks other people shared with them. */
 export async function listDecks(uid: string): Promise<Deck[]> {
-  const snap = await getDocs(query(collection(db, "decks"), where("ownerId", "==", uid), orderBy("createdAt", "desc")));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) }) as Deck);
+  const toDeck = (d: QueryDocumentSnapshot) => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) }) as Deck;
+  const [own, shared] = await Promise.all([
+    getDocs(query(collection(db, "decks"), where("ownerId", "==", uid), orderBy("createdAt", "desc"))),
+    getDocs(query(collection(db, "decks"), where("sharedWith", "array-contains", uid))),
+  ]);
+  const sharedDecks = shared.docs.map(toDeck).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+  return [...own.docs.map(toDeck), ...sharedDecks];
 }
 
 export async function getDeck(deckId: string): Promise<Deck | null> {
@@ -223,6 +230,20 @@ export async function replyUpgrade(id: string, text: string) {
 /** Deletes the deck with its questions and practice history. It still counts toward the plan's decks. */
 export async function deleteDeck(deckId: string) {
   return (await httpsCallable<{ deckId: string }, { ok: boolean; sessions: number }>(functions, "delete_deck", { timeout: 120_000 })({ deckId })).data;
+}
+
+/** Shares one of your decks with the registered user who has this email. */
+export async function shareDeck(deckId: string, email: string) {
+  return (await httpsCallable<{ deckId: string; email: string }, { added: boolean; shares: DeckShare[] }>(functions, "share_deck")({ deckId, email })).data;
+}
+
+export async function listDeckShares(deckId: string) {
+  return (await httpsCallable<{ deckId: string }, { shares: DeckShare[] }>(functions, "list_deck_shares")({ deckId })).data.shares;
+}
+
+/** The owner stops sharing with `uid`; without `uid`, removes a deck someone shared with you from your decks. */
+export async function unshareDeck(deckId: string, uid?: string) {
+  return (await httpsCallable<object, { ok: boolean; shares: DeckShare[] }>(functions, "unshare_deck", { timeout: 60_000 })(uid ? { deckId, uid } : { deckId })).data.shares;
 }
 
 /** Adds a ready-made deck so a new student can try practice before generating their own. */

@@ -93,6 +93,18 @@ export interface Deck {
   questionCount: number;
   source: "ai" | "sample";
   createdAt: Date | null;
+  /** Uids of the registered users the owner shared this deck with. */
+  sharedWith?: string[];
+  /** The owner's name, shown to the people it's shared with. */
+  sharedBy?: string;
+}
+
+/** Someone a deck is shared with, as its owner sees them. */
+export interface DeckShare {
+  uid: string;
+  email: string;
+  name: string;
+  sharedAt: number | null;
 }
 
 /** Times are milliseconds since the session started, so they survive clock changes and refreshes. */

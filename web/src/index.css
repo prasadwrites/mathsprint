@@ -84,7 +84,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* Forms */
 label { font-weight: 700; display: block; margin-bottom: 6px; }
-input[type=text], input[type=number], input[type=password], textarea, select { font: inherit; width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+input[type=text], input[type=email], input[type=number], input[type=password], textarea, select { font: inherit; width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 textarea { min-height: 72px; resize: vertical; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex-wrap: wrap; }
 .seg button { border: none; border-radius: 0; background: transparent; padding: 8px 14px; font-weight: 700; color: var(--muted); }

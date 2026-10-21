@@ -58,6 +58,10 @@ Students ask for a bigger plan from **Request an upgrade** in the profile menu (
 
 Students invite friends from **Invite friends** in the top bar. Each invite is a unique link (`/?invite=TOKEN&email=...`) they can copy or email. When a friend signs up with that email after the invite was made, the inviter gets one bonus deck: it raises both their plan's deck limit and their code-free decks by one. Friends who already had an account don't count, and each email can earn one inviter one deck. Invites live in `invites/{token}`, which only the Cloud Functions can read or write.
 
+### Sharing decks
+
+A deck's page has **Share this deck**: the owner enters the email another person signs in with, and the deck shows up in that person's decks to practice (their sessions and stats are their own). If no account uses the email, the owner gets an error and a link to invite them. Shared decks cost no generation, so they don't count toward the recipient's plan or need an access code, on any plan. Only the owner can share, assign or delete a deck; up to 50 people per deck. The owner can **Stop sharing** with anyone, and a recipient can **Remove** a shared deck from their decks; either way that person's practice history for it goes too, and deleting the deck removes everyone's. `share_deck`, `list_deck_shares` and `unshare_deck` do the writes; the deck's `sharedWith` uids are what the Firestore rules check, and emails live in `decks/{id}/shares/{uid}`, which only functions read.
+
 ### Head-to-head challenges
 
 After any finished session, **Challenge a friend** on the results page makes a link (`/c/TOKEN`) with a line to share, such as "I got 16/20 in 7:10 on SAT Geometry. Beat me!". `create_challenge` grades the session again on the server, because the browser wrote its score, and copies its questions into `challenges/{token}/questions`; asking again for the same session returns the same link. A friend opens the link with no account, types a name, and plays the same questions under the same time limit (`open_challenge`, `submit_challenge`; graded on the server like group tests). The higher score wins and the faster time breaks a tie. The friend then sees both results side by side and question by question, with worked solutions. **Sign up** remembers the attempt on that device, and `claim_challenge` saves it to the new account once they're signed in. The home page's **Challenges** section lists the challenges you sent with every friend's result, and the ones you played and saved. Each link takes up to 200 players. Everything lives in `challenges` and `challengeAttempts`, which only the Cloud Functions can read or write.
@@ -115,13 +119,14 @@ The dashboard adds overall progress (questions, accuracy, time, average pace aga
 
 | Collection | Fields |
 | --- | --- |
-| `decks/{id}` | ownerId, title, topic, level, difficulty, topics, questionCount, source, createdAt |
+| `decks/{id}` | ownerId, title, topic, level, difficulty, topics, questionCount, source, createdAt, sharedWith[uid], sharedBy |
+| `decks/{id}/shares/{uid}` | email, name, sharedAt. Read and written only by functions |
 | `decks/{id}/questions/{id}` | order, prompt, math, type (numeric/choice), choices, answerValues, answerChoice, answerDisplay, tolerance, concept, difficulty, steps[{description, expression}], check, verified |
 | `accounts/{uid}` | email, displayName, plan (free/pro/promax), status (active/suspended), decksCreated, createdAt. Written only by functions |
 | `accessCodes/{uid}` | code. Read and written only by functions |
 | `sessions/{id}` | ownerId, deckId, deckTitle, mode (learn/practice/challenge), questionIds, timeLimitSec (0 in learn mode), startedAtMs, currentIndex, answers{i}, timings{i: {startedAt, answeredAt}} (ms from start), status, endReason, usedSec, score, accuracy, results{i}, conceptStats{concept: {attempted, correct, seconds}} |
 
-Security rules (`firestore.rules`) keep every deck and session private to its owner, make finished sessions read-only, only let the app write sample decks (AI decks come from the function), and lock out suspended accounts.
+Security rules (`firestore.rules`) keep every deck and session private to its owner (a deck is also readable by the people it was shared with), make finished sessions read-only, only let the app write sample decks (AI decks come from the function), and lock out suspended accounts.
 
 ## Setup
 

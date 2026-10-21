@@ -18,6 +18,8 @@ assign_test           - Pro and Pro Max: assign a deck to a group, with a link a
 list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
 open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
 delete_deck           - The owner deletes one of their decks with its questions and practice history. The plan count stays.
+share_deck, list_deck_shares, unshare_deck - The owner shares a deck with another registered user by email, sees who has it,
+                        and takes it back; someone it was shared with can remove it from their decks.
 report_problem, list_reports, reply_report - A signed-in user reports a problem; the user and admin write back and forth.
 admin_reply_report    - Admin only: answer a problem report, optionally marking it resolved.
 admin_offer_promotion, admin_end_promotion - Admin only: offer a bigger plan for some months, or end it early.
@@ -44,6 +46,7 @@ import accounts
 import cards
 import challenges
 import groups
+import sharing
 from accounts import AccessDenied
 
 initialize_app()
@@ -283,7 +286,7 @@ def explain_step(req: https_fn.CallableRequest) -> dict:
         raise _denied("Your account is suspended.")
     deck_id, question_id = _clean(data.get("deckId"), 64), _clean(data.get("questionId"), 64)
     deck = db.collection("decks").document(deck_id).get()
-    if not deck.exists or deck.get("ownerId") != uid:
+    if not deck.exists or (deck.get("ownerId") != uid and uid not in (deck.to_dict().get("sharedWith") or [])):
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "Deck not found.")
     q = deck.reference.collection("questions").document(question_id).get()
     if not q.exists:
@@ -456,7 +459,10 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
         auth.delete_user(uid)
     decks = list(db.collection("decks").where("ownerId", "==", uid).stream())
     for deck in decks:
-        db.recursive_delete(deck.reference)  # the deck and its questions
+        db.recursive_delete(deck.reference)  # the deck, its questions and share records
+    for deck in db.collection("decks").where("sharedWith", "array_contains", uid).stream():
+        deck.reference.collection("shares").document(uid).delete()
+        deck.reference.update({"sharedWith": firestore.ArrayRemove([uid])})
     sessions = list(db.collection("sessions").where("ownerId", "==", uid).stream())
     writer = db.bulk_writer()
     for s in sessions:
@@ -1686,10 +1692,95 @@ def delete_deck(req: https_fn.CallableRequest) -> dict:
     if _load_account(db, req).get("status") == "suspended":
         raise _denied("Your account is suspended.")
     deck = _owned(db, "decks", (req.data or {}).get("deckId"), uid, "That deck no longer exists.")
-    sessions = list(db.collection("sessions").where("ownerId", "==", uid).where("deckId", "==", deck.id).stream())
+    # Everyone's sessions, the owner's and those of people it was shared with: without the deck they can't be opened.
+    sessions = list(db.collection("sessions").where("deckId", "==", deck.id).stream())
     writer = db.bulk_writer()
     for s in sessions:
         writer.delete(s.reference)
     writer.close()
-    db.recursive_delete(deck.reference)
-    return {"ok": True, "sessions": len(sessions)}
+    db.recursive_delete(deck.reference)  # with its questions and share records
+    return {"ok": True, "sessions": sum(1 for s in sessions if s.get("ownerId") == uid)}
+
+
+# Sharing a deck with another registered user. The deck's sharedWith list holds their uids, which the Firestore rules
+# use to let them read it; decks/{id}/shares/{uid} keeps each email for the owner, and only these functions read it.
+
+
+def _share_row(doc) -> dict:
+    r = doc.to_dict()
+    return {"uid": doc.id, "email": r.get("email", ""), "name": r.get("name", ""), "sharedAt": _ms(r.get("sharedAt"))}
+
+
+def _deck_shares(deck) -> list[dict]:
+    rows = [_share_row(d) for d in deck.reference.collection("shares").stream()]
+    rows.sort(key=lambda r: r["sharedAt"] or 0)
+    return rows
+
+
+@https_fn.on_call()
+def share_deck(req: https_fn.CallableRequest) -> dict:
+    """Shares one of the caller's decks with the registered user who has the given email."""
+    uid = _require_user(req)
+    db = firestore.client()
+    account = _load_account(db, req)
+    if account.get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    data = req.data or {}
+    deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
+    try:
+        email = sharing.clean_share_email(data.get("email"), (req.auth.token or {}).get("email", ""))
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    try:
+        user = auth.get_user_by_email(email)
+    except auth.UserNotFoundError:
+        raise _not_found("No MathSprint account uses that email. Check the address, or invite them to join first.")
+    if user.disabled:
+        raise _invalid("That account can't receive decks right now.")
+    try:
+        new = sharing.check_can_share(uid, user.uid, list(deck.to_dict().get("sharedWith") or []))
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    if new:
+        who = req.auth.token or {}
+        deck.reference.collection("shares").document(user.uid).set({
+            "email": email,
+            "name": user.display_name or "",
+            "sharedAt": firestore.SERVER_TIMESTAMP,
+        })
+        deck.reference.update({
+            "sharedWith": firestore.ArrayUnion([user.uid]),
+            "sharedBy": who.get("name") or account.get("displayName") or who.get("email", ""),
+        })
+    return {"added": new, "shares": _deck_shares(deck)}
+
+
+@https_fn.on_call()
+def list_deck_shares(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    db = firestore.client()
+    deck = _owned(db, "decks", (req.data or {}).get("deckId"), uid, "That deck no longer exists.")
+    return {"shares": _deck_shares(deck)}
+
+
+@https_fn.on_call(timeout_sec=60)
+def unshare_deck(req: https_fn.CallableRequest) -> dict:
+    """The owner stops sharing a deck with someone, or a recipient removes a shared deck from their decks.
+    The recipient's practice sessions on it go too, since they can no longer open the deck."""
+    uid = _require_user(req)
+    db = firestore.client()
+    data = req.data or {}
+    deck_id = _clean(data.get("deckId"), 128)
+    deck = db.collection("decks").document(deck_id).get() if deck_id else None
+    recipient = _clean(data.get("uid"), 128) or uid
+    if deck is None or not deck.exists or not sharing.can_unshare(uid, deck.get("ownerId"), recipient):
+        raise _not_found("That deck no longer exists.")
+    if recipient == deck.get("ownerId"):
+        raise _invalid("Pick someone the deck is shared with.")
+    writer = db.bulk_writer()
+    for s in db.collection("sessions").where("ownerId", "==", recipient).where("deckId", "==", deck.id).stream():
+        writer.delete(s.reference)
+    writer.delete(deck.reference.collection("shares").document(recipient))
+    writer.close()
+    deck.reference.update({"sharedWith": firestore.ArrayRemove([recipient])})
+    return {"ok": True, "shares": _deck_shares(deck) if uid == deck.get("ownerId") else []}

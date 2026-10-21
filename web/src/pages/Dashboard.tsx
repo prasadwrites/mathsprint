@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import DeleteDeck from "../components/DeleteDeck";
+import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import PromotionOffer from "../components/PromotionOffer";
 import { addSampleDeck, listChallenges, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
@@ -203,6 +204,8 @@ export default function Dashboard() {
             <div className="decks">
               {decks.map((d) => {
                 const b = best(d.id);
+                const mine = d.ownerId === user.uid;
+                const drop = () => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null);
                 return (
                   <article key={d.id} className="panel deck-card">
                     <div>
@@ -210,6 +213,11 @@ export default function Dashboard() {
                       <div className="meta">
                         {d.level} · {d.difficulty} · {d.questionCount} questions
                       </div>
+                      {mine ? (
+                        !!d.sharedWith?.length && <div className="meta">Shared with {d.sharedWith.length} {d.sharedWith.length === 1 ? "person" : "people"}</div>
+                      ) : (
+                        <div className="meta">Shared with you{d.sharedBy ? ` by ${d.sharedBy}` : ""}</div>
+                      )}
                     </div>
                     <div className="row" style={{ flexWrap: "nowrap" }}>
                       <div className="bar">
@@ -226,7 +234,7 @@ export default function Dashboard() {
                       <Link className="btn" to={`/decks/${d.id}`}>
                         Review
                       </Link>
-                      <DeleteDeck deck={d} onDeleted={() => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null)} />
+                      {mine ? <DeleteDeck deck={d} onDeleted={drop} /> : <RemoveSharedDeck deck={d} onRemoved={drop} />}
                     </div>
                   </article>
                 );
