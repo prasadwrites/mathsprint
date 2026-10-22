@@ -99,3 +99,57 @@ def test_real_players_replace_samples_best_first_and_win_ties():
     many = [{"uid": str(i), "name": f"R{i}", "score": 1, "usedSec": 900, "at": i} for i in range(8)]
     assert not any(r.get("sample") for r in leaderboards.board(many, samples))
     assert {s["name"] for s in leaderboards.showing_samples(samples, 3)} == {"S0", "S1", "S2", "S3", "S4"}
+
+
+def test_admins_own_samples():
+    import random
+
+    import pytest
+
+    rows = leaderboards.custom_samples([
+        {"name": " आरव  शर्मा ", "score": "18", "time": "6:12"},
+        {"name": "佐藤 ハルト", "score": 15, "time": ""},
+        {"name": "Zoë", "score": 0, "time": "45"},
+    ], 20, 1200, random.Random(2))
+    assert [r["name"] for r in rows] == ["आरव शर्मा", "佐藤 ハルト", "Zoë"]
+    assert rows[0]["usedSec"] == 372 and rows[2]["usedSec"] == 45
+    assert 20 <= rows[1]["usedSec"] <= 1080  # a blank time gets a believable one
+    assert all(r["sample"] and r["at"] == leaderboards.SEED_AT for r in rows)
+    for bad, msg in [
+        ([], "at least one"),
+        ([{"name": "", "score": 3}], "needs a name"),
+        ([{"name": "Ana", "score": 21}], "from 0 to 20"),
+        ([{"name": "Ana", "score": "x"}], "from 0 to 20"),
+        ([{"name": "Ana", "score": 3, "time": "soon"}], "like 6:12"),
+        ([{"name": "Ana", "score": 3, "time": "25:00"}], "20:00 limit"),
+        ([{"name": "Ana", "score": 3}] * 31, "up to 30"),
+    ]:
+        with pytest.raises(ValueError, match=msg):
+            leaderboards.custom_samples(bad, 20, 1200)
+
+
+def test_every_sample_stays_until_a_real_player_takes_its_place():
+    samples = leaderboards.custom_samples([{"name": f"P{i}", "score": i, "time": "1:00"} for i in range(12)], 20, 0)
+    assert len(leaderboards.board([], samples)) == 12
+    rows = leaderboards.board([{"uid": "a", "name": "Ana", "score": 5, "usedSec": 60, "at": 1}], samples)
+    assert len(rows) == 12 and "P11" not in [r["name"] for r in rows]
+
+
+def test_parse_clock():
+    assert leaderboards.parse_clock("6:12") == 372
+    assert leaderboards.parse_clock(" 90 ") == 90
+    assert leaderboards.parse_clock("") is None
+    assert leaderboards.parse_clock("1:75") is None
+    assert leaderboards.parse_clock("abc") is None
+
+
+def test_names_in_other_scripts_get_a_font_that_draws_them():
+    assert cards.script_font("Zoë Ðặng") is None
+    assert cards.script_font("Иван") is None
+    assert cards.script_font("आरव") == "NotoSansDevanagari-Bold.ttf"
+    assert cards.script_font("தமிழ்") == "NotoSansTamil-Bold.ttf"
+    assert cards.script_font("محمد") == "NotoSansArabic-Bold.ttf"
+    assert cards.script_font("김민준") == cards.script_font("佐藤") == "NotoSansCJKsc-Bold.otf"
+    t = {**T, "board": [{"name": n, "score": 9, "usedSec": 60} for n in ["आरव शर्मा", "محمد أحمد", "佐藤 ハルト", "יעל כהן", "ณัฐ"]]}
+    for size, dims in cards.SIZES.items():
+        assert Image.open(io.BytesIO(cards.render_board(t, size, "x.web.app"))).size == dims

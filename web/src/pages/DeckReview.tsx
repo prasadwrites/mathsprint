@@ -103,7 +103,7 @@ export default function DeckReview() {
 
         {mine && <ShareDeck deck={deck} />}
         {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} />}
-        {mine && admin && <PublicTestLinks deck={deck} suggestedSec={questions.length * 90} />}
+        {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} />}
 
         <div className="panel">
           <div className="row spread">

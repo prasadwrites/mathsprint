@@ -5,6 +5,7 @@ import { Chip } from "./TopBar";
 import { createPublicTest, deletePublicTest, listPublicTests, publicTestPlayers, removePublicPlayer, setPublicSamples } from "../lib/db";
 import { formatClock } from "../lib/pace";
 import { publicTestCard, publicTestLink } from "../lib/publicTest";
+import { parseSampleLines, sampleLines } from "../lib/samplePlayers";
 import type { Deck, PublicPlayer, PublicTest } from "../lib/types";
 
 /** Everyone who played one link, signed up or not, with a way to take a result off the leaderboard. */
@@ -60,15 +61,46 @@ function Players({ test, onChange }: { test: PublicTest; onChange: () => void })
   );
 }
 
+/** The admin's own sample players, one per line, for a post aimed at a country whose names aren't English, say. */
+function SampleEditor({ id, value, onChange, total }: { id: string; value: string; onChange: (v: string) => void; total: number }) {
+  const rows = parseSampleLines(value);
+  return (
+    <div style={{ flexBasis: "100%" }}>
+      <label htmlFor={id}>Your sample players</label>
+      <textarea
+        id={id}
+        rows={6}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={"One per line: name, score, time\nAarav Sharma, 18, 6:12\nப்ரியா, 17, 5:40\nYuki Tanaka, 15"}
+        style={{ width: "100%", fontFamily: "inherit" }}
+      />
+      <p className="muted small">
+        {rows.length} {rows.length === 1 ? "player" : "players"}. Names can be in any language. Scores are out of {total}; leave the time off and a
+        believable one is picked.
+      </p>
+    </div>
+  );
+}
+
 function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [filling, setFilling] = useState(false);
-  const samples = async (fill: boolean) => {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [sampleError, setSampleError] = useState("");
+  const samples = async (fill: boolean, own?: string) => {
     setFilling(true);
-    await setPublicSamples(test.token, fill).catch(() => {});
-    setFilling(false);
-    onChange();
+    setSampleError("");
+    try {
+      await setPublicSamples(test.token, fill, own === undefined ? undefined : parseSampleLines(own));
+      setEditing(null);
+      onChange();
+    } catch (e) {
+      setSampleError((e as Error).message || "The sample players weren't saved. Try again.");
+    } finally {
+      setFilling(false);
+    }
   };
   const link = publicTestLink(test.token);
   return (
@@ -91,10 +123,37 @@ function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }
             ? `${test.samplesShowing} of ${test.samples} sample players on the board. Real players take their places as they sign up; visitors can't tell them apart.`
             : "No sample players."}
         </span>
-        <button type="button" className="btn-link" disabled={filling} onClick={() => samples(!test.samples)}>
-          {filling ? "Saving…" : test.samples ? "Remove sample players" : "Add sample players"}
-        </button>
+        {editing === null && (
+          <>
+            <button type="button" className="btn-link" disabled={filling} onClick={() => setEditing(sampleLines(test.sampleList ?? []))}>
+              {test.samples ? "Edit sample players" : "Add my own"}
+            </button>
+            <button type="button" className="btn-link" disabled={filling} onClick={() => samples(!test.samples)}>
+              {filling ? "Saving…" : test.samples ? "Remove sample players" : "Add made-up players"}
+            </button>
+          </>
+        )}
       </div>
+      {editing !== null && (
+        <form
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            samples(true, editing);
+          }}
+        >
+          <SampleEditor id={`samples-${test.token}`} value={editing} onChange={setEditing} total={test.total} />
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn btn-small btn-primary" type="submit" disabled={filling}>
+              {filling ? "Saving…" : "Save sample players"}
+            </button>
+            <button className="btn btn-small" type="button" disabled={filling} onClick={() => setEditing(null)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      {sampleError && <p className="error">{sampleError}</p>}
       <ShareButtons link={link} text={test.shareText} card={publicTestCard(test.token)} title="MathSprint leaderboard" />
       <details>
         <summary>Everyone who played</summary>
@@ -137,10 +196,11 @@ function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }
 }
 
 /** Admin only, on a deck's page: public links anyone can play without an account, each with its own leaderboard. */
-export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; suggestedSec: number }) {
+export default function PublicTestLinks({ deck, total, suggestedSec }: { deck: Deck; total: number; suggestedSec: number }) {
   const [tests, setTests] = useState<PublicTest[] | null>(null);
   const [timed, setTimed] = useState(true);
-  const [fill, setFill] = useState(true);
+  const [fill, setFill] = useState<"made-up" | "own" | "none">("made-up");
+  const [own, setOwn] = useState("");
   const [minutes, setMinutes] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -156,7 +216,7 @@ export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; su
     setBusy(true);
     setError("");
     try {
-      const t = await createPublicTest(deck.id, timed ? minutes * 60 : 0, fill);
+      const t = await createPublicTest(deck.id, timed ? minutes * 60 : 0, fill === "made-up", fill === "own" ? parseSampleLines(own) : undefined);
       setTests((ts) => [t, ...(ts ?? [])]);
     } catch (e) {
       setError((e as Error).message || "The link wasn't made. Try again.");
@@ -172,7 +232,7 @@ export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; su
         <p className="muted">
           Anyone with the link can take this deck as a test with just a name, no account. Players who sign up afterwards go on the leaderboard, ranked by
           right answers, then time. Share it and the post shows the top of the leaderboard. Sample players fill a new board so the
-          first post isn't empty; they step aside as real players join.
+          first post isn't empty; they step aside as real players join. Posting to another country? Enter your own names and scores.
         </p>
       </div>
       <form
@@ -202,12 +262,18 @@ export default function PublicTestLinks({ deck, suggestedSec }: { deck: Deck; su
             </label>
           </div>
         </div>
-        <label className="radio" style={{ whiteSpace: "nowrap", paddingBottom: 10 }}>
-          <input type="checkbox" checked={fill} onChange={(e) => setFill(e.target.checked)} /> Start with sample players
-        </label>
+        <div>
+          <label htmlFor="public-fill">Sample players</label>
+          <select id="public-fill" value={fill} onChange={(e) => setFill(e.target.value as typeof fill)}>
+            <option value="made-up">Made-up names</option>
+            <option value="own">My own names and scores</option>
+            <option value="none">None</option>
+          </select>
+        </div>
         <button className="btn btn-primary" type="submit" disabled={busy}>
           {busy ? "Making the link…" : tests?.length ? "Make another link" : "Make a public link"}
         </button>
+        {fill === "own" && <SampleEditor id="public-own" value={own} onChange={setOwn} total={total} />}
       </form>
       {error && <p className="error">{error}</p>}
       {tests === null ? <span className="spinner" /> : tests.map((t) => <LinkCard key={t.token} test={t} onChange={load} />)}

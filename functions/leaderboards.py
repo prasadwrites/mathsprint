@@ -54,10 +54,61 @@ def sample_players(total: int, limit_sec: int, rng: random.Random | None = None)
     return out
 
 
+MAX_SAMPLES = 30  # players the admin can enter for one link
+
+
+def parse_clock(value: object) -> int | None:
+    """Seconds from "6:12", "372" or 372; None when blank or not a time."""
+    text = str(value if value is not None else "").strip()
+    if not text:
+        return None
+    try:
+        if ":" in text:
+            m, s = text.split(":", 1)
+            m, s = int(m), int(s)
+            return m * 60 + s if m >= 0 and 0 <= s < 60 else None
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def custom_samples(rows: object, total: int, limit_sec: int, rng: random.Random | None = None) -> list[dict]:
+    """The admin's own sample players ({name, score, time}), for a post aimed at one country, say. Names can be in any
+    language. A blank time gets a believable one. Raises ValueError with a message naming the bad row."""
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Add at least one player, or use made-up names.")
+    if len(rows) > MAX_SAMPLES:
+        raise ValueError(f"Enter up to {MAX_SAMPLES} players.")
+    rng = rng or random.Random()
+    room = limit_sec or total * 60
+    out = []
+    for i, r in enumerate(rows):
+        r = r if isinstance(r, dict) else {}
+        name = clean_name(r.get("name"))
+        where = f"Player {i + 1}" + (f" ({name})" if name else "")
+        if not name:
+            raise ValueError(f"{where} needs a name.")
+        try:
+            score = int(str(r.get("score")).strip())
+        except ValueError:
+            raise ValueError(f"{where}: the score should be a number from 0 to {total}.") from None
+        if not 0 <= score <= total:
+            raise ValueError(f"{where}: the score should be a number from 0 to {total}.")
+        sec = parse_clock(r.get("time"))
+        if str(r.get("time") or "").strip() and sec is None:
+            raise ValueError(f"{where}: write the time like 6:12.")
+        if sec is None:
+            sec = max(20, round(room * rng.uniform(0.35, 0.9)))
+        if sec <= 0 or (limit_sec and sec > limit_sec):
+            raise ValueError(f"{where}: the time should be more than 0:00" + (f" and at most the {limit_sec // 60}:{limit_sec % 60:02d} limit." if limit_sec else "."))
+        out.append({"id": f"sample-{i}", "name": name, "score": score, "usedSec": sec, "at": SEED_AT, "sample": True})
+    return out
+
+
 def showing_samples(samples: list[dict], real: int) -> list[dict]:
-    """The sample players still on the board with `real` real players on it: enough to keep it FILL long, dropping the
-    best samples first, so real players take over the top places."""
-    keep = max(0, FILL - real)
+    """The sample players still on the board with `real` real players on it: each real player takes one sample's
+    place, the best sample first, so real players take over the top places."""
+    keep = max(0, len(samples) - real)
     return sorted(samples, key=_key)[len(samples) - keep:] if keep else []
 
 
