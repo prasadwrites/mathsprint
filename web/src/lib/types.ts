@@ -476,6 +476,8 @@ export interface PublicTest {
   /** Made-up players filling the board until real ones join, and how many are on it now. */
   samples: number;
   samplesShowing: number;
+  /** The sample players themselves, for editing. */
+  sampleList?: { name: string; score: number; usedSec: number }[];
   /** An inviting line for social posts, with the current leader. */
   shareText: string;
 }

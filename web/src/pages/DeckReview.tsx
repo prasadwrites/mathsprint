@@ -105,7 +105,7 @@ export default function DeckReview() {
 
         {mine && <ShareDeck deck={deck} />}
         {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} />}
-        {mine && admin && <PublicTestLinks deck={deck} suggestedSec={questions.length * 90} />}
+        {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} />}
         {mine && admin && <QuestionPosts deck={deck} questions={questions} pick={postPick} />}
 
         <div className="panel">

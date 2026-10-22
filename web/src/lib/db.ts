@@ -18,6 +18,7 @@ import { db, functions } from "./firebase";
 import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
+import type { SampleRow } from "./samplePlayers";
 import { moveTo, opened, secondsOn } from "./timing";
 
 const toDate = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
@@ -148,13 +149,14 @@ export async function listChallenges() {
 }
 
 /** Admin only: a public link to one of the admin's decks, which anyone can play from without an account. */
-export async function createPublicTest(deckId: string, timeLimitSec: number, fill: boolean) {
-  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec, fill })).data;
+/** `samples` are the admin's own sample players; without them, `fill` asks for made-up ones. */
+export async function createPublicTest(deckId: string, timeLimitSec: number, fill: boolean, samples?: SampleRow[]) {
+  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec, fill, samples })).data;
 }
 
-/** Admin only: new sample players on a link's leaderboard, or none. */
-export async function setPublicSamples(token: string, fill: boolean) {
-  return (await httpsCallable<object, PublicTest>(functions, "set_public_samples")({ token, fill })).data;
+/** Admin only: the admin's own sample players on a link's leaderboard, new made-up ones (fill), or none. */
+export async function setPublicSamples(token: string, fill: boolean, samples?: SampleRow[]) {
+  return (await httpsCallable<object, PublicTest>(functions, "set_public_samples")({ token, fill, samples })).data;
 }
 
 export async function listPublicTests(deckId?: string) {
