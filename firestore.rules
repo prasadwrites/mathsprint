@@ -99,6 +99,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Question posts for social media (with their copy of the deck's questions, answers included). Only the Cloud
+    // Functions read or write these, so a visitor sees an answer only after giving theirs.
+    match /questionPosts/{token}/{document=**} {
+      allow read, write: if false;
+    }
+
     // Problem reports and plan promotions. Read and written only through functions.
     match /reports/{reportId} {
       allow read, write: if false;

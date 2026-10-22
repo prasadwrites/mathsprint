@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import { moveTo, opened, secondsOn } from "./timing";
@@ -184,6 +184,33 @@ export async function submitPublicTest(token: string, attempt: string, answers: 
 
 export async function claimPublicTest(token: string, attempt: string) {
   return (await httpsCallable<object, { saved: boolean; rank: number }>(functions, "claim_public_test")({ token, attempt })).data;
+}
+
+/** Admin only: a social media post of one question from a deck. */
+export async function createQuestionPost(deckId: string, questionId: string) {
+  return (await httpsCallable<object, QuestionPost>(functions, "create_question_post", { timeout: 120_000 })({ deckId, questionId })).data;
+}
+
+export async function listQuestionPosts(deckId?: string) {
+  return (await httpsCallable<object, { posts: QuestionPost[] }>(functions, "list_question_posts")(deckId ? { deckId } : {})).data.posts;
+}
+
+export async function deleteQuestionPost(token: string) {
+  await httpsCallable(functions, "delete_question_post", { timeout: 120_000 })({ token });
+}
+
+/** No sign-in. `count: false` opens it without counting a view, for a reload. */
+export async function openQuestionPost(token: string, count = true) {
+  return (await httpsCallable<object, OpenQuestionPost>(functions, "open_question_post")({ token, count })).data;
+}
+
+export async function checkPostAnswer(token: string, index: number, answer: string) {
+  return (await httpsCallable<object, PostAnswer>(functions, "check_post_answer")({ token, index, answer })).data;
+}
+
+/** Copies a question post's deck into the signed-in account (once). */
+export async function savePostDeck(token: string) {
+  return (await httpsCallable<object, { deckId: string; saved: boolean }>(functions, "save_post_deck", { timeout: 60_000 })({ token })).data;
 }
 
 export async function reportProblem(message: string, page: string) {
