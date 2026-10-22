@@ -2,9 +2,10 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useActivityHeartbeat } from "./lib/activity";
-import { claimChallenge, claimPublicTest, getAccount } from "./lib/db";
+import { claimChallenge, claimPublicTest, getAccount, savePostDeck } from "./lib/db";
 import { clearClaim, pendingClaim } from "./lib/challenge";
 import { clearPublicClaim, pendingPublicClaim } from "./lib/publicTest";
+import { clearPostSave, pendingPostSave } from "./lib/questionPost";
 import { clearInvite, pendingInvite } from "./lib/invite";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
@@ -20,6 +21,7 @@ import Plans from "./pages/Plans";
 import Report from "./pages/Report";
 import PlayChallenge from "./pages/PlayChallenge";
 import PlayPublicTest from "./pages/PlayPublicTest";
+import PlayQuestionPost from "./pages/PlayQuestionPost";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
 import TestResults from "./pages/TestResults";
@@ -47,10 +49,10 @@ function AdminOnly() {
 }
 
 export default function App() {
-  // Pages anyone can open without signing in: a group member's test, a friend's challenge, a public test link, and the
-  // plan comparison.
+  // Pages anyone can open without signing in: a group member's test, a friend's challenge, a public test link, a
+  // question post, and the plan comparison.
   const { pathname } = useLocation();
-  if (["/t/", "/c/", "/play/", "/p/", "/quiz/"].some((p) => pathname.startsWith(p)) || pathname === "/plans") {
+  if (["/t/", "/c/", "/play/", "/p/", "/quiz/", "/q/", "/question/"].some((p) => pathname.startsWith(p)) || pathname === "/plans") {
     return (
       <Routes>
         <Route path="/t/:token" element={<TakeTest />} />
@@ -60,6 +62,9 @@ export default function App() {
         <Route path="/p/:token" element={<PlayPublicTest />} />
         {/* Where /p/ sends visitors if its link-preview function can't reach the site. */}
         <Route path="/quiz/:token" element={<PlayPublicTest />} />
+        <Route path="/q/:token" element={<PlayQuestionPost />} />
+        {/* Where /q/ sends visitors if its link-preview function can't reach the site. */}
+        <Route path="/question/:token" element={<PlayQuestionPost />} />
         <Route path="/plans" element={<Plans />} />
       </Routes>
     );
@@ -87,8 +92,13 @@ function SignedInApp() {
         const pub = pendingPublicClaim();
         clearPublicClaim();
         const placed = pub && (await claimPublicTest(pub.token, pub.attempt).catch(() => null));
+        // A question post's deck the visitor asked to keep when they signed up: save it, then open it.
+        const post = pendingPostSave();
+        clearPostSave();
+        const kept = post && (await savePostDeck(post.token).catch(() => null));
         setAccount(a);
         if (pub && placed?.saved) navigate.current(`/p/${pub.token}`);
+        else if (kept) navigate.current(`/decks/${kept.deckId}`);
       })
       .catch(() => setAccount(null));
   }, []);

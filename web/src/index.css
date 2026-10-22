@@ -388,3 +388,6 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .players li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .players li:last-child { border-bottom: none; }
 @media (max-width: 560px) { .players li { grid-template-columns: 1fr auto; } }
+
+/* A question post's picture, as the admin sees it before sharing. */
+.post-card { display: block; width: 100%; max-width: 600px; aspect-ratio: 1200 / 630; border-radius: 12px; border: 1px solid var(--line); background: var(--chip); }

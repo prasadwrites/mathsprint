@@ -35,6 +35,11 @@ create_public_test, list_public_tests, public_test_players, remove_public_player
 open_public_test, submit_public_test - No sign-in: anyone plays a public link under a name, graded here.
 claim_public_test     - A player who signs up after playing puts their result on that test's leaderboard.
 public_test_page      - Serves /p/TOKEN with the leaderboard in its link preview, and /p/TOKEN/card.png, the leaderboard card.
+create_question_post, list_question_posts, delete_question_post - Admin only: a social media post of one question from a
+                        deck, with a card picture and a link.
+open_question_post, check_post_answer - No sign-in: anyone answers the posted question, then more from the same deck.
+save_post_deck        - A visitor who signs up (or is signed in) saves the post's whole deck to their account.
+question_post_page    - Serves /q/TOKEN with the question in its link preview, and /q/TOKEN/card.png, the question card.
 """
 
 from __future__ import annotations
@@ -53,6 +58,7 @@ import cards
 import challenges
 import groups
 import leaderboards
+import posts
 import sharing
 from accounts import AccessDenied
 
@@ -1836,6 +1842,216 @@ def public_test_page(req: https_fn.Request) -> https_fn.Response:
             leaderboards.preview_description(t),
             f"https://{host}/p/{token}",
             f"https://{host}/p/{token}/card.png{version}",
+        )
+    return https_fn.Response(page, mimetype="text/html", headers={"Cache-Control": "public, max-age=0, s-maxage=300"})
+
+
+# Question posts. The admin turns one question from a deck into a social media post (/q/TOKEN): a card picture of the
+# question and a link. Visitors answer with no account, then try more of the deck; signing up saves the deck to their
+# account. Each post keeps its own copy of the deck's questions, so it keeps working if the deck is deleted. Hosting
+# sends /q/** to question_post_page (firebase.json).
+
+
+def _question_post(db, token: object):
+    token = _clean(token, 64)
+    snap = db.collection("questionPosts").document(token).get() if token else None
+    if snap is None or not snap.exists:
+        raise _not_found("This question isn't available anymore.")
+    return snap
+
+
+def _post_row(doc) -> dict:
+    p = doc.to_dict()
+    return {
+        "token": doc.id,
+        "deckId": p.get("deckId"),
+        "deckTitle": p.get("deckTitle", ""),
+        "featured": p.get("featured", 0),
+        "question": p.get("question") or {},
+        "total": p.get("total", 0),
+        "views": p.get("views", 0),
+        "answers": p.get("answers", 0),
+        "right": p.get("right", 0),
+        "more": p.get("more", 0),
+        "saved": p.get("saved", 0),
+        "createdAt": _ms(p.get("createdAt")),
+        "shareText": posts.share_text(p),
+    }
+
+
+@https_fn.on_call(timeout_sec=120)
+def create_question_post(req: https_fn.CallableRequest) -> dict:
+    """Admin only: a post of one question from one of the admin's decks, with its own copy of the deck's questions."""
+    uid = _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    deck = _owned_by(db, "decks", data.get("deckId"), uid, "ownerId", "That deck no longer exists.")
+    docs = sorted(deck.reference.collection("questions").stream(), key=lambda q: q.get("order") or 0)
+    featured = next((i for i, d in enumerate(docs) if d.id == data.get("questionId")), None)
+    if featured is None:
+        raise _not_found("That question is no longer in the deck.")
+    existing = db.collection("questionPosts").where("deckId", "==", deck.id)
+    if _count(existing) >= posts.MAX_POSTS_PER_DECK:
+        raise _invalid(f"A deck can have up to {posts.MAX_POSTS_PER_DECK} posts. Delete an old one first.")
+    questions = [{k: v for k, v in d.to_dict().items() if k != "check"} for d in docs]
+    ref = db.collection("questionPosts").document(posts.new_token())
+    writer = db.bulk_writer()
+    for i, q in enumerate(questions):
+        writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    writer.close()
+    d = deck.to_dict()
+    ref.set({  # written last, so a link only works once its questions exist
+        "ownerUid": uid,
+        "deckId": deck.id,
+        "deckTitle": d.get("title") or "",
+        # What a visitor's saved copy of the deck is made from.
+        "deck": {k: d.get(k) for k in ("title", "topic", "level", "difficulty", "topics")},
+        "total": len(questions),
+        "featured": featured,
+        "question": posts.public_question(questions[featured], featured),
+        "views": 0,
+        "answers": 0,
+        "right": 0,
+        "more": 0,
+        "saved": 0,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return _post_row(ref.get())
+
+
+@https_fn.on_call()
+def list_question_posts(req: https_fn.CallableRequest) -> dict:
+    """Admin only: the question posts, newest first, optionally for one deck."""
+    _require_admin(req)
+    db = firestore.client()
+    deck_id = (req.data or {}).get("deckId")
+    query = db.collection("questionPosts")
+    docs = query.where("deckId", "==", deck_id).stream() if deck_id else query.stream()
+    return {"posts": sorted((_post_row(d) for d in docs), key=lambda r: -(r["createdAt"] or 0))}
+
+
+@https_fn.on_call(timeout_sec=120)
+def delete_question_post(req: https_fn.CallableRequest) -> dict:
+    """Admin only: the link stops working. Decks visitors already saved from it stay theirs."""
+    _require_admin(req)
+    db = firestore.client()
+    post = _question_post(db, (req.data or {}).get("token"))
+    db.recursive_delete(post.reference)
+    return {"ok": True}
+
+
+@https_fn.on_call()
+def open_question_post(req: https_fn.CallableRequest) -> dict:
+    """No sign-in: the posted question, and the rest of the deck in the order a visitor meets them, without answers."""
+    db = firestore.client()
+    post = _question_post(db, (req.data or {}).get("token"))
+    p = post.to_dict()
+    questions = _test_questions(post.reference)
+    if (req.data or {}).get("count", True):
+        post.reference.update({"views": firestore.Increment(1)})
+    order = posts.play_order(len(questions), int(p.get("featured") or 0))
+    return {
+        "title": p.get("deckTitle", ""),
+        "level": (p.get("deck") or {}).get("level", ""),
+        "total": len(questions),
+        "questions": [posts.public_question(questions[i], i) for i in order],
+    }
+
+
+@https_fn.on_call()
+def check_post_answer(req: https_fn.CallableRequest) -> dict:
+    """No sign-in: grades one answer and shows how the question is solved. Counts answers for the admin."""
+    db = firestore.client()
+    data = req.data or {}
+    post = _question_post(db, data.get("token"))
+    questions = _test_questions(post.reference)
+    try:
+        index = int(data.get("index"))
+    except (TypeError, ValueError):
+        index = -1
+    if not 0 <= index < len(questions):
+        raise _not_found("That question isn't in this deck.")
+    answer = data.get("answer")
+    answer = answer[:200] if isinstance(answer, str) else ""
+    correct = groups.is_correct(questions[index], answer)
+    p = post.to_dict()
+    featured = index == int(p.get("featured") or 0)
+    if featured:
+        post.reference.update({"answers": firestore.Increment(1), **({"right": firestore.Increment(1)} if correct else {})})
+        p["answers"] = int(p.get("answers") or 0) + 1
+        p["right"] = int(p.get("right") or 0) + (1 if correct else 0)
+    else:
+        post.reference.update({"more": firestore.Increment(1)})
+    return {"correct": correct, **posts.reveal(questions[index]), "rightRate": posts.right_rate(p) if featured else None}
+
+
+@https_fn.on_call(timeout_sec=60)
+def save_post_deck(req: https_fn.CallableRequest) -> dict:
+    """Copies a question post's deck into the signed-in account, once per account. It doesn't count toward the plan's
+    deck limit, since the visitor didn't build it."""
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    post = _question_post(db, (req.data or {}).get("token"))
+    p = post.to_dict()
+    if p.get("ownerUid") == uid:
+        return {"deckId": p.get("deckId"), "saved": False}
+    ref = db.collection("decks").document(f"{post.id}_{uid}")
+    if ref.get().exists:
+        return {"deckId": ref.id, "saved": False}
+    questions = _test_questions(post.reference)
+    meta = p.get("deck") or {}
+    batch = db.batch()
+    for i, q in enumerate(questions):
+        batch.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    batch.set(ref, {  # in the same batch, so the deck never shows up without its questions
+        "ownerId": uid,
+        "title": meta.get("title") or p.get("deckTitle") or "Math deck",
+        "topic": meta.get("topic") or "",
+        "level": meta.get("level") or "",
+        "difficulty": meta.get("difficulty") or "Mixed",
+        "topics": meta.get("topics") or [],
+        "questionCount": len(questions),
+        "source": "ai",
+        "fromPost": post.id,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    batch.commit()
+    post.reference.update({"saved": firestore.Increment(1)})
+    return {"deckId": ref.id, "saved": True}
+
+
+@https_fn.on_request(memory=options.MemoryOption.MB_512, timeout_sec=30)
+def question_post_page(req: https_fn.Request) -> https_fn.Response:
+    """/q/TOKEN: the app, with the question in its link preview. /q/TOKEN/card.png?size=story: the question card."""
+    parts = [p for p in req.path.split("/") if p]
+    rest = parts[parts.index("q") + 1:] if "q" in parts else []  # the emulator's URL has the function's name first
+    token = rest[0] if rest else ""
+    want_card = rest[1:] == ["card.png"]
+    db = firestore.client()
+    snap = db.collection("questionPosts").document(_clean(token, 64)).get() if token else None
+    p = snap.to_dict() if snap is not None and snap.exists else None
+    host = challenges.public_host(req.headers.get("X-Forwarded-Host"), _SITE)
+
+    if want_card:
+        if p is None:
+            return https_fn.Response("Not found", status=404)
+        size = "story" if req.args.get("size") == "story" else "feed"
+        # The question never changes, so the card can be kept a day.
+        return https_fn.Response(cards.render_question(p, size, host), mimetype="image/png", headers={"Cache-Control": "public, max-age=86400, s-maxage=86400"})
+
+    try:
+        page = _index_html()
+    except Exception:  # Hosting unreachable: send the visitor to the same page without the preview
+        return https_fn.Response(status=302, headers={"Location": f"/question/{token}"})
+    if p is not None:
+        page = challenges.with_preview(
+            page,
+            posts.headline(p),
+            posts.preview_description(p),
+            f"https://{host}/q/{token}",
+            f"https://{host}/q/{token}/card.png",
         )
     return https_fn.Response(page, mimetype="text/html", headers={"Cache-Control": "public, max-age=0, s-maxage=300"})
 

@@ -494,3 +494,55 @@ export interface PublicPlayer {
   sample?: boolean;
   showing?: boolean;
 }
+
+/** One question as a question post's visitor sees it: everything to answer it, nothing that gives it away. */
+export interface PostQuestion {
+  /** Its place in the deck. */
+  index: number;
+  prompt: string;
+  math: string;
+  figure?: Figure | null;
+  type: "numeric" | "choice";
+  choices: string[];
+  answerCount: number;
+  pair: boolean;
+  concept: string;
+  difficulty: string;
+}
+
+/** A social media post of one question from a deck, as the admin sees it. */
+export interface QuestionPost {
+  token: string;
+  deckId: string;
+  deckTitle: string;
+  /** The posted question's place in the deck. */
+  featured: number;
+  question: PostQuestion;
+  total: number;
+  views: number;
+  /** Answers to the posted question, and how many were right. */
+  answers: number;
+  right: number;
+  /** Answers to the deck's other questions, from visitors who kept going. */
+  more: number;
+  /** Visitors who saved the deck to their account. */
+  saved: number;
+  createdAt: number | null;
+  shareText: string;
+}
+
+/** A question post as a visitor opens it: the posted question first, then the rest of the deck. */
+export interface OpenQuestionPost {
+  title: string;
+  level: string;
+  total: number;
+  questions: PostQuestion[];
+}
+
+export interface PostAnswer {
+  correct: boolean;
+  answer: string;
+  steps: SolutionStep[];
+  /** The percent who got the posted question right, once enough people have answered it. */
+  rightRate: number | null;
+}

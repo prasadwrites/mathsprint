@@ -6,6 +6,7 @@ import AssignTest from "../components/AssignTest";
 import ShareDeck from "../components/ShareDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import PublicTestLinks from "../components/PublicTestLinks";
+import QuestionPosts from "../components/QuestionPosts";
 import { useIsAdmin, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { getDeck, getQuestions } from "../lib/db";
@@ -26,6 +27,7 @@ export default function DeckReview() {
   const admin = useIsAdmin();
   const [deck, setDeck] = useState<Deck | null | undefined>(undefined);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [postPick, setPostPick] = useState<{ id: string } | null>(null);
 
   useEffect(() => {
     getDeck(deckId).then(setDeck);
@@ -104,6 +106,7 @@ export default function DeckReview() {
         {mine && <ShareDeck deck={deck} />}
         {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} />}
         {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} />}
+        {mine && admin && <QuestionPosts deck={deck} questions={questions} pick={postPick} />}
 
         <div className="panel">
           <div className="row spread">
@@ -121,6 +124,11 @@ export default function DeckReview() {
                 <span className="row" style={{ gap: 6 }}>
                   <Chip>{q.concept}</Chip>
                   <Chip tone={q.difficulty === "Hard" ? "miss" : "neutral"}>{q.difficulty}</Chip>
+                  {mine && admin && (
+                    <button type="button" className="btn-link" onClick={() => setPostPick({ id: q.id })} aria-label={`Make a post of question ${i + 1}`}>
+                      Post it
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
