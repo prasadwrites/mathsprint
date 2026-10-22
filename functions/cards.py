@@ -30,11 +30,48 @@ def _font(kind: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(os.path.join(_FONTS, name), size)
 
 
+# Inter draws Latin, Greek and Cyrillic. Names in other scripts (a leaderboard for players in India or Japan, say)
+# use the Noto font for their script, laid out with Raqm so joined and right-to-left letters come out right.
+_SCRIPTS = [
+    ((0x0590, 0x05FF), "NotoSansHebrew-Bold.ttf"),
+    ((0x0600, 0x06FF), "NotoSansArabic-Bold.ttf"), ((0x0750, 0x077F), "NotoSansArabic-Bold.ttf"),
+    ((0xFB50, 0xFDFF), "NotoSansArabic-Bold.ttf"), ((0xFE70, 0xFEFF), "NotoSansArabic-Bold.ttf"),
+    ((0x0900, 0x097F), "NotoSansDevanagari-Bold.ttf"), ((0x0980, 0x09FF), "NotoSansBengali-Bold.ttf"),
+    ((0x0A00, 0x0A7F), "NotoSansGurmukhi-Bold.ttf"), ((0x0A80, 0x0AFF), "NotoSansGujarati-Bold.ttf"),
+    ((0x0B00, 0x0B7F), "NotoSansOriya-Bold.ttf"), ((0x0B80, 0x0BFF), "NotoSansTamil-Bold.ttf"),
+    ((0x0C00, 0x0C7F), "NotoSansTelugu-Bold.ttf"), ((0x0C80, 0x0CFF), "NotoSansKannada-Bold.ttf"),
+    ((0x0D00, 0x0D7F), "NotoSansMalayalam-Bold.ttf"), ((0x0E00, 0x0E7F), "NotoSansThai-Bold.ttf"),
+    ((0x1100, 0x11FF), "NotoSansCJKsc-Bold.otf"), ((0x2E80, 0x9FFF), "NotoSansCJKsc-Bold.otf"),
+    ((0xAC00, 0xD7AF), "NotoSansCJKsc-Bold.otf"), ((0xF900, 0xFAFF), "NotoSansCJKsc-Bold.otf"),
+    ((0xFF00, 0xFFEF), "NotoSansCJKsc-Bold.otf"),
+]
+
+
+def script_font(text: str) -> str | None:
+    """The Noto font file for the first character of `text` that Inter can't draw, or None when Inter can."""
+    for ch in str(text):
+        c = ord(ch)
+        for (lo, hi), name in _SCRIPTS:
+            if lo <= c <= hi:
+                return name
+    return None
+
+
+@lru_cache(maxsize=64)
+def _noto(name: str, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(os.path.join(_FONTS, name), size, layout_engine=ImageFont.Layout.RAQM)
+
+
+def _font_for(text: str, kind: str, size: int) -> ImageFont.FreeTypeFont:
+    name = script_font(text) if kind != "mono" else None
+    return _noto(name, size) if name else _font(kind, size)
+
+
 def _fit(draw: ImageDraw.ImageDraw, text: str, kind: str, size: int, width: int) -> ImageFont.FreeTypeFont:
-    """The largest font up to `size` that fits `text` on one line in `width` pixels."""
-    while size > 12 and draw.textlength(text, font=_font(kind, size)) > width:
+    """The largest font up to `size` that fits `text` on one line in `width` pixels, in a font that has its script."""
+    while size > 12 and draw.textlength(text, font=_font_for(text, kind, size)) > width:
         size -= 2
-    return _font(kind, size)
+    return _font_for(text, kind, size)
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, width: int) -> list[str]:
@@ -86,7 +123,7 @@ def render(c: dict, a: dict | None, size: str, host: str) -> bytes:
 
     # The headline, wrapped.
     y += 56 if story else 44
-    hfont = _font("display", 92 if story else 58)
+    hfont = _font_for(headline(c, a), "display", 92 if story else 58)
     for line in _wrap(d, headline(c, a), hfont, inner)[:3]:
         d.text((pad, y), line, font=hfont, fill=WHITE)
         y += int(hfont.size * 1.12)
@@ -153,7 +190,7 @@ def render_board(t: dict, size: str, host: str) -> bytes:
     y += 56 if story else 42
     text = leaderboards.headline(t)
     if story:
-        hfont = _font("display", 92)
+        hfont = _font_for(text, "display", 92)
         for line in _wrap(d, text, hfont, inner)[:3]:
             d.text((pad, y), line, font=hfont, fill=WHITE)
             y += int(hfont.size * 1.12)

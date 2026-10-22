@@ -1551,9 +1551,20 @@ def _public_row(db, doc) -> dict:
         "board": (t.get("board") or [])[:3],
         "ranked": len(t.get("board") or []),
         "samples": len(t.get("samples") or []),
+        "sampleList": [{k: p[k] for k in ("name", "score", "usedSec")} for p in t.get("samples") or []],
         "samplesShowing": sum(1 for r in t.get("board") or [] if r.get("sample")),
         "shareText": leaderboards.share_text(t),
     }
+
+
+def _samples_from(data: dict, total: int, limit: int) -> list[dict]:
+    """The sample players a request asks for: the admin's own list, made-up ones (fill), or none."""
+    if data.get("samples") is not None:
+        try:
+            return leaderboards.custom_samples(data.get("samples"), total, limit)
+        except ValueError as e:
+            raise _invalid(str(e)) from None
+    return leaderboards.sample_players(total, limit) if data.get("fill", True) else []
 
 
 @https_fn.on_call(timeout_sec=120)
@@ -1570,7 +1581,7 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
     questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
     if not questions:
         raise _invalid("That deck has no questions.")
-    samples = leaderboards.sample_players(len(questions), limit) if data.get("fill", True) else []
+    samples = _samples_from(data, len(questions), limit)
     ref = db.collection("publicTests").document(leaderboards.new_token())
     writer = db.bulk_writer()
     for i, q in enumerate(questions):
@@ -1592,12 +1603,13 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
 
 @https_fn.on_call()
 def set_public_samples(req: https_fn.CallableRequest) -> dict:
-    """Admin only: fills a link's leaderboard with new sample players, or takes them all off."""
+    """Admin only: puts the admin's own sample players on a link's leaderboard (samples), new made-up ones (fill), or
+    takes them all off. Real players already on the board keep their places."""
     _require_admin(req)
     db = firestore.client()
     data = req.data or {}
     test = _public_test(db, data.get("token"))
-    samples = leaderboards.sample_players(int(test.get("total") or 0), int(test.get("timeLimitSec") or 0)) if data.get("fill") else []
+    samples = _samples_from({"fill": bool(data.get("fill")), "samples": data.get("samples")}, int(test.get("total") or 0), int(test.get("timeLimitSec") or 0))
     test.reference.update({"samples": samples})
     _refresh_board(db, test.reference)
     return _public_row(db, test.reference.get())
