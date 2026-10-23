@@ -72,7 +72,12 @@ def score_of(row: dict) -> dict:
     return {"score": round(sum(parts.values())), "points": parts}
 
 
-def build(
+def build(*args, **kwargs) -> dict[str, dict]:
+    """One row per user, keyed by uid (see build_all)."""
+    return build_all(*args, **kwargs)[0]
+
+
+def build_all(
     users: list[dict],
     account_docs: dict[str, dict],
     decks: dict[str, dict],
@@ -86,8 +91,9 @@ def build(
     posts: list[dict],
     invites: list[dict],
     now_ms: int,
-) -> dict[str, dict]:
-    """One row per user, keyed by uid, with their own usage, each channel's numbers, their decks and the score.
+) -> tuple[dict[str, dict], list[dict]]:
+    """One row per user, keyed by uid, with their own usage, each channel's numbers, their decks and the score; and one
+    row per quiz link (challenge, group test, public test, question post) with its plays, finishes and new accounts.
 
     users: {uid, email, displayName, createdAt, lastSignInAt, isAdmin}, from Firebase Auth.
     Every timestamp is in milliseconds. Records for people who are no longer users are skipped.
@@ -100,6 +106,26 @@ def build(
         if not isinstance(uid, str) or uid not in created:
             return False
         return created[uid] + SIGNUP_SLACK_MS >= int(since_ms or 0)
+
+    links: dict[tuple, dict] = {}
+
+    def link(kind: str, link_id: str, owner: object, title: object, created_at: object, label: str = "") -> dict | None:
+        if owner not in rows:
+            return None
+        key = (kind, link_id)
+        if key not in links:
+            links[key] = {"kind": kind, "id": link_id, "ownerUid": owner, "title": title or "Untitled deck", "label": label,
+                          "createdAt": created_at, "reached": 0, "completed": 0, "signups": 0, "_new": set()}
+        return links[key]
+
+    def link_play(l: dict | None, completed: bool, new_uid: object = None, since_ms: object = None) -> None:
+        if l is None:
+            return
+        l["reached"] += 1
+        l["completed"] += int(completed)
+        if new_uid != l["ownerUid"] and new_account_since(new_uid, since_ms) and new_uid not in l["_new"]:
+            l["_new"].add(new_uid)
+            l["signups"] += 1
 
     rows: dict[str, dict] = {}
     signed_up: dict[str, set] = {}
@@ -183,6 +209,8 @@ def build(
         owner, deck_id = c.get("challengerUid"), session_deck.get(c.get("sessionId"))
         add(owner, "challenge", deck_id, reached=1, completed=int(a.get("status") == "completed"))
         signup(owner, "challenge", deck_id, a.get("claimedUid"), a.get("startedAtMs"))
+        link_play(link("challenge", a.get("challengeId"), owner, c.get("deckTitle"), c.get("createdAt")),
+                  a.get("status") == "completed", a.get("claimedUid"), a.get("startedAtMs"))
 
     # Group tests: each member's link is one link and one person reached.
     for t in takers:
@@ -191,7 +219,10 @@ def build(
             continue
         owner, deck_id = test.get("ownerUid"), test.get("deckId")
         add(owner, "group", deck_id, links=1, reached=1, completed=int(t.get("status") == "completed"))
-        signup(owner, "group", deck_id, by_email.get((t.get("email") or "").lower()), t.get("createdAt"))
+        new_uid = by_email.get((t.get("email") or "").lower())
+        signup(owner, "group", deck_id, new_uid, t.get("createdAt"))
+        link_play(link("group", t.get("testId"), owner, test.get("deckTitle"), test.get("createdAt"), test.get("groupName") or ""),
+                  t.get("status") == "completed", new_uid, t.get("createdAt"))
 
     # Decks shared by email. The people already have accounts; finishing means they finished a practice session on it.
     for deck_id, d in decks.items():
@@ -211,16 +242,27 @@ def build(
         owner, deck_id = t.get("ownerUid"), t.get("deckId")
         add(owner, "public", deck_id, reached=1, completed=int(a.get("status") == "completed"))
         signup(owner, "public", deck_id, a.get("claimedUid"), a.get("startedAtMs"))
+        link_play(link("public", a.get("testId"), owner, t.get("deckTitle"), t.get("createdAt")),
+                  a.get("status") == "completed", a.get("claimedUid"), a.get("startedAtMs"))
 
     # Question posts: an answer to the posted question counts as finishing it. A visitor who saves the deck to a new
     # account is a sign-up.
     post_by_id = {p["id"]: p for p in posts}
     for p in posts:
         add(p.get("ownerUid"), "post", p.get("deckId"), links=1, reached=int(p.get("answers") or 0), completed=int(p.get("answers") or 0))
+        l = link("post", p["id"], p.get("ownerUid"), p.get("deckTitle"), p.get("createdAt"))
+        if l is not None:
+            l["reached"] += int(p.get("answers") or 0)
+            l["completed"] += int(p.get("answers") or 0)
     for d in decks.values():
         p = post_by_id.get(d.get("fromPost"))
         if p:
             signup(p.get("ownerUid"), "post", p.get("deckId"), d.get("ownerId"), p.get("createdAt"))
+            l = links.get(("post", p["id"]))
+            if l is not None and d.get("ownerId") != l["ownerUid"] and new_account_since(d.get("ownerId"), p.get("createdAt")) \
+                    and d.get("ownerId") not in l["_new"]:
+                l["_new"].add(d.get("ownerId"))
+                l["signups"] += 1
 
     # Invites: the server already checks the friend signed up after the invite.
     for inv in invites:
@@ -237,7 +279,22 @@ def build(
         r["completionRate"] = round(r["completions"] / r["peopleReached"], 3) if r["peopleReached"] else None
         r.update(score_of(r))
         r["decks"] = sorted(r["decks"].values(), key=lambda d: (-(d["completed"] + d["reached"]), -(d["createdAt"] or 0)))
-    return rows
+    link_rows = []
+    for l in links.values():
+        l.pop("_new")
+        owner = rows[l["ownerUid"]]
+        link_rows.append({**l, "ownerName": owner["displayName"] or owner["email"], "ownerEmail": owner["email"], "ownerIsAdmin": owner["isAdmin"]})
+    return rows, link_rows
+
+
+TOP_LINKS = 10
+
+
+def top_links(link_rows: list[dict], n: int = TOP_LINKS) -> dict[str, list[dict]]:
+    """The most active links (most finished, then most plays) and the links that brought in the most new accounts."""
+    active = sorted((l for l in link_rows if l["reached"]), key=lambda l: (-l["completed"], -l["reached"], -l["signups"], -(l["createdAt"] or 0)))
+    signups = sorted((l for l in link_rows if l["signups"]), key=lambda l: (-l["signups"], -l["completed"], -(l["createdAt"] or 0)))
+    return {"active": active[:n], "signups": signups[:n]}
 
 
 def ranked(rows: dict[str, dict], include_admin: bool = False) -> list[dict]:
