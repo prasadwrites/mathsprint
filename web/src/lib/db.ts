@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -253,6 +253,16 @@ export async function recordActivity() {
 
 export async function adminListAccounts() {
   return (await httpsCallable<void, { accounts: AdminAccount[]; plans: Record<PlanId, PlanLimits> }>(functions, "admin_list_accounts")()).data;
+}
+
+type EngagementMeta = { scoring: ScoreRule[]; channels: Record<EngagementChannel, string> };
+
+export async function adminEngagement() {
+  return (await httpsCallable<object, EngagementMeta & { users: EngagementUser[] }>(functions, "admin_engagement", { timeout: 300_000 })({})).data;
+}
+
+export async function adminUserEngagement(uid: string) {
+  return (await httpsCallable<{ uid: string }, EngagementMeta & { user: EngagementUser }>(functions, "admin_engagement", { timeout: 300_000 })({ uid })).data;
 }
 
 /** accessCode: a code to set, "generate" for a random one, or null to go back to the shared code. */

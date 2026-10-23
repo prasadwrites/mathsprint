@@ -139,6 +139,11 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
                   Accounts {!!waiting && <span className="badge" aria-label={`${waiting} requests and reports waiting`}>{waiting}</span>}
                 </Link>
               )}
+              {admin && (
+                <Link to="/admin/engagement" aria-current={pathname === "/admin/engagement" ? "page" : undefined}>
+                  Engagement
+                </Link>
+              )}
             </nav>
             <ProfileMenu />
           </>

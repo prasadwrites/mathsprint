@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip } from "../components/TopBar";
 import { useAccount } from "../App";
@@ -23,7 +24,7 @@ import { Conversation, ReplyBox, when } from "./Upgrade";
 const PLAN_ORDER: PlanId[] = ["free", "pro", "promax"];
 
 /** 0 → "0m", 300 → "5m", 7500 → "2h 5m". */
-const duration = (seconds: number) => {
+export const duration = (seconds: number) => {
   const m = Math.round(seconds / 60);
   if (m < 1) return "0m";
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
@@ -178,6 +179,9 @@ function AccountRow({
         <span className="small time-on-site">
           Time on site: <b>{duration(a.activeSeconds)}</b> in all · {duration(a.weekSeconds)} this week · {duration(a.todaySeconds)} today
           {a.lastActiveAt ? ` · last active ${when(a.lastActiveAt)}` : ""}
+        </span>
+        <span className="small">
+          <Link to={`/admin/engagement?u=${encodeURIComponent(a.uid)}`}>See engagement</Link>
         </span>
         {a.invitesJoined > 0 && (
           <span className="small">
@@ -652,7 +656,12 @@ export default function Accounts() {
       <main className="page">
         <div className="row spread">
           <h1>Accounts</h1>
-          {accounts && <span className="muted">{accounts.length} {accounts.length === 1 ? "account" : "accounts"}</span>}
+          <div className="row">
+            {accounts && <span className="muted">{accounts.length} {accounts.length === 1 ? "account" : "accounts"}</span>}
+            <Link className="btn btn-small" to="/admin/engagement">
+              Engagement
+            </Link>
+          </div>
         </div>
 
         <Requests

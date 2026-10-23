@@ -251,6 +251,64 @@ export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgra
   invitesJoined: number;
 }
 
+export type EngagementChannel = "challenge" | "group" | "share" | "public" | "post" | "invite";
+
+/** One channel's numbers: links made, people who got or opened a deck, who finished it, and new accounts. */
+export interface ChannelCounts {
+  links: number;
+  reached: number;
+  completed: number;
+  signups: number;
+}
+
+export interface EngagementDeck extends ChannelCounts {
+  deckId: string;
+  title: string;
+  subject: string;
+  deleted: boolean;
+  /** False for someone else's shared deck that this person challenged friends on. */
+  own: boolean;
+  createdAt: number | null;
+  ownSessions: number;
+}
+
+/** What the admin's Engagement page knows about one person. */
+export interface EngagementUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  isAdmin: boolean;
+  createdAt: number | null;
+  lastSignInAt: number | null;
+  activeSeconds: number;
+  weekSeconds: number;
+  todaySeconds: number;
+  lastActiveAt: number | null;
+  activeMinutes: number;
+  /** Days with any activity, out of the last 35. */
+  activeDays: number;
+  decksCreated: number;
+  decksKept: number;
+  sessionsCompleted: number;
+  decksPracticed: number;
+  linksCreated: number;
+  peopleReached: number;
+  completions: number;
+  signups: number;
+  completionRate: number | null;
+  channels: Record<EngagementChannel, ChannelCounts>;
+  score: number;
+  points: Record<string, number>;
+  /** Only when one person is asked for. */
+  decks?: EngagementDeck[];
+}
+
+export interface ScoreRule {
+  field: string;
+  points: number;
+  per: string;
+}
+
 export interface Invite {
   token: string;
   email: string;
