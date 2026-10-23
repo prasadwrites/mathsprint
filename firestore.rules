@@ -113,6 +113,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // The subjects decks can be made in (settings/subjects, { names: [...] }). Everyone signed in reads the list;
+    // only the admin changes it. generate_deck reads it too, and treats a missing list as its starter set.
+    match /settings/subjects {
+      allow read: if signedIn();
+      allow write: if isAdmin() && request.resource.data.keys().hasOnly(["names"])
+        && request.resource.data.names is list && request.resource.data.names.size() <= 40;
+    }
+
     // Per-account access codes. Read and written only through the admin functions.
     match /accessCodes/{uid} {
       allow read, write: if false;

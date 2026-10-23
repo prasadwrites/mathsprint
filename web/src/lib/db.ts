@@ -50,6 +50,7 @@ export interface GenerateInput {
   difficulty: Difficulty;
   level: string;
   notes: string;
+  subject: string;
   accessCode: string;
   /** A PDF to write the deck from, base64-encoded; `topic` is then an optional focus. */
   pdf?: string;

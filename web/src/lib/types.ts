@@ -86,6 +86,8 @@ export interface Deck {
   id: string;
   ownerId: string;
   title: string;
+  /** Absent on decks made before subjects existed, which are Math (see subjectOf). */
+  subject?: string;
   topic: string;
   level: string;
   difficulty: Difficulty;
@@ -399,6 +401,7 @@ export interface PlayedChallenge {
 /** What a friend sees: the score to beat, then the questions (without answers), then both results. */
 export interface OpenChallenge {
   title: string;
+  subject?: string;
   from: string;
   score: number;
   total: number;
@@ -435,6 +438,7 @@ export interface BoardRow {
 /** What anyone with a public test link sees: the leaderboard, then the questions (without answers), then their result. */
 export interface OpenPublicTest {
   title: string;
+  subject?: string;
   total: number;
   timeLimitSec: number;
   /** The top places, best first. */
@@ -515,6 +519,7 @@ export interface QuestionPost {
   token: string;
   deckId: string;
   deckTitle: string;
+  subject?: string;
   /** The posted question's place in the deck. */
   featured: number;
   question: PostQuestion;
@@ -534,6 +539,7 @@ export interface QuestionPost {
 /** A question post as a visitor opens it: the posted question first, then the rest of the deck. */
 export interface OpenQuestionPost {
   title: string;
+  subject?: string;
   level: string;
   total: number;
   questions: PostQuestion[];

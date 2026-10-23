@@ -100,6 +100,12 @@ Decks over 20 questions are written in parts of 20 that run in parallel (`functi
 
 Claude returns each question as structured JSON (prompt, answer, solution steps, concept) plus a `check`: the same problem restated in SymPy syntax. `functions/validator.py` solves or evaluates that check itself and compares the result with Claude's answer. Mismatches go back to Claude with the reason; anything still wrong after two repair rounds is left out of the deck. Expressions are parsed against a strict allow-list before SymPy sees them.
 
+### Subjects
+
+Every deck has a subject, Math by default; decks made before subjects existed count as Math. The admin adds and removes subjects on the Accounts page or from "Edit subjects" on the create page (stored in `settings/subjects`; a starter list of Math, Physics, Chemistry, Biology and General Knowledge applies until the admin first saves). The create page, including PDF decks, has a subject picker, and the dashboard filters decks by subject or shows All. Share text, link previews and cards use the deck's subject ("Calling all Biology fans", "Can you answer this?") instead of saying math.
+
+SymPy can't solve a biology or history question, so other subjects are checked differently (`functions/generator.py`): questions are mostly multiple choice, and a second Claude call answers each one without seeing the key. A question it answers differently, or finds unclear or wrong, goes back for repair like a failed SymPy check. Calculation questions in those subjects (physics, chemistry) still carry a SymPy check.
+
 ### Timed practice
 
 The signature screen (`web/src/pages/Practice.tsx`, logic in `web/src/lib/pace.ts`):
@@ -119,11 +125,12 @@ The dashboard adds overall progress (questions, accuracy, time, average pace aga
 
 | Collection | Fields |
 | --- | --- |
-| `decks/{id}` | ownerId, title, topic, level, difficulty, topics, questionCount, source, createdAt, sharedWith[uid], sharedBy |
+| `decks/{id}` | ownerId, title, subject (absent means Math), topic, level, difficulty, topics, questionCount, source, createdAt, sharedWith[uid], sharedBy |
 | `decks/{id}/shares/{uid}` | email, name, sharedAt. Read and written only by functions |
 | `decks/{id}/questions/{id}` | order, prompt, math, type (numeric/choice), choices, answerValues, answerChoice, answerDisplay, tolerance, concept, difficulty, steps[{description, expression}], check, verified |
 | `accounts/{uid}` | email, displayName, plan (free/pro/promax), status (active/suspended), decksCreated, createdAt. Written only by functions |
 | `accessCodes/{uid}` | code. Read and written only by functions |
+| `settings/subjects` | names[]. Read by anyone signed in, written only by the admin |
 | `sessions/{id}` | ownerId, deckId, deckTitle, mode (learn/practice/challenge), questionIds, timeLimitSec (0 in learn mode), startedAtMs, currentIndex, answers{i}, timings{i: {startedAt, answeredAt}} (ms from start), status, endReason, usedSec, score, accuracy, results{i}, conceptStats{concept: {attempted, correct, seconds}} |
 
 Security rules (`firestore.rules`) keep every deck and session private to its owner (a deck is also readable by the people it was shared with), make finished sessions read-only, only let the app write sample decks (AI decks come from the function), and lock out suspended accounts.

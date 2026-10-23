@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ShareButtons from "./ShareButtons";
 import { createQuestionPost, deleteQuestionPost, listQuestionPosts } from "../lib/db";
 import { questionPostCard, questionPostLink } from "../lib/questionPost";
+import { solveVerb, subjectOf } from "../lib/subjects";
 import type { Deck, Question, QuestionPost } from "../lib/types";
 
 const short = (q: Pick<Question, "prompt" | "math">, n = 70) => {
@@ -25,7 +26,7 @@ function PostCard({ post, onChange }: { post: QuestionPost; onChange: () => void
         </a>
       </div>
       <a href={questionPostCard(post.token)} target="_blank" rel="noreferrer" aria-label="The post's picture, full size">
-        <img className="post-card" src={questionPostCard(post.token)} alt={`The post's picture: Can you solve this? ${short(post.question, 200)}`} loading="lazy" />
+        <img className="post-card" src={questionPostCard(post.token)} alt={`The post's picture: Can you ${solveVerb(subjectOf(post))} this? ${short(post.question, 200)}`} loading="lazy" />
       </a>
       <div className="challenge-share">
         <input type="text" readOnly value={link} aria-label="Question post link" onFocus={(e) => e.target.select()} />

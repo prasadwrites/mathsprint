@@ -10,6 +10,8 @@ import html
 import re
 import secrets
 
+import subjects
+
 MAX_ATTEMPTS = 200  # friends who can play one challenge link
 MAX_NAME = 30
 
@@ -91,7 +93,7 @@ def with_preview(index_html: str, title: str, description: str, url: str, image:
 
 
 def preview_description(c: dict, a: dict | None) -> str:
-    title, total = c.get("deckTitle") or "a math challenge", c.get("total", 0)
+    title, total = c.get("deckTitle") or f"a {subjects.noun(subjects.of(c))} challenge", c.get("total", 0)
     if a is None:
         return f"{total} questions on {title}. Play free on MathSprint, no account needed, and see who wins."
     return f"{a.get('name') or 'A friend'} {a.get('score', 0)}/{total} vs {c.get('challengerName') or 'A friend'} {c.get('score', 0)}/{total} on {title}. Think you can beat them? Play free on MathSprint."

@@ -7,6 +7,7 @@ import { Brand, Chip, Icon } from "../components/TopBar";
 import { checkPostAnswer, openQuestionPost, savePostDeck } from "../lib/db";
 import { auth } from "../lib/firebase";
 import { answerHint } from "../lib/grading";
+import { isMath, solveVerb, subjectOf } from "../lib/subjects";
 import { loadProgress, questionPostCard, questionPostLink, rememberPostSave, saveProgress, type PostProgress } from "../lib/questionPost";
 import type { OpenQuestionPost, PostAnswer, PostQuestion } from "../lib/types";
 
@@ -96,7 +97,7 @@ function Ask({ q, busy, onAnswer }: { q: PostQuestion; busy: boolean; onAnswer: 
   );
 }
 
-function Feedback({ given, result, first }: { given: string; result: PostAnswer; first: boolean }) {
+function Feedback({ given, result, first, subject }: { given: string; result: PostAnswer; first: boolean; subject: string }) {
   return (
     <div className="stack" role="status">
       <div className="row" style={{ gap: 10 }}>
@@ -116,7 +117,7 @@ function Feedback({ given, result, first }: { given: string; result: PostAnswer;
       {first && result.rightRate !== null && <p className="muted">{result.rightRate}% of people got this one right.</p>}
       {result.steps.length > 0 && (
         <details open={!result.correct}>
-          <summary>How to solve it</summary>
+          <summary>{isMath(subject) ? "How to solve it" : "Why it's right"}</summary>
           <ol className="steps-box" style={{ marginTop: 10 }}>
             {result.steps.map((s, k) => (
               <li key={k}>
@@ -166,6 +167,8 @@ export default function PlayQuestionPost() {
   }
 
   const q = post.questions[at];
+  const subject = subjectOf(post);
+  const verb = solveVerb(subject);
   const result = progress.results[q.index];
   const tried = post.questions.filter((x) => progress.results[x.index]);
   const right = tried.filter((x) => progress.results[x.index].correct).length;
@@ -195,7 +198,7 @@ export default function PlayQuestionPost() {
           <div className="eyebrow">
             {first ? "Challenge" : `Question ${at + 1} of ${post.total}`} · {post.title}
           </div>
-          <h1>{first ? "Can you solve this?" : result ? (result.correct ? "Nailed it." : "Almost. Try the next one.") : "Next one. Can you get it?"}</h1>
+          <h1>{first ? `Can you ${verb} this?` : result ? (result.correct ? "Nailed it." : "Almost. Try the next one.") : "Next one. Can you get it?"}</h1>
           {tried.length > 1 && (
             <p className="muted" style={{ marginTop: 6 }}>
               {right} of {tried.length} right so far.
@@ -211,7 +214,7 @@ export default function PlayQuestionPost() {
           <div className="qtext">{q.prompt}</div>
           {q.figure && <Figure figure={q.figure} />}
           {q.math && <div className="qmath">{q.math}</div>}
-          {result ? <Feedback given={progress.answers[q.index] ?? ""} result={result} first={first} /> : <Ask key={q.index} q={q} busy={busy} onAnswer={answer} />}
+          {result ? <Feedback given={progress.answers[q.index] ?? ""} result={result} first={first} subject={subject} /> : <Ask key={q.index} q={q} busy={busy} onAnswer={answer} />}
           {error && <p className="error">{error}</p>}
         </div>
 
@@ -244,8 +247,8 @@ export default function PlayQuestionPost() {
             link={questionPostLink(token)}
             text={
               progress.results[post.questions[0].index]?.correct
-                ? `I solved this ${post.title} question. Can you? Free, no account needed.`
-                : `Can you solve this ${post.title} question? Free, no account needed.`
+                ? `I ${verb === "solve" ? "solved" : "got"} this ${post.title} question. Can you? Free, no account needed.`
+                : `Can you ${verb} this ${post.title} question? Free, no account needed.`
             }
             card={questionPostCard(token)}
             title="MathSprint question"

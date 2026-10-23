@@ -3,6 +3,7 @@
 Claude writes each question together with a `check` (the same problem in SymPy
 syntax). We solve or evaluate that check ourselves and compare the result with
 the answer Claude gave. Anything that disagrees is sent back for regeneration.
+Subjects other than math can't always be restated this way; see check_question.
 """
 
 from __future__ import annotations
@@ -324,7 +325,10 @@ def check_diagram(d: Diagram) -> str:
     return ""
 
 
-def check_question(q: GeneratedQuestion) -> CheckResult:
+def check_question(q: GeneratedQuestion, math: bool = True) -> CheckResult:
+    """Solves the question's check with SymPy and compares it with Claude's answer. For a subject other than math
+    (math=False), a choice question may have no check at all (kind 'none'); only its shape is checked here, and
+    generator.py has Claude answer it again without the key."""
     if not q.steps:
         return CheckResult(False, "missing solution steps")
     if q.picture_error:
@@ -343,6 +347,16 @@ def check_question(q: GeneratedQuestion) -> CheckResult:
         problem = check_figure(q.figure)
         if problem:
             return CheckResult(False, problem)
+    if q.check.kind == "none":
+        if math:
+            return CheckResult(False, "every math question needs a SymPy check")
+        if q.type != "choice":
+            return CheckResult(False, "a numeric question needs a SymPy check of kind 'evaluate'")
+        if len(q.choices) < 2 or len(set(q.choices)) != len(q.choices):
+            return CheckResult(False, "choice questions need 2+ distinct options")
+        if q.answer_choice not in q.choices:
+            return CheckResult(False, "answer_choice is not one of the choices")
+        return CheckResult(True)
     tol = max(q.tolerance, 1e-6)
 
     if q.type == "choice":
