@@ -1,6 +1,7 @@
 """Cloud Functions for MathSprint (Python runtime).
 
-generate_deck         - Claude writes a deck (from a topic, an uploaded PDF, or both), SymPy checks every answer, the deck is saved to Firestore.
+generate_deck         - Claude writes a deck in a subject (from a topic, an uploaded PDF, or both), SymPy checks every math answer
+                        (Claude answers other subjects again without the key), the deck is saved to Firestore.
 explain_step          - Claude re-explains one solution step in the style the student picks.
 get_account           - The signed-in student's plan, usage and status (creates the account on first call).
 admin_list_accounts   - Admin only: every sign-in with its plan, usage, status and access code.
@@ -60,6 +61,7 @@ import groups
 import leaderboards
 import posts
 import sharing
+import subjects
 from accounts import AccessDenied
 
 initialize_app()
@@ -205,6 +207,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         difficulty=difficulty,
         level=_clean(data.get("level"), 80),
         notes=_clean(data.get("notes"), 600),
+        subject=subjects.pick(data.get("subject"), _subject_list(db)),
     )
 
     try:
@@ -212,7 +215,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         if pdf is not None:
             from generator import read_pdf
 
-            source = read_pdf(pdf, topic)
+            source = read_pdf(pdf, topic, subject=request.subject)
             request.topic = topic or source.topic
             request.level = request.level or source.level
             request.source = source.summary
@@ -242,6 +245,12 @@ def _pdf_bytes(value) -> bytes | None:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "That file couldn't be uploaded.")
 
 
+def _subject_list(db) -> list[str]:
+    """The subjects decks can be made in. Until the admin first saves the list, a starter set."""
+    snap = db.collection("settings").document("subjects").get()
+    return subjects.listed(snap.get("names") if snap.exists else subjects.STARTERS)
+
+
 def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name: str = "") -> dict:
     from figures import diagram_doc, figure_doc
     from generator import generate_deck as _generate
@@ -252,6 +261,7 @@ def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name
     batch.set(deck_ref, {
         "ownerId": uid,
         "title": result.deck.title,
+        "subject": request.subject,
         "topic": topic,
         "level": request.level,
         "difficulty": difficulty,
@@ -277,6 +287,7 @@ def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name
             "difficulty": q.difficulty,
             "steps": [s.model_dump() for s in q.steps],
             "check": q.check.model_dump(),
+            # Math answers were checked by SymPy; other subjects' by Claude answering again without the key.
             "verified": True,
             **({"figure": figure_doc(q.figure)} if q.figure else {}),
             **({"figure": diagram_doc(q.diagram)} if q.diagram else {}),
@@ -1180,6 +1191,7 @@ def create_challenge(req: https_fn.CallableRequest) -> dict:
         "challengerName": name,
         "sessionId": session.id,
         "deckTitle": s.get("deckTitle") or deck.get("title") or "",
+        "subject": subjects.of(deck.to_dict()),
         "total": len(questions),
         "score": graded["score"],
         "results": graded["results"],
@@ -1244,6 +1256,7 @@ def _challenge_meta(challenge) -> dict:
     c = challenge.to_dict()
     return {
         "title": c.get("deckTitle", ""),
+        "subject": subjects.of(c),
         "from": c.get("challengerName", ""),
         "score": c.get("score", 0),
         "total": c.get("total", 0),
@@ -1511,6 +1524,7 @@ def _public_meta(test) -> dict:
     t = test.to_dict()
     return {
         "title": t.get("deckTitle", ""),
+        "subject": subjects.of(t),
         "total": t.get("total", 0),
         "timeLimitSec": t.get("timeLimitSec", 0),
         # Sample players look like everyone else here; only the admin sees which they are.
@@ -1598,6 +1612,7 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
         "ownerUid": uid,
         "deckId": deck.id,
         "deckTitle": deck.get("title") or "",
+        "subject": subjects.of(deck.to_dict()),
         "total": len(questions),
         "timeLimitSec": limit,
         "samples": samples,
@@ -1866,6 +1881,7 @@ def _post_row(doc) -> dict:
         "token": doc.id,
         "deckId": p.get("deckId"),
         "deckTitle": p.get("deckTitle", ""),
+        "subject": subjects.of(p),
         "featured": p.get("featured", 0),
         "question": p.get("question") or {},
         "total": p.get("total", 0),
@@ -1904,6 +1920,7 @@ def create_question_post(req: https_fn.CallableRequest) -> dict:
         "ownerUid": uid,
         "deckId": deck.id,
         "deckTitle": d.get("title") or "",
+        "subject": subjects.of(d),
         # What a visitor's saved copy of the deck is made from.
         "deck": {k: d.get(k) for k in ("title", "topic", "level", "difficulty", "topics")},
         "total": len(questions),
@@ -1952,6 +1969,7 @@ def open_question_post(req: https_fn.CallableRequest) -> dict:
     order = posts.play_order(len(questions), int(p.get("featured") or 0))
     return {
         "title": p.get("deckTitle", ""),
+        "subject": subjects.of(p),
         "level": (p.get("deck") or {}).get("level", ""),
         "total": len(questions),
         "questions": [posts.public_question(questions[i], i) for i in order],
@@ -2007,7 +2025,8 @@ def save_post_deck(req: https_fn.CallableRequest) -> dict:
         batch.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
     batch.set(ref, {  # in the same batch, so the deck never shows up without its questions
         "ownerId": uid,
-        "title": meta.get("title") or p.get("deckTitle") or "Math deck",
+        "title": meta.get("title") or p.get("deckTitle") or f"{subjects.of(p)} deck",
+        "subject": subjects.of(p),
         "topic": meta.get("topic") or "",
         "level": meta.get("level") or "",
         "difficulty": meta.get("difficulty") or "Mixed",

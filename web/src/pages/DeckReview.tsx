@@ -10,6 +10,7 @@ import QuestionPosts from "../components/QuestionPosts";
 import { useIsAdmin, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { getDeck, getQuestions } from "../lib/db";
+import { subjectOf } from "../lib/subjects";
 import { formatClock } from "../lib/pace";
 import type { Deck, Question } from "../lib/types";
 
@@ -62,7 +63,7 @@ export default function DeckReview() {
           )}
           <div>
             <div className="eyebrow">
-              {deck.level} · {deck.difficulty}
+              {subjectOf(deck)} · {deck.level} · {deck.difficulty}
               {deck.createdAt && ` · Created ${deck.createdAt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`}
               {!mine && ` · Shared with you${deck.sharedBy ? ` by ${deck.sharedBy}` : ""}`}
             </div>

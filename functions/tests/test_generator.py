@@ -166,7 +166,7 @@ PDF = b"%PDF-1.4 fake"
 
 
 def test_pdf_is_sent_as_a_document():
-    source = PdfSource(is_math=True, topic="Factoring", level="Algebra I", summary="Factor trinomials like x² − 5x + 6.")
+    source = PdfSource(usable=True, topic="Factoring", level="Algebra I", summary="Factor trinomials like x² − 5x + 6.")
     client = PdfClient(source)
     assert read_pdf(PDF, "just the trinomials", client) == source
     block = client.calls[0]["messages"][0]["content"][0]
@@ -175,7 +175,7 @@ def test_pdf_is_sent_as_a_document():
 
 
 def test_pdf_without_math_is_refused():
-    client = PdfClient(PdfSource(is_math=False, topic="", level="", summary=""))
+    client = PdfClient(PdfSource(usable=False, topic="", level="", summary=""))
     with pytest.raises(GenerationError, match="doesn't seem to have any math"):
         read_pdf(PDF, "", client)
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 import random
 import secrets
 
+import subjects
+
 MAX_ATTEMPTS = 10_000  # plays one public link takes
 BOARD_SIZE = 100  # leaderboard rows kept on the test, for the page and the share card
 SHOWN = 10  # rows a visitor sees
@@ -147,14 +149,15 @@ def headline(t: dict) -> str:
     """The card's big line, also the link preview's title."""
     rows = t.get("board") or []
     if not rows:
-        return f"Be #1 on the {t.get('deckTitle') or 'math'} leaderboard"
+        return f"Be #1 on the {t.get('deckTitle') or subjects.noun(subjects.of(t))} leaderboard"
     return "Think you can crack the top 10?" if len(rows) >= 10 else "Can you top this leaderboard?"
 
 
 def preview_description(t: dict) -> str:
-    total, title = int(t.get("total") or 0), t.get("deckTitle") or "math"
+    noun = subjects.noun(subjects.of(t))
+    total, title = int(t.get("total") or 0), t.get("deckTitle") or noun
     rows = t.get("board") or []
-    play = "Free, no account needed to play. How fast is your math?"
+    play = f"Free, no account needed to play. How fast is your {noun}?"
     if not rows:
         return f"{total} questions on {title}. Nobody's on the leaderboard yet. {play}"
     return f"{total} questions on {title}. Leaderboard: {top_line(rows, total)}. {play}"
@@ -162,10 +165,11 @@ def preview_description(t: dict) -> str:
 
 def share_text(t: dict) -> str:
     """What the admin's share buttons post with the link."""
-    total, title = int(t.get("total") or 0), t.get("deckTitle") or "math"
+    noun = subjects.noun(subjects.of(t))
+    total, title = int(t.get("total") or 0), t.get("deckTitle") or noun
     rows = t.get("board") or []
     if not rows:
-        return f"Calling all math fans: {total} questions on {title}, against the clock. Take the first spot on the leaderboard!"
+        return f"Calling all {noun} fans: {total} questions on {title}, against the clock. Take the first spot on the leaderboard!"
     top = rows[0]
     m, s = divmod(top["usedSec"], 60)
-    return f"Calling all math fans: {top['name']} leads {title} with {top['score']}/{total} in {m}:{s:02d}. Think you can beat that?"
+    return f"Calling all {noun} fans: {top['name']} leads {title} with {top['score']}/{total} in {m}:{s:02d}. Think you can beat that?"

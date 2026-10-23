@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import secrets
 
+import subjects
+
 MAX_POSTS_PER_DECK = 50
 SHOW_RATE_AFTER = 10  # answers on a post before the page shows how many people got it right
 
@@ -75,17 +77,18 @@ def right_rate(post: dict) -> int | None:
 
 def headline(post: dict) -> str:
     """The card's big line, also the link preview's title."""
-    return "Can you solve this?"
+    return f"Can you {subjects.verb(subjects.of(post))} this?"
 
 
 def preview_description(post: dict) -> str:
     q = snippet(question_text(post.get("question") or {}), 160)
-    title = post.get("deckTitle") or "math"
+    title = post.get("deckTitle") or subjects.noun(subjects.of(post))
     return f"{q} Answer free on MathSprint, no account needed, then try more {title} questions."
 
 
 def share_text(post: dict) -> str:
     """What the admin's share buttons post with the link."""
-    title = post.get("deckTitle") or "math"
+    subject = subjects.of(post)
+    title = post.get("deckTitle") or subjects.noun(subject)
     q = snippet(question_text(post.get("question") or {}), 120)
-    return f"Quick {title} challenge: {q} Can you solve it? Tap to answer, free, no account needed."
+    return f"Quick {title} challenge: {q} Can you {subjects.verb(subject)} it? Tap to answer, free, no account needed."

@@ -42,7 +42,7 @@ function Solution({ deckId, question }: { deckId: string; question: Question }) 
         {question.steps.map((st, k) => (
           <li key={k} className={explaining && step === k ? "focus" : ""}>
             {st.description}
-            <code>{st.expression}</code>
+            {st.expression && <code>{st.expression}</code>}
           </li>
         ))}
       </ol>

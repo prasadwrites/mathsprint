@@ -1,4 +1,10 @@
-"""Deck generation pipeline: Claude writes, SymPy checks, Claude fixes what failed."""
+"""Deck generation pipeline: Claude writes, SymPy checks, Claude fixes what failed.
+
+Decks in a subject other than math (see subjects.py) are mostly multiple choice, which SymPy can't solve. For those,
+a second Claude call answers every question without seeing the key (review), and a question it answers differently,
+or finds unclear or wrong, goes back for repair like one that failed SymPy. Calculation questions in those subjects
+(physics, chemistry) still get a SymPy check.
+"""
 
 from __future__ import annotations
 
@@ -7,10 +13,12 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
+from typing import List
 
 import anthropic
 from pydantic import BaseModel, Field
 
+import subjects
 from schema import GeneratedDeck, GeneratedQuestion, picture_formats
 from validator import check_question
 
@@ -79,6 +87,39 @@ kind 'point' with the expression 'x, y'.
 
 """ + picture_formats()
 
+# Any subject but math. {subject} is filled in per deck.
+SYSTEM_GENERAL = """You write {subject} practice questions for high school and college students in the US.
+
+Most questions are 'choice' questions with exactly four options and one clearly
+correct answer; the other three are plausible but definitely wrong. Avoid "all
+of the above", "none of the above", trick wording, opinions, and facts that are
+disputed or change often; when a fact depends on a date, give the date in the
+question. A choice question's `check` has kind 'none', with expression '' and
+variable '' and domain 'real': another reviewer answers it again without the
+key, so the correct option must follow from established facts alone.
+answer_values is [], answer_display copies the correct option, tolerance is 0.
+
+When a question asks for a calculation with one numeric result (a physics or
+chemistry problem, say), it can be 'numeric' instead: the prompt names the unit
+and how to round, answer_values holds the value, `tolerance` matches the
+rounding, and the `check` has kind 'evaluate' with the arithmetic in SymPy
+syntax (numbers, + - * / ** ( ), sqrt, exp, log, sin, cos, tan, pi, E; no units
+or letters), so a program can verify it.
+
+`math` is '' unless the question shows a formula, equation or chemical formula,
+written in readable Unicode (H₂O, F = ma, x²).
+`steps` explain why the answer is right in two to four short steps: each
+`description` gives one piece of reasoning, and its `expression` the short fact,
+formula or calculation it rests on ('' if none).
+`concept` names the specific topic tested, e.g. 'Cellular respiration' or
+"Newton's second law".
+`figure` and `diagram` are always '', and `pair` is false.
+"""
+
+
+def system_for(subject: str) -> str:
+    return SYSTEM if subjects.is_math(subject) else SYSTEM_GENERAL.replace("{subject}", subjects.clean(subject))
+
 
 class GenerationError(RuntimeError):
     """A deck or explanation that couldn't be made, with a message fit to show the student.
@@ -113,6 +154,7 @@ class DeckRequest:
     difficulty: str  # Easy | Medium | Hard | Mixed
     level: str
     notes: str = ""
+    subject: str = subjects.DEFAULT
     # What Claude read in a PDF the student uploaded; the questions are written to match it.
     source: str = ""
     part: int = 1
@@ -131,12 +173,12 @@ def _too_large(e: anthropic.APIError) -> bool:
     return isinstance(e, anthropic.BadRequestError) and "grammar is too large" in str(e)
 
 
-def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
+def _ask(client: anthropic.Anthropic, prompt: str, system: str = SYSTEM) -> GeneratedDeck:
     try:
         response = client.beta.messages.parse(
             model=MODEL,
             max_tokens=20000,  # room for figures; kept under the SDK's non-streaming limit
-            system=SYSTEM,
+            system=system,
             messages=[{"role": "user", "content": prompt}],
             output_format=GeneratedDeck,
             output_config={"effort": "medium"},
@@ -148,7 +190,7 @@ def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
         if _too_large(e):
             # The API refuses to compile the deck schema into a grammar: ask for the same JSON as plain text instead.
             log.warning("output schema rejected as too large; asking for plain JSON")
-            return _ask_plain(client, prompt)
+            return _ask_plain(client, prompt, system)
         raise api_error(e) from e
     if response.stop_reason == "refusal":
         raise GenerationError("Claude declined to write this deck. Try rewording the topic.")
@@ -157,13 +199,13 @@ def _ask(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
     return response.parsed_output
 
 
-def _ask_plain(client: anthropic.Anthropic, prompt: str) -> GeneratedDeck:
+def _ask_plain(client: anthropic.Anthropic, prompt: str, system: str = SYSTEM) -> GeneratedDeck:
     """The same request without constrained output: the deck's JSON Schema goes in the instructions."""
     try:
         response = client.beta.messages.create(
             model=MODEL,
             max_tokens=20000,
-            system=SYSTEM + "\n\nReply with one JSON object and nothing else, no code fences, matching this JSON Schema:\n"
+            system=system + "\n\nReply with one JSON object and nothing else, no code fences, matching this JSON Schema:\n"
             + json.dumps(GeneratedDeck.model_json_schema()),
             messages=[{"role": "user", "content": prompt}],
             output_config={"effort": "medium"},
@@ -191,12 +233,19 @@ def _initial_prompt(req: DeckRequest) -> str:
         if req.difficulty == "Mixed"
         else f"all at {req.difficulty} difficulty"
     )
-    lines = [
-        f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
-        f"Level: {req.level}. Difficulty: {mix}.",
-        "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
-        "Add a figure to each question about a graph and a diagram to each question about a shape; leave both '' for the rest.",
-    ]
+    if subjects.is_math(req.subject):
+        lines = [
+            f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
+            f"Level: {req.level}. Difficulty: {mix}.",
+            "Use a mix of 'numeric' questions and a few 'choice' questions with four options.",
+            "Add a figure to each question about a graph and a diagram to each question about a shape; leave both '' for the rest.",
+        ]
+    else:
+        lines = [
+            f"Write a {subjects.clean(req.subject)} practice deck of exactly {req.count} questions on: {req.topic}.",
+            f"Level: {req.level}. Difficulty: {mix}.",
+            "Make most of them 'choice' questions with four options; use 'numeric' only for calculations.",
+        ]
     if req.source:
         lines.append(
             "Base the deck on this summary of material the student uploaded. Cover its topics in proportion, "
@@ -220,7 +269,7 @@ MAX_PDF_PAGES = 100
 
 
 class PdfSource(BaseModel):
-    is_math: bool = Field(description="True if the document contains math a student could practice.")
+    usable: bool = Field(description="True if the document has material in the requested subject that a student could practice.")
     topic: str = Field(description="A short name for what it covers, under 80 characters, e.g. 'Related rates' or 'Unit 4: Exponential functions'.")
     level: str = Field(description="The course or grade it suits, e.g. 'Algebra II' or 'AP Calculus AB'; '' if unclear.")
     summary: str = Field(
@@ -229,14 +278,14 @@ class PdfSource(BaseModel):
     )
 
 
-def read_pdf(data: bytes, topic_hint: str = "", client: anthropic.Anthropic | None = None) -> PdfSource:
+def read_pdf(data: bytes, topic_hint: str = "", client: anthropic.Anthropic | None = None, subject: str = subjects.DEFAULT) -> PdfSource:
     """Reads an uploaded PDF (worksheet, notes, textbook pages) into a short brief the deck is written from."""
     if not data.startswith(b"%PDF"):
         raise GenerationError("That file isn't a PDF.")
     if len(data) > MAX_PDF_BYTES:
         raise GenerationError("That PDF is too large. Upload one under 10 MB.")
     client = client or anthropic.Anthropic()
-    ask = "Read this document so math practice questions can be written from it."
+    ask = f"Read this document so {subjects.noun(subject)} practice questions can be written from it."
     if topic_hint:
         ask += f" The student wants to focus on: {topic_hint}"
     try:
@@ -263,8 +312,8 @@ def read_pdf(data: bytes, topic_hint: str = "", client: anthropic.Anthropic | No
     source = response.parsed_output
     if response.stop_reason == "refusal" or source is None:
         raise GenerationError("That PDF couldn't be read. Try another file, or type the topic instead.")
-    if not source.is_math:
-        raise GenerationError("That PDF doesn't seem to have any math to practice.")
+    if not source.usable:
+        raise GenerationError(f"That PDF doesn't seem to have any {subjects.noun(subject)} to practice.")
     return source
 
 
@@ -273,8 +322,9 @@ def _repair_prompt(req: DeckRequest, failed: list[tuple[GeneratedQuestion, str]]
         {"question": q.model_dump(), "problem": reason}
         for q, reason in failed
     ]
+    check = "SymPy check" if subjects.is_math(req.subject) else "answer check"
     return (
-        f"These questions for a {req.level} deck on {req.topic} failed an automatic SymPy check. "
+        f"These questions for a {req.level} {subjects.noun(req.subject)} deck on {req.topic} failed an automatic {check}. "
         f"Write {len(failed)} corrected or replacement questions, one for each, at the same difficulty "
         "and on the same concept. Make sure the answer and the check agree.\n\n"
         + json.dumps(items, indent=2)
@@ -319,17 +369,75 @@ def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -
     )
 
 
-def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
-    draft = _ask(client, _initial_prompt(req))
+class ReviewedAnswer(BaseModel):
+    number: int = Field(description="The question's number, as given.")
+    choice: str = Field(description="The option you believe is correct, copied exactly.")
+    problem: str = Field(description="'' if the question is sound. Otherwise one sentence: a factual error, more than one defensible option, or unclear wording.")
 
-    good: list[GeneratedQuestion] = []
-    failed: list[tuple[GeneratedQuestion, str]] = []
-    for q in draft.questions[: req.count]:
-        result = check_question(q)
-        if result.ok and _difficulty_ok(req, q):
-            good.append(q)
-        else:
-            failed.append((q, result.reason or f"difficulty should be {req.difficulty}"))
+
+class Review(BaseModel):
+    answers: List[ReviewedAnswer]
+
+
+def _review(client: anthropic.Anthropic, req: DeckRequest, questions: list[GeneratedQuestion]) -> list[str]:
+    """Claude answers each choice question again without the key. Returns, for each question, '' if it agrees with the
+    key and finds nothing wrong, or the reason it doesn't."""
+    asked = [(i, q) for i, q in enumerate(questions) if q.type == "choice" and q.check.kind == "none"]
+    reasons = [""] * len(questions)
+    if not asked:
+        return reasons
+    items = [{"number": n + 1, "question": f"{q.prompt} {q.math}".strip(), "options": q.choices} for n, (_, q) in enumerate(asked)]
+    prompt = (
+        f"You are checking a {req.level} {subjects.clean(req.subject)} practice deck before students see it. "
+        "Answer each multiple-choice question below on your own: pick the one correct option, copied exactly. "
+        "Then say whether the question has a problem: a factual error, no correct option, more than one defensible "
+        "option, or wording a careful student could misread.\n\n" + json.dumps(items, indent=2, ensure_ascii=False)
+    )
+    try:
+        response = client.beta.messages.parse(
+            model=MODEL,
+            max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}],
+            output_format=Review,
+            output_config={"effort": "medium"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIError as e:
+        raise api_error(e) from e
+    review = response.parsed_output
+    by_number = {a.number: a for a in (review.answers if review else [])}
+    for n, (i, q) in enumerate(asked):
+        a = by_number.get(n + 1)
+        if a is None:
+            reasons[i] = "an independent check couldn't answer it"
+        elif a.choice.strip() != q.answer_choice.strip():
+            reasons[i] = f"an independent check chose {a.choice!r}, not the key {q.answer_choice!r}" + (f": {a.problem}" if a.problem else "")
+        elif a.problem:
+            reasons[i] = f"an independent check found a problem: {a.problem}"
+    return reasons
+
+
+def _sort(client: anthropic.Anthropic, req: DeckRequest, questions: list[GeneratedQuestion]) -> tuple[list[GeneratedQuestion], list[tuple[GeneratedQuestion, str]]]:
+    """Splits questions into those that pass every check and those that go back for repair, with the reason."""
+    math = subjects.is_math(req.subject)
+    reasons = []
+    for q in questions:
+        result = check_question(q, math)
+        reasons.append("" if result.ok and _difficulty_ok(req, q) else result.reason or f"difficulty should be {req.difficulty}")
+    if not math:
+        passed = [i for i, r in enumerate(reasons) if not r]
+        for i, r in zip(passed, _review(client, req, [questions[i] for i in passed])):
+            reasons[i] = r
+    good = [q for q, r in zip(questions, reasons) if not r]
+    failed = [(q, r) for q, r in zip(questions, reasons) if r]
+    return good, failed
+
+
+def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
+    system = system_for(req.subject)
+    draft = _ask(client, _initial_prompt(req), system)
+    good, failed = _sort(client, req, draft.questions[: req.count])
 
     repairs = 0
     for _ in range(MAX_REPAIR_ROUNDS):
@@ -337,15 +445,9 @@ def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
             break
         log.info("repairing %d questions: %s", len(failed), [r for _, r in failed])
         repairs += len(failed)
-        fixed = _ask(client, _repair_prompt(req, failed))
-        still: list[tuple[GeneratedQuestion, str]] = []
-        for (orig, _), q in zip(failed, fixed.questions):
-            result = check_question(q)
-            if result.ok and _difficulty_ok(req, q):
-                good.append(q)
-            else:
-                still.append((q, result.reason or f"difficulty should be {req.difficulty}"))
-        failed = still
+        fixed = _ask(client, _repair_prompt(req, failed), system)
+        fixed_good, failed = _sort(client, req, fixed.questions[: len(failed)])
+        good += fixed_good
 
     if not good:
         raise GenerationError("None of the generated questions passed the answer check. Try a narrower topic.")

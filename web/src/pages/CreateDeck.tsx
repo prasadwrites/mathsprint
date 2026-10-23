@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useAccount } from "../App";
+import { useAccount, useIsAdmin } from "../App";
+import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { generateDeck } from "../lib/db";
+import { DEFAULT_SUBJECT, STARTER_SUBJECTS, cleanSubjects, isMath, listSubjects, sameSubject } from "../lib/subjects";
 import type { Difficulty } from "../lib/types";
 
 const CODE_KEY = "ms.accessCode";
@@ -27,18 +29,30 @@ function storeCode(code: string | null) {
 // Matches the server's limit; base64 makes the upload a third bigger, still well inside a function request.
 const MAX_PDF_MB = 10;
 
-const steps = (count: number, pdf: boolean) => [
+const steps = (count: number, pdf: boolean, math: boolean) => [
   ...(pdf ? ["Reading your PDF"] : []),
   `Writing ${count} questions with Claude`,
-  "Writing step-by-step solutions",
-  "Checking answers with SymPy",
+  math ? "Writing step-by-step solutions" : "Writing explanations",
+  math ? "Checking answers with SymPy" : "Answering each question again to check it",
   "Fixing anything that didn't check out",
   "Saving your deck",
 ];
 
+/** Example topics for the topic box, by subject. */
+const EXAMPLES: Record<string, { topic: string; level: string; notes: string }> = {
+  math: { topic: "Related rates", level: "AP Calculus BC or Calculus II", notes: "Include some word problems and make at least 2 questions require factoring." },
+  physics: { topic: "Projectile motion", level: "AP Physics 1 or Physics I", notes: "Include a few calculations and some conceptual questions." },
+  chemistry: { topic: "Balancing equations", level: "AP Chemistry or General Chemistry", notes: "Include a few stoichiometry calculations." },
+  biology: { topic: "Cell division", level: "AP Biology or 10th grade", notes: "Focus on the differences between mitosis and meiosis." },
+  "general knowledge": { topic: "World capitals", level: "High school", notes: "Mix easy questions with a few hard ones." },
+};
+const examples = (subject: string) =>
+  EXAMPLES[isMath(subject) ? "math" : subject.toLowerCase()] ?? { topic: `a unit or chapter in ${subject}`, level: "11th grade or an intro college course", notes: "Say what to focus on or what kinds of questions you want." };
+
 export default function CreateDeck() {
   const navigate = useNavigate();
   const { account, refresh } = useAccount();
+  const isAdmin = useIsAdmin();
   // Until the account loads, assume the free plan; the server checks the real limits either way.
   const maxQuestions = account?.maxQuestions ?? 20;
   const outOfDecks = !!account && !account.isAdmin && account.decksCreated >= account.maxDecks;
@@ -58,7 +72,20 @@ export default function CreateDeck() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [pdf, setPdf] = useState<{ name: string; data: string } | null>(null);
-  const STEPS = steps(count, !!pdf);
+  const [subjects, setSubjects] = useState(() => cleanSubjects(STARTER_SUBJECTS));
+  const [subject, setSubject] = useState(params.get("subject") || DEFAULT_SUBJECT);
+  const [editing, setEditing] = useState(false);
+  const math = isMath(subject);
+  const ex = examples(subject);
+  const STEPS = steps(count, !!pdf, math);
+
+  useEffect(() => {
+    listSubjects().then((list) => {
+      setSubjects(list);
+      // A subject from the link that isn't on the list (anymore) falls back to Math.
+      setSubject((s) => list.find((l) => sameSubject(l, s)) ?? DEFAULT_SUBJECT);
+    });
+  }, []);
 
   const pickPdf = (file: File | undefined) => {
     setError("");
@@ -99,6 +126,7 @@ export default function CreateDeck() {
         // With a PDF, an empty level lets the server use the course the PDF is pitched at.
         level: level || (pdf ? "" : "High school or college"),
         notes,
+        subject,
         accessCode: accessCode.trim(),
         ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
       });
@@ -125,6 +153,34 @@ export default function CreateDeck() {
           <div className="main stack">
             <div className="panel chat">
               <div className="bubble bot">What would you like to practice?</div>
+              <div className="stack" style={{ gap: 8 }}>
+                <div className="row" style={{ gap: 10 }}>
+                  <label htmlFor="subject" style={{ margin: 0 }}>
+                    Subject
+                  </label>
+                  <select id="subject" value={subject} onChange={(e) => setSubject(e.target.value)} disabled={busy} style={{ width: "auto", minWidth: 180 }}>
+                    {subjects.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  {isAdmin && (
+                    <button type="button" className="btn-link" onClick={() => setEditing(!editing)}>
+                      {editing ? "Done editing" : "Edit subjects"}
+                    </button>
+                  )}
+                </div>
+                {editing && isAdmin && (
+                  <SubjectEditor
+                    subjects={subjects}
+                    onChange={(list) => {
+                      setSubjects(list);
+                      setSubject((s) => list.find((l) => sameSubject(l, s)) ?? DEFAULT_SUBJECT);
+                    }}
+                  />
+                )}
+              </div>
               {asked ? (
                 <>
                   {pdf ? (
@@ -136,7 +192,10 @@ export default function CreateDeck() {
                     </>
                   ) : (
                     <>
-                      <div className="bubble me">{topic}</div>
+                      <div className="bubble me">
+                        {topic}
+                        {!math && <span className="muted"> · {subject}</span>}
+                      </div>
                       <div className="bubble bot">Good choice. A few quick details and I'll write it.</div>
                     </>
                   )}
@@ -154,7 +213,7 @@ export default function CreateDeck() {
                     id="topic"
                     type="text"
                     autoFocus
-                    placeholder="e.g. Related rates"
+                    placeholder={`e.g. ${ex.topic}`}
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                     style={{ flex: 1, minWidth: 0 }}
@@ -198,7 +257,7 @@ export default function CreateDeck() {
                     <label htmlFor="focus">
                       Focus on <span className="muted">(optional)</span>
                     </label>
-                    <input id="focus" type="text" placeholder="e.g. Only the section on related rates" value={topic} onChange={(e) => setTopic(e.target.value)} />
+                    <input id="focus" type="text" placeholder={`e.g. Only the section on ${ex.topic.toLowerCase()}`} value={topic} onChange={(e) => setTopic(e.target.value)} />
                   </div>
                 )}
                 <div className="grid2">
@@ -220,7 +279,7 @@ export default function CreateDeck() {
                   </div>
                   <div>
                     <label htmlFor="level">Grade or level</label>
-                    <input id="level" type="text" placeholder={pdf ? "Taken from the PDF if left blank" : "e.g. AP Calculus BC or Calculus II"} value={level} onChange={(e) => setLevel(e.target.value)} />
+                    <input id="level" type="text" placeholder={pdf ? "Taken from the PDF if left blank" : `e.g. ${ex.level}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                   </div>
                 </div>
                 <div>
@@ -239,7 +298,7 @@ export default function CreateDeck() {
                   </label>
                   <textarea
                     id="notes"
-                    placeholder="Include some word problems and make at least 2 questions require factoring."
+                    placeholder={ex.notes}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                   />
@@ -318,7 +377,9 @@ export default function CreateDeck() {
               <h2>{busy ? "Generating" : "Every answer gets checked"}</h2>
             </div>
             <p className="muted">
-              Claude writes the questions. A math engine solves each one again on its own, and anything that disagrees is rewritten before you see it.
+              {math
+                ? "Claude writes the questions. A math engine solves each one again on its own, and anything that disagrees is rewritten before you see it."
+                : "Claude writes the questions, then answers each one again without seeing the key. Anything it answers differently, or finds unclear, is rewritten before you see it. Calculations are also checked by a math engine."}
             </p>
             <ul className="checklist">
               {STEPS.map((s, i) => {

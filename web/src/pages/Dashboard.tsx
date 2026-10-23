@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
@@ -8,6 +8,7 @@ import PromotionOffer from "../components/PromotionOffer";
 import { addSampleDeck, listChallenges, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
 import { formatClock } from "../lib/pace";
+import { filterSubjects, listSubjects, sameSubject, subjectOf } from "../lib/subjects";
 import type { ChallengeOutcome, Deck, PlayedChallenge, PracticeSession, SentChallenge } from "../lib/types";
 
 const tone = (pct: number) => (pct >= 80 ? "good" : pct >= 60 ? "warn" : "bad");
@@ -82,6 +83,25 @@ function Challenges({ sent, played }: { sent: SentChallenge[]; played: PlayedCha
   );
 }
 
+const ALL = "All";
+const FILTER_KEY = "ms.deckSubject";
+
+function storedFilter() {
+  try {
+    return localStorage.getItem(FILTER_KEY) || ALL;
+  } catch {
+    return ALL;
+  }
+}
+
+function storeFilter(subject: string) {
+  try {
+    localStorage.setItem(FILTER_KEY, subject);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function formatHours(sec: number) {
   if (sec > 0 && sec < 60) return `${Math.round(sec)}s`;
   const m = Math.round(sec / 60);
@@ -102,10 +122,13 @@ export default function Dashboard() {
   const [topic, setTopic] = useState("");
   const [adding, setAdding] = useState(false);
   const [challenges, setChallenges] = useState<{ sent: SentChallenge[]; played: PlayedChallenge[] }>({ sent: [], played: [] });
+  const [listed, setListed] = useState<string[]>([]);
+  const [filter, setFilter] = useState(storedFilter);
 
   useEffect(() => {
     listDecks(user.uid).then(setDecks);
     listSessions(user.uid).then(setSessions);
+    listSubjects().then(setListed);
   }, [user.uid]);
   // After the account loads, so a challenge played before signing up has been saved to it.
   useEffect(() => {
@@ -115,6 +138,16 @@ export default function Dashboard() {
   useEffect(() => {
     if (hash && decks) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: "smooth" });
   }, [hash, decks]);
+
+  const subjectNames = useMemo(() => filterSubjects(listed, decks ?? []), [listed, decks]);
+  // A remembered subject that's gone from the list and from every deck shows all decks again.
+  const subject = filter === ALL ? ALL : subjectNames.find((n) => sameSubject(n, filter)) ?? ALL;
+  const pick = (s: string) => {
+    setFilter(s);
+    storeFilter(s);
+  };
+  const countOf = (s: string) => (decks ?? []).filter((d) => sameSubject(subjectOf(d), s)).length;
+  const shown = (decks ?? []).filter((d) => subject === ALL || sameSubject(subjectOf(d), subject));
 
   const answered = sessions.reduce((a, s) => a + s.questionIds.length, 0);
   const correct = sessions.reduce((a, s) => a + (s.score ?? 0), 0);
@@ -165,7 +198,10 @@ export default function Dashboard() {
             className="create-form"
             onSubmit={(e) => {
               e.preventDefault();
-              navigate(`/create${topic.trim() ? `?topic=${encodeURIComponent(topic.trim())}` : ""}`);
+              const q = new URLSearchParams();
+              if (topic.trim()) q.set("topic", topic.trim());
+              if (subject !== ALL) q.set("subject", subject);
+              navigate(`/create${q.toString() ? `?${q}` : ""}`);
             }}
           >
             <div>
@@ -181,8 +217,21 @@ export default function Dashboard() {
         <section className="stack" id="decks">
           <div className="row spread">
             <h2>Your decks</h2>
-            {decks && <span className="muted">{decks.length} {decks.length === 1 ? "deck" : "decks"}</span>}
+            {decks && (
+              <span className="muted">
+                {subject === ALL ? decks.length : `${shown.length} of ${decks.length}`} {decks.length === 1 ? "deck" : "decks"}
+              </span>
+            )}
           </div>
+          {!!decks?.length && subjectNames.length > 1 && (
+            <div className="seg" role="group" aria-label="Show decks in subject" style={{ alignSelf: "flex-start" }}>
+              {[ALL, ...subjectNames].map((s) => (
+                <button key={s} type="button" aria-pressed={subject === s} onClick={() => pick(s)}>
+                  {s} <span style={{ fontWeight: 500, opacity: 0.8 }}>{s === ALL ? decks.length : countOf(s)}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {decks === null ? (
             <span className="spinner" />
           ) : decks.length === 0 ? (
@@ -200,9 +249,18 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+          ) : shown.length === 0 ? (
+            <div className="panel stack">
+              <p>You don't have any {subject} decks yet.</p>
+              <div>
+                <Link className="btn" to={`/create?subject=${encodeURIComponent(subject)}`}>
+                  <Icon name="sparkle" /> Build a {subject} deck
+                </Link>
+              </div>
+            </div>
           ) : (
             <div className="decks">
-              {decks.map((d) => {
+              {shown.map((d) => {
                 const b = best(d.id);
                 const mine = d.ownerId === user.uid;
                 const drop = () => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null);
@@ -211,6 +269,7 @@ export default function Dashboard() {
                     <div>
                       <h3>{d.title}</h3>
                       <div className="meta">
+                        {subject === ALL && `${subjectOf(d)} · `}
                         {d.level} · {d.difficulty} · {d.questionCount} questions
                       </div>
                       {mine ? (

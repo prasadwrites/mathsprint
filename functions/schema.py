@@ -1,4 +1,4 @@
-"""Structured shape of a generated deck. Claude fills this in; SymPy checks it."""
+"""Structured shape of a generated deck. Claude fills this in; SymPy checks it (Claude re-checks other subjects)."""
 
 import json
 from typing import Annotated, Any, List, Literal, Optional
@@ -9,16 +9,17 @@ from pydantic.json_schema import SkipJsonSchema
 
 class SolutionStep(BaseModel):
     description: str = Field(description="One short sentence explaining what this step does and why.")
-    expression: str = Field(description="The math after this step, in readable Unicode (x², √, −).")
+    expression: str = Field(description="The math after this step, in readable Unicode (x², √, −), or a short fact or formula it rests on.")
 
 
 class Check(BaseModel):
     """A machine-checkable restatement of the question, written in SymPy syntax."""
 
-    kind: Literal["solve", "evaluate", "point"] = Field(
+    kind: Literal["solve", "evaluate", "point", "none"] = Field(
         description="'solve' for an equation whose real solutions are the answer; "
         "'evaluate' for an expression whose numeric value is the answer; "
-        "'point' for an answer that is a point: two expressions 'x, y' giving its coordinates."
+        "'point' for an answer that is a point: two expressions 'x, y' giving its coordinates; "
+        "'none' only where the instructions allow it, for a question no program can solve (expression and variable '')."
     )
     expression: str = Field(
         description="SymPy syntax using ** for powers and * for products. "

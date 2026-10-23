@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip } from "../components/TopBar";
 import { useAccount } from "../App";
 import {
@@ -15,6 +16,7 @@ import {
   type AccountUpdate,
 } from "../lib/db";
 import { PLANS, type AdminAccount, type PlanId, type PlanLimits, type ProblemReport, type UpgradeRequest } from "../lib/types";
+import { listSubjects } from "../lib/subjects";
 import { ReportStatus } from "./Report";
 import { Conversation, ReplyBox, when } from "./Upgrade";
 
@@ -572,6 +574,20 @@ function Reports({ onChange }: { onChange: () => void }) {
   );
 }
 
+/** The subjects decks can be made in. */
+function Subjects() {
+  const [subjects, setSubjects] = useState<string[] | null>(null);
+  useEffect(() => {
+    listSubjects().then(setSubjects);
+  }, []);
+  return (
+    <section className="panel stack" id="subjects">
+      <h2>Subjects</h2>
+      {subjects ? <SubjectEditor subjects={subjects} onChange={setSubjects} /> : <span className="spinner" />}
+    </section>
+  );
+}
+
 export default function Accounts() {
   const { refresh } = useAccount();
   const [accounts, setAccounts] = useState<AdminAccount[] | null>(null);
@@ -646,6 +662,7 @@ export default function Accounts() {
           }}
         />
         <Reports onChange={refresh} />
+        <Subjects />
 
         {plans && (
           <div className="tiles">
