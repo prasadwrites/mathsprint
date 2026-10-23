@@ -13,6 +13,7 @@ import Accounts from "./pages/Accounts";
 import CreateDeck from "./pages/CreateDeck";
 import Dashboard from "./pages/Dashboard";
 import DeckReview from "./pages/DeckReview";
+import Engagement from "./pages/Engagement";
 import Groups from "./pages/Groups";
 import Login from "./pages/Login";
 import Practice from "./pages/Practice";
@@ -44,8 +45,8 @@ export function useIsAdmin() {
   return !!account?.isAdmin || (user.emailVerified && user.email?.toLowerCase() === ADMIN_EMAIL);
 }
 
-function AdminOnly() {
-  return useIsAdmin() ? <Accounts /> : <Navigate to="/" replace />;
+function AdminOnly({ children }: { children: React.ReactNode }) {
+  return useIsAdmin() ? <>{children}</> : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -126,7 +127,8 @@ function SignedInApp() {
         <Route path="/decks/:deckId/practice" element={<PracticeSetup />} />
         <Route path="/sessions/:sessionId" element={<Practice />} />
         <Route path="/sessions/:sessionId/results" element={<Results />} />
-        <Route path="/admin" element={<AdminOnly />} />
+        <Route path="/admin" element={<AdminOnly><Accounts /></AdminOnly>} />
+        <Route path="/admin/engagement" element={<AdminOnly><Engagement /></AdminOnly>} />
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="/invite" element={<Invite />} />
         <Route path="/groups" element={<Groups />} />

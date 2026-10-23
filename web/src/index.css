@@ -391,3 +391,16 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* A question post's picture, as the admin sees it before sharing. */
 .post-card { display: block; width: 100%; max-width: 600px; aspect-ratio: 1200 / 630; border-radius: 12px; border: 1px solid var(--line); background: var(--chip); }
+
+/* Admin engagement page */
+.eng-table th, .eng-table td { text-align: right; padding: 10px 8px; }
+.eng-table th[scope=row], .eng-table thead th:first-child { text-align: left; }
+.eng-table thead th { font-family: var(--f-body); font-size: 13px; color: var(--muted); font-weight: 700; }
+.eng-table .small { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+.eng-rank thead th:nth-child(2) { text-align: left; }
+.eng-rank tbody tr { cursor: pointer; }
+.eng-rank tbody tr:hover, .eng-rank tbody tr[aria-selected=true] { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.eng-rank th[scope=row] .btn-link { font-weight: 700; text-align: left; }
+.eng-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.eng-points li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.eng-points li:first-child { border-top: none; }

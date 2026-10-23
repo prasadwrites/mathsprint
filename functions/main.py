@@ -7,6 +7,8 @@ get_account           - The signed-in student's plan, usage and status (creates 
 admin_list_accounts   - Admin only: every sign-in with its plan, usage, status and access code.
 admin_update_account  - Admin only: change one account's plan, status or access code, or reset its deck count.
 admin_delete_account  - Admin only: delete an account's sign-in, decks, practice history and settings for good.
+admin_engagement      - Admin only: everyone ranked by an engagement score, with how far their decks travel (links, plays,
+                        finished tests, new accounts), and one person's usage deck by deck.
 request_upgrade       - A student asks the admin for a bigger plan, with an optional note.
 list_upgrade_requests - The student's own requests and replies, or every request for the admin.
 admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
@@ -57,6 +59,7 @@ from firebase_functions import https_fn, options
 import accounts
 import cards
 import challenges
+import engagement
 import groups
 import leaderboards
 import posts
@@ -416,6 +419,57 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
         })
     rows.sort(key=lambda r: (not r["isAdmin"], -(r["createdAt"] or 0)))
     return {"accounts": rows, "plans": {k: vars(p) for k, p in accounts.PLANS.items()}}
+
+
+def _rows(collection, fields: list[str]) -> list[dict]:
+    """Every document in a collection with just the fields asked for, timestamps in milliseconds, and its id."""
+    out = []
+    for d in collection.select(fields).stream():
+        r = {k: (_ms(v) if hasattr(v, "timestamp") else v) for k, v in (d.to_dict() or {}).items()}
+        out.append({**r, "id": d.id})
+    return out
+
+
+@https_fn.on_call(timeout_sec=300, memory=options.MemoryOption.GB_1)
+def admin_engagement(req: https_fn.CallableRequest) -> dict:
+    """Admin only. Without a uid: everyone ranked by score. With one: that person's row with their decks."""
+    _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    users = []
+    for user in auth.list_users().iterate_all():
+        meta = user.user_metadata
+        users.append({
+            "uid": user.uid,
+            "email": user.email or "",
+            "displayName": user.display_name or "",
+            "createdAt": meta.creation_timestamp if meta else None,
+            "lastSignInAt": meta.last_sign_in_timestamp if meta else None,
+            "isAdmin": accounts.is_admin({"email": user.email or "", "email_verified": user.email_verified}),
+        })
+    by_id = lambda rows: {r["id"]: r for r in rows}  # noqa: E731
+    rows = engagement.build(
+        users,
+        account_docs={d.id: d.to_dict() for d in db.collection("accounts").select(["activeSeconds", "activeDays", "lastBeatAt", "decksCreated"]).stream()},
+        decks=by_id(_rows(db.collection("decks"), ["ownerId", "title", "subject", "createdAt", "sharedWith", "fromPost", "source"])),
+        sessions=_rows(db.collection("sessions"), ["ownerId", "deckId", "status"]),
+        challenges=by_id(_rows(db.collection("challenges"), ["challengerUid", "sessionId"])),
+        attempts=_rows(db.collection("challengeAttempts"), ["challengeId", "status", "claimedUid", "startedAtMs"]),
+        tests=by_id(_rows(db.collection("tests"), ["ownerUid", "deckId"])),
+        takers=_rows(db.collection("testTakers"), ["testId", "email", "status", "createdAt"]),
+        public_tests=by_id(_rows(db.collection("publicTests"), ["ownerUid", "deckId"])),
+        public_attempts=_rows(db.collection("publicAttempts"), ["testId", "status", "claimedUid", "startedAtMs"]),
+        posts=_rows(db.collection("questionPosts"), ["ownerUid", "deckId", "answers", "createdAt"]),
+        invites=_rows(db.collection("invites"), ["inviterUid", "status", "joinedUid"]),
+        now_ms=_now_ms(),
+    )
+    uid = _clean(data.get("uid"), 128)
+    if uid:
+        if uid not in rows:
+            raise _not_found("That account doesn't exist.")
+        return {"user": rows[uid], "scoring": engagement.scoring(), "channels": engagement.CHANNEL_LABELS}
+    users_out = [{k: v for k, v in r.items() if k != "decks"} for r in engagement.ranked(rows, include_admin=True)]
+    return {"users": users_out, "scoring": engagement.scoring(), "channels": engagement.CHANNEL_LABELS}
 
 
 @https_fn.on_call()
