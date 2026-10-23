@@ -3,6 +3,8 @@
 generate_deck         - Claude writes a deck in a subject (from a topic, an uploaded PDF, or both), SymPy checks every math answer
                         (Claude answers other subjects again without the key), the deck is saved to Firestore.
 explain_step          - Claude re-explains one solution step in the style the student picks.
+admin_set_credit      - Admin only: the Anthropic credit balance shown on console.anthropic.com, so the profile menu can
+                        estimate what's left from the cost of every Claude call made since.
 get_account           - The signed-in student's plan, usage and status (creates the account on first call).
 admin_list_accounts   - Admin only: every sign-in with its plan, usage, status and access code.
 admin_update_account  - Admin only: change one account's plan, status or access code, or reset its deck count.
@@ -59,6 +61,7 @@ from firebase_functions import https_fn, options
 import accounts
 import cards
 import challenges
+import credit
 import engagement
 import groups
 import leaderboards
@@ -234,6 +237,8 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         log.exception("generate_deck failed for topic %r", request.topic)
         detail = f" ({type(e).__name__}: {e})" if admin else ""
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INTERNAL, f"The deck couldn't be built. Try again.{detail}")
+    finally:
+        _record_spend(db)
 
 
 def _pdf_bytes(value) -> bytes | None:
@@ -325,7 +330,44 @@ def explain_step(req: https_fn.CallableRequest) -> dict:
     except GenerationError as e:
         message = f"{e} ({e.detail})" if accounts.is_admin(req.auth.token) and e.detail else str(e)
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, message)
+    finally:
+        _record_spend(db)
     return {"explanation": text}
+
+
+def _credit_ref(db):
+    return db.collection("settings").document("claudeCredit")
+
+
+def _record_spend(db) -> None:
+    """Adds what this instance's Claude calls cost to the running total behind the admin's credit estimate."""
+    spent, calls = credit.METER.take()
+    if not calls:
+        return
+    try:
+        _credit_ref(db).set({"spentUsd": firestore.Increment(spent), "calls": firestore.Increment(calls)}, merge=True)
+    except Exception:
+        # The estimate is a convenience; never fail a student's deck over it.
+        log.exception("couldn't record $%.4f of Claude spend", spent)
+
+
+def _credit_summary(db) -> dict:
+    snap = _credit_ref(db).get()
+    doc = snap.to_dict() if snap.exists else {}
+    return credit.summary({**doc, "setAt": _ms(doc.get("setAt"))})
+
+
+@https_fn.on_call()
+def admin_set_credit(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    try:
+        balance = credit.parse_balance((req.data or {}).get("balanceUsd"))
+    except ValueError as e:
+        raise _invalid(str(e))
+    db = firestore.client()
+    # Spending is counted again from now, against the balance just read off the console.
+    _credit_ref(db).set({"balanceUsd": balance, "spentUsd": 0, "calls": 0, "setAt": firestore.SERVER_TIMESTAMP})
+    return _credit_summary(db)
 
 
 @https_fn.on_call()
@@ -359,6 +401,7 @@ def get_account(req: https_fn.CallableRequest) -> dict:
         "upgrade": upgrade,
         "reports": report_counts,
         "offer": _offer_row(offer) if offer and not admin else None,
+        **({"credit": _credit_summary(db)} if admin else {}),
     }
 
 

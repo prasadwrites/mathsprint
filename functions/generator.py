@@ -19,6 +19,7 @@ import anthropic
 from pydantic import BaseModel, Field
 
 import subjects
+from credit import METER
 from schema import GeneratedDeck, GeneratedQuestion, picture_formats
 from validator import check_question
 
@@ -192,6 +193,7 @@ def _ask(client: anthropic.Anthropic, prompt: str, system: str = SYSTEM) -> Gene
             log.warning("output schema rejected as too large; asking for plain JSON")
             return _ask_plain(client, prompt, system)
         raise api_error(e) from e
+    METER.add(response)
     if response.stop_reason == "refusal":
         raise GenerationError("Claude declined to write this deck. Try rewording the topic.")
     if response.stop_reason == "max_tokens" or response.parsed_output is None:
@@ -214,6 +216,7 @@ def _ask_plain(client: anthropic.Anthropic, prompt: str, system: str = SYSTEM) -
         )
     except anthropic.APIError as e:
         raise api_error(e) from e
+    METER.add(response)
     if response.stop_reason == "refusal":
         raise GenerationError("Claude declined to write this deck. Try rewording the topic.")
     if response.stop_reason == "max_tokens":
@@ -309,6 +312,7 @@ def read_pdf(data: bytes, topic_hint: str = "", client: anthropic.Anthropic | No
         raise GenerationError("That PDF couldn't be read. Try another file, or type the topic instead.", detail) from e
     except anthropic.APIError as e:
         raise api_error(e) from e
+    METER.add(response)
     source = response.parsed_output
     if response.stop_reason == "refusal" or source is None:
         raise GenerationError("That PDF couldn't be read. Try another file, or type the topic instead.")
@@ -405,6 +409,7 @@ def _review(client: anthropic.Anthropic, req: DeckRequest, questions: list[Gener
         )
     except anthropic.APIError as e:
         raise api_error(e) from e
+    METER.add(response)
     review = response.parsed_output
     by_number = {a.number: a for a in (review.answers if review else [])}
     for n, (i, q) in enumerate(asked):
@@ -494,6 +499,7 @@ def explain_step(question: dict, step_index: int | None, style: str, client: ant
         )
     except anthropic.APIError as e:
         raise api_error(e) from e
+    METER.add(response)
     if response.stop_reason == "refusal":
         raise GenerationError("Claude could not explain this step.")
     return "".join(b.text for b in response.content if b.type == "text").strip()

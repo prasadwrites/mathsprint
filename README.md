@@ -90,6 +90,10 @@ On the Accounts page the admin can **Offer a promotion**: a bigger plan for 1, 2
 
 The Upgrade page shows Square's **Pay now** button for Pro and Pro Max (links in `web/src/components/SquarePay.tsx`). Checkout opens in a popup, the way Square's embed code does. Paying doesn't change the plan by itself: the student sends their upgrade request and the admin approves it on the Accounts page.
 
+### Claude credit
+
+The admin's profile menu shows about how much Anthropic API credit is left. The API has no endpoint for a prepaid balance, so this is an estimate: the admin types in the balance from the Anthropic console (Settings > Billing), every Claude call made by `generate_deck` and `explain_step` adds its cost from the response's token counts (`functions/credit.py`, at list prices), and the menu shows the balance minus what was spent since. Spending outside this app with the same key or account isn't counted, so re-enter the balance after topping up, or now and then to correct drift. Stored in `settings/claudeCredit`, which only the functions read and write.
+
 ### Time on site
 
 While someone has MathSprint open in a visible tab and has touched the page in the last 5 minutes, the app sends one heartbeat a minute to `record_activity`. Each heartbeat adds a minute to the account (extra beats inside the same minute, such as from a second tab, add nothing). The Accounts page shows each person's total time, the last 7 days, today, and when they were last active, and can sort by time. Days are UTC, and daily totals older than 35 days are dropped; the all-time total is kept.
