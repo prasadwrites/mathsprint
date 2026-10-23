@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import TopBar, { Chip } from "../components/TopBar";
 import { adminEngagement, adminUserEngagement } from "../lib/db";
-import type { EngagementChannel, EngagementUser, ScoreRule } from "../lib/types";
+import type { EngagementChannel, EngagementLink, EngagementUser, ScoreRule } from "../lib/types";
 import { duration } from "./Accounts";
 import { when } from "./Upgrade";
 
@@ -196,10 +196,81 @@ function UserDetail({ uid, scoring, channels, onClose }: { uid: string; scoring:
   );
 }
 
+const KIND_LABELS: Record<EngagementLink["kind"], string> = {
+  challenge: "Challenge",
+  group: "Group test",
+  public: "Public test",
+  post: "Question post",
+};
+
+/** Where the admin can open a link. Group tests belong to their owner, so they have none. */
+const linkUrl = (l: EngagementLink) => ({ challenge: `/c/${l.id}`, public: `/p/${l.id}`, post: `/q/${l.id}`, group: "" })[l.kind];
+
+/** A top-10 list of quiz links with their owners. */
+function TopLinks({ title, note, links, by, onOwner }: { title: string; note: string; links: EngagementLink[]; by: "completed" | "signups"; onOwner: (uid: string) => void }) {
+  return (
+    <section className="panel stack">
+      <div className="row spread">
+        <h2>{title}</h2>
+        <span className="muted">{note}</span>
+      </div>
+      {links.length === 0 ? (
+        <p className="muted">{by === "signups" ? "No link has brought in a new account yet." : "No one has played a link yet."}</p>
+      ) : (
+        <div className="plans-table-wrap" style={{ padding: 0 }}>
+          <table className="plans-table eng-table eng-links">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Link</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Played</th>
+                <th scope="col">Finished</th>
+                <th scope="col">New accounts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {links.map((l, i) => (
+                <tr key={`${l.kind}-${l.id}`}>
+                  <td className="mono">{i + 1}</td>
+                  <th scope="row">
+                    {linkUrl(l) ? (
+                      <a href={linkUrl(l)} target="_blank" rel="noreferrer">
+                        {l.title}
+                      </a>
+                    ) : (
+                      l.title
+                    )}
+                    <span className="small">
+                      {KIND_LABELS[l.kind]}
+                      {l.label ? ` · ${l.label}` : ""}
+                      {l.createdAt ? ` · made ${date(l.createdAt)}` : ""}
+                    </span>
+                  </th>
+                  <th scope="row">
+                    <button type="button" className="btn-link" onClick={() => onOwner(l.ownerUid)}>
+                      {l.ownerName}
+                    </button>{" "}
+                    {l.ownerIsAdmin && <Chip>Admin</Chip>}
+                  </th>
+                  <td className="mono">{l.reached}</td>
+                  <td className="mono">{by === "completed" ? <b>{l.completed}</b> : l.completed}</td>
+                  <td className="mono">{by === "signups" ? <b>{l.signups}</b> : l.signups}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Engagement() {
   const [users, setUsers] = useState<EngagementUser[] | null>(null);
   const [scoring, setScoring] = useState<ScoreRule[]>([]);
   const [channels, setChannels] = useState<Record<EngagementChannel, string> | null>(null);
+  const [links, setLinks] = useState<{ active: EngagementLink[]; signups: EngagementLink[] } | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>("score");
@@ -216,6 +287,7 @@ export default function Engagement() {
       setUsers(res.users);
       setScoring(res.scoring);
       setChannels(res.channels);
+      setLinks(res.links);
     } catch (e) {
       setError((e as Error).message || "Engagement couldn't be loaded.");
     }
@@ -335,6 +407,13 @@ export default function Engagement() {
               </button>
             )}
           </section>
+        )}
+
+        {links && (
+          <>
+            <TopLinks title="Most active quiz links" note="Top 10 by people who finished" links={links.active} by="completed" onOwner={select} />
+            <TopLinks title="Links that brought the most new accounts" note="Top 10 by sign-ups after playing" links={links.signups} by="signups" onOwner={select} />
+          </>
         )}
 
         {scoring.length > 0 && (

@@ -8,7 +8,7 @@ admin_list_accounts   - Admin only: every sign-in with its plan, usage, status a
 admin_update_account  - Admin only: change one account's plan, status or access code, or reset its deck count.
 admin_delete_account  - Admin only: delete an account's sign-in, decks, practice history and settings for good.
 admin_engagement      - Admin only: everyone ranked by an engagement score, with how far their decks travel (links, plays,
-                        finished tests, new accounts), and one person's usage deck by deck.
+                        finished tests, new accounts), the top quiz links, and one person's usage deck by deck.
 request_upgrade       - A student asks the admin for a bigger plan, with an optional note.
 list_upgrade_requests - The student's own requests and replies, or every request for the admin.
 admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
@@ -448,18 +448,18 @@ def admin_engagement(req: https_fn.CallableRequest) -> dict:
             "isAdmin": accounts.is_admin({"email": user.email or "", "email_verified": user.email_verified}),
         })
     by_id = lambda rows: {r["id"]: r for r in rows}  # noqa: E731
-    rows = engagement.build(
+    rows, links = engagement.build_all(
         users,
         account_docs={d.id: d.to_dict() for d in db.collection("accounts").select(["activeSeconds", "activeDays", "lastBeatAt", "decksCreated"]).stream()},
         decks=by_id(_rows(db.collection("decks"), ["ownerId", "title", "subject", "createdAt", "sharedWith", "fromPost", "source"])),
         sessions=_rows(db.collection("sessions"), ["ownerId", "deckId", "status"]),
-        challenges=by_id(_rows(db.collection("challenges"), ["challengerUid", "sessionId"])),
+        challenges=by_id(_rows(db.collection("challenges"), ["challengerUid", "sessionId", "deckTitle", "createdAt"])),
         attempts=_rows(db.collection("challengeAttempts"), ["challengeId", "status", "claimedUid", "startedAtMs"]),
-        tests=by_id(_rows(db.collection("tests"), ["ownerUid", "deckId"])),
+        tests=by_id(_rows(db.collection("tests"), ["ownerUid", "deckId", "deckTitle", "groupName", "createdAt"])),
         takers=_rows(db.collection("testTakers"), ["testId", "email", "status", "createdAt"]),
-        public_tests=by_id(_rows(db.collection("publicTests"), ["ownerUid", "deckId"])),
+        public_tests=by_id(_rows(db.collection("publicTests"), ["ownerUid", "deckId", "deckTitle", "createdAt"])),
         public_attempts=_rows(db.collection("publicAttempts"), ["testId", "status", "claimedUid", "startedAtMs"]),
-        posts=_rows(db.collection("questionPosts"), ["ownerUid", "deckId", "answers", "createdAt"]),
+        posts=_rows(db.collection("questionPosts"), ["ownerUid", "deckId", "deckTitle", "answers", "createdAt"]),
         invites=_rows(db.collection("invites"), ["inviterUid", "status", "joinedUid"]),
         now_ms=_now_ms(),
     )
@@ -469,7 +469,7 @@ def admin_engagement(req: https_fn.CallableRequest) -> dict:
             raise _not_found("That account doesn't exist.")
         return {"user": rows[uid], "scoring": engagement.scoring(), "channels": engagement.CHANNEL_LABELS}
     users_out = [{k: v for k, v in r.items() if k != "decks"} for r in engagement.ranked(rows, include_admin=True)]
-    return {"users": users_out, "scoring": engagement.scoring(), "channels": engagement.CHANNEL_LABELS}
+    return {"users": users_out, "links": engagement.top_links(links), "scoring": engagement.scoring(), "channels": engagement.CHANNEL_LABELS}
 
 
 @https_fn.on_call()

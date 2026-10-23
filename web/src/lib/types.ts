@@ -303,6 +303,23 @@ export interface EngagementUser {
   decks?: EngagementDeck[];
 }
 
+/** One quiz link and how far it went: a challenge, a group test, a public test or a question post. */
+export interface EngagementLink {
+  kind: "challenge" | "group" | "public" | "post";
+  id: string;
+  title: string;
+  /** The group's name, for a group test. */
+  label: string;
+  createdAt: number | null;
+  ownerUid: string;
+  ownerName: string;
+  ownerEmail: string;
+  ownerIsAdmin: boolean;
+  reached: number;
+  completed: number;
+  signups: number;
+}
+
 export interface ScoreRule {
   field: string;
   points: number;

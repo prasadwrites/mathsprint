@@ -136,3 +136,28 @@ def test_records_for_deleted_users_are_skipped():
         invites=[{"inviterUid": "gone", "status": "joined", "joinedUid": "ann"}],
     )
     assert rows["ann"]["score"] == 0
+
+
+def test_top_links_rank_by_finishes_and_new_accounts():
+    rows, links = engagement.build_all(
+        [user("ann"), user("bo"), user("new", created=NOW - DAY), user("new2", created=NOW - DAY)],
+        account_docs={}, decks={"d1": {"ownerId": "ann"}},
+        sessions=[{"id": "s1", "ownerId": "ann", "deckId": "d1", "status": "completed"}],
+        challenges={"c1": {"challengerUid": "ann", "sessionId": "s1", "deckTitle": "Algebra"}},
+        attempts=[
+            {"challengeId": "c1", "status": "completed", "claimedUid": "new", "startedAtMs": NOW - 2 * DAY},
+            {"challengeId": "c1", "status": "completed", "claimedUid": "new", "startedAtMs": NOW - 2 * DAY},  # same person
+            {"challengeId": "c1", "status": "started"},
+        ],
+        tests={"t1": {"ownerUid": "bo", "deckTitle": "Geometry", "groupName": "Period 3"}},
+        takers=[{"testId": "t1", "email": f"k{i}@example.com", "status": "completed", "createdAt": NOW} for i in range(3)]
+        + [{"testId": "t1", "email": "new2@example.com", "status": "assigned", "createdAt": NOW - 2 * DAY}],
+        public_tests={}, public_attempts=[], posts=[], invites=[], now_ms=NOW,
+    )
+    top = engagement.top_links(links)
+    assert [(l["kind"], l["id"]) for l in top["active"]] == [("group", "t1"), ("challenge", "c1")]
+    g = top["active"][0]
+    assert g["ownerName"] == "Bo" and g["label"] == "Period 3" and (g["reached"], g["completed"], g["signups"]) == (4, 3, 1)
+    c = top["active"][1]
+    assert c["title"] == "Algebra" and (c["reached"], c["completed"], c["signups"]) == (3, 2, 1)
+    assert {l["id"] for l in top["signups"]} == {"t1", "c1"}

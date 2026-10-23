@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -258,7 +258,7 @@ export async function adminListAccounts() {
 type EngagementMeta = { scoring: ScoreRule[]; channels: Record<EngagementChannel, string> };
 
 export async function adminEngagement() {
-  return (await httpsCallable<object, EngagementMeta & { users: EngagementUser[] }>(functions, "admin_engagement", { timeout: 300_000 })({})).data;
+  return (await httpsCallable<object, EngagementMeta & { users: EngagementUser[]; links: { active: EngagementLink[]; signups: EngagementLink[] } }>(functions, "admin_engagement", { timeout: 300_000 })({})).data;
 }
 
 export async function adminUserEngagement(uid: string) {
