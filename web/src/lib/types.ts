@@ -261,6 +261,8 @@ export interface AdminAccount extends Omit<AccountSummary, "hasOwnCode" | "upgra
   weekSeconds: number;
   lastActiveAt: number | null;
   invitesJoined: number;
+  /** The ?ref= tag of the link they signed up from, such as "tutors". */
+  signupRef: string | null;
 }
 
 export type EngagementChannel = "challenge" | "group" | "share" | "public" | "post" | "invite";

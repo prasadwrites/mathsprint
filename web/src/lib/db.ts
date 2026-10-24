@@ -73,8 +73,9 @@ export async function explainStep(args: { deckId: string; questionId: string; st
 }
 
 /** `invite` is the token from an invite link, so a brand new account credits the friend who invited it. */
-export async function getAccount(invite?: string) {
-  return (await httpsCallable<{ invite?: string }, AccountSummary>(functions, "get_account")(invite ? { invite } : {})).data;
+export async function getAccount(invite?: string, ref?: string) {
+  const data = { ...(invite ? { invite } : {}), ...(ref ? { ref } : {}) };
+  return (await httpsCallable<{ invite?: string; ref?: string }, AccountSummary>(functions, "get_account")(data)).data;
 }
 
 export async function createInvite(email: string) {

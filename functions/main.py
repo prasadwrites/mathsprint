@@ -52,6 +52,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 import time
 import urllib.request
 
@@ -111,10 +112,20 @@ def _load_account(db, req: https_fn.CallableRequest) -> dict:
         return snap.to_dict()
     token = req.auth.token or {}
     account = accounts.new_account(token.get("email", ""), token.get("name", ""))
+    source = _signup_ref((req.data or {}).get("ref") if isinstance(req.data, dict) else None)
+    if source:
+        account["signupRef"] = source
     ref.set({**account, "createdAt": firestore.SERVER_TIMESTAMP})
     # A brand new account: if a friend invited this email, credit them.
     _claim_invite(db, req.auth.uid, token.get("email", ""), (req.data or {}).get("invite") if isinstance(req.data, dict) else None)
     return account
+
+
+def _signup_ref(value) -> str:
+    """The ?ref= tag a new account arrived with, such as "tutors-oct": letters, digits, - and _ only."""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^A-Za-z0-9_-]", "", value)[:40].lower()
 
 
 def _claim_invite(db, uid: str, email: str, invite_token) -> None:
@@ -456,6 +467,7 @@ def admin_list_accounts(req: https_fn.CallableRequest) -> dict:
             "createdAt": meta.creation_timestamp if meta else None,
             "lastSignInAt": meta.last_sign_in_timestamp if meta else None,
             "invitesJoined": accounts.bonus_decks(account),
+            "signupRef": account.get("signupRef") or None,
             "offer": offers.get(user.uid),
             **accounts.activity_summary(account, now),
             **accounts.summary(account, accounts.is_admin(token)),

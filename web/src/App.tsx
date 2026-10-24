@@ -7,6 +7,7 @@ import { clearClaim, pendingClaim } from "./lib/challenge";
 import { clearPublicClaim, pendingPublicClaim } from "./lib/publicTest";
 import { clearPostSave, pendingPostSave } from "./lib/questionPost";
 import { clearInvite, pendingInvite } from "./lib/invite";
+import { clearRef, pendingRef } from "./lib/signupRef";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
 import Accounts from "./pages/Accounts";
@@ -82,9 +83,10 @@ function SignedInApp() {
   useActivityHeartbeat(!!user);
 
   const refresh = useCallback(() => {
-    getAccount(pendingInvite()?.token)
+    getAccount(pendingInvite()?.token, pendingRef() ?? undefined)
       .then(async (a) => {
         clearInvite(); // the server has seen it; it only counts for a brand new account anyway
+        clearRef(); // same: only a brand new account is tagged
         // A challenge played before signing in: save it to this account before the home page lists challenges.
         const claim = pendingClaim();
         if (claim) await claimChallenge(claim.token, claim.attempt).catch(() => {});
