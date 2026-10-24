@@ -2,7 +2,9 @@ import { signOut } from "firebase/auth";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAccount, useIsAdmin, useUser } from "../App";
+import { adminSetCredit } from "../lib/db";
 import { auth } from "../lib/firebase";
+import type { ClaudeCredit } from "../lib/types";
 
 export function Brand({ small }: { small?: boolean }) {
   return (
@@ -37,13 +39,76 @@ export function Icon({ name, size = 18 }: { name: "back" | "sparkle" | "play" | 
   }
 }
 
+const dollars = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "USD" });
+
+/** Admin only: what's left of the Anthropic credit, estimated from the balance entered and this app's spending since. */
+function CreditBalance({ credit, onSaved }: { credit: ClaudeCredit; onSaved: () => void }) {
+  const [editing, setEditing] = useState(credit.balanceUsd === null);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const low = credit.remainingUsd !== null && credit.remainingUsd < 5;
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const balance = Number(value.replace(/[$,\s]/g, ""));
+    if (!value.trim() || !Number.isFinite(balance) || balance < 0) return setError("Enter the balance in dollars, like 42.50.");
+    setBusy(true);
+    setError("");
+    try {
+      await adminSetCredit(balance);
+      setEditing(false);
+      setValue("");
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save the balance.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="who credit">
+      <div>
+        Claude credit{" "}
+        {credit.remainingUsd !== null ? (
+          <b className={low ? "credit-low" : undefined}>about {dollars(credit.remainingUsd)} left</b>
+        ) : (
+          <b>not set</b>
+        )}
+      </div>
+      {credit.balanceUsd !== null && (
+        <div className="small">
+          {dollars(credit.balanceUsd)} entered{credit.setAt ? ` ${new Date(credit.setAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : ""},{" "}
+          {dollars(credit.spentUsd)} spent since on {credit.calls} Claude {credit.calls === 1 ? "call" : "calls"}
+        </div>
+      )}
+      {editing ? (
+        <form className="credit-form" onSubmit={save}>
+          <label className="small" htmlFor="credit-balance">Balance on the Anthropic console</label>
+          <div className="row">
+            <input id="credit-balance" inputMode="decimal" placeholder="42.50" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+            <button className="btn btn-primary btn-small" disabled={busy}>{busy ? "Saving" : "Save"}</button>
+          </div>
+          {error && <div className="small credit-low">{error}</div>}
+        </form>
+      ) : (
+        <button className="btn-link small" onClick={() => setEditing(true)}>Update balance</button>
+      )}
+      <a className="small" href={credit.consoleUrl} target="_blank" rel="noreferrer">Check billing on the Anthropic console</a>
+    </div>
+  );
+}
+
 function ProfileMenu() {
   const user = useUser();
-  const { account } = useAccount();
+  const { account, refresh } = useAccount();
   const admin = useIsAdmin();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const ref = useRef<HTMLDivElement>(null);
+  // The admin's credit estimate moves with every deck built, so fetch it fresh each time the menu opens.
+  useEffect(() => {
+    if (open && admin) refresh();
+  }, [open, admin, refresh]);
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
@@ -74,6 +139,7 @@ function ProfileMenu() {
               )}
             </div>
           )}
+          {admin && account?.credit && <CreditBalance credit={account.credit} onSaved={refresh} />}
           <Link role="menuitem" className="menu-link" to="/plans" onClick={() => setOpen(false)}>
             Compare plans
           </Link>

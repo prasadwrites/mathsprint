@@ -404,3 +404,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .eng-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .eng-points li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
 .eng-points li:first-child { border-top: none; }
+.menu .credit { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px; color: var(--ink); max-width: 280px; }
+.menu .credit .small { color: var(--muted); }
+.menu .credit a.small, .menu .credit .btn-link { color: var(--accent); text-align: left; }
+.menu .credit .credit-low { color: var(--bad); }
+.menu .credit-form .row { gap: 8px; flex-wrap: nowrap; }
+.menu .credit-form button { flex-shrink: 0; white-space: nowrap; }
+.menu .credit-form input { width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }

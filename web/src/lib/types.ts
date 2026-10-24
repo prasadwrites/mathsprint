@@ -180,6 +180,18 @@ export interface AccountSummary {
   bonusDecks: number;
   /** Admin: requests waiting for a reply. Students: their open request and unread replies. */
   upgrade?: { waiting?: number; pendingPlan?: PlanId | null; unreadReplies?: number };
+  /** Admin only: the Anthropic credit estimate for the profile menu. */
+  credit?: ClaudeCredit;
+}
+
+/** The balance the admin entered from the Anthropic console, less what this app's Claude calls cost since. */
+export interface ClaudeCredit {
+  balanceUsd: number | null;
+  spentUsd: number;
+  calls: number;
+  remainingUsd: number | null;
+  setAt: number | null;
+  consoleUrl: string;
 }
 
 export interface UpgradeRequest {
