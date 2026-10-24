@@ -7,6 +7,8 @@
       { "source": "/c/**", "function": { "functionId": "challenge_page", "region": "us-central1" } },
       { "source": "/p/**", "function": { "functionId": "public_test_page", "region": "us-central1" } },
       { "source": "/q/**", "function": { "functionId": "question_post_page", "region": "us-central1" } },
+      { "source": "/tutors", "destination": "/tutors.html" },
+      { "source": "/tutors/", "destination": "/tutors.html" },
       { "source": "**", "destination": "/index.html" }
     ]
   },

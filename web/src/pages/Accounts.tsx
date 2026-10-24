@@ -174,7 +174,8 @@ function AccountRow({
         </div>
         {a.displayName && <span className="small">{a.email}</span>}
         <span className="small">
-          Joined {date(a.createdAt)} · last sign-in {date(a.lastSignInAt)}
+          Joined {date(a.createdAt)}
+          {a.signupRef ? ` from ${a.signupRef}` : ""} · last sign-in {date(a.lastSignInAt)}
         </span>
         <span className="small time-on-site">
           Time on site: <b>{duration(a.activeSeconds)}</b> in all · {duration(a.weekSeconds)} this week · {duration(a.todaySeconds)} today

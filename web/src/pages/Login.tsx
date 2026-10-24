@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { pendingInvite } from "../lib/invite";
 import { pendingPublicClaim } from "../lib/publicTest";
+import { pendingRef } from "../lib/signupRef";
 import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
 
@@ -11,7 +12,7 @@ export default function Login() {
   const board = pendingPublicClaim();
   const [email, setEmail] = useState(invite?.email ?? "");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">(invite || board ? "signup" : "signin");
+  const [mode, setMode] = useState<"signin" | "signup">(invite || board || pendingRef() ? "signup" : "signin");
   const [error, setError] = useState("");
 
   const run = async (fn: () => Promise<unknown>) => {
