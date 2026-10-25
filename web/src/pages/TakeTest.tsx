@@ -9,7 +9,7 @@ import type { OpenTest, OwnTestResult } from "../lib/types";
 
 const storeKey = (token: string) => `ms.test.${token}`;
 
-function Result({ test, result }: { test: OpenTest; result: OwnTestResult }) {
+export function Result({ test, result }: { test: Pick<OpenTest, "title" | "from">; result: OwnTestResult }) {
   const pct = result.total ? Math.round((result.score / result.total) * 100) : 0;
   return (
     <div className="stack">

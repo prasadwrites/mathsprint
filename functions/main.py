@@ -22,6 +22,10 @@ list_groups, save_group, delete_group - Pro and Pro Max: contact groups of email
 assign_test           - Pro and Pro Max: assign a deck to a group, with a link and access code for each member.
 list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
 open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
+create_class_test, set_class_test_open - Pro and Pro Max: one link for a whole class instead of a group, optionally
+                        limited to a school's email domain, and closing it to new students.
+open_class_test, submit_class_test - A student signs in with Google (such as a Google Classroom account) to take a class
+                        link, once per account; the owner's results show their Google name and email.
 edit_question         - The owner edits one question of their deck; the edit is saved only if its answer checks out
                         (SymPy for math, Claude answering without the key for other subjects; see editing.py).
 delete_deck           - The owner deletes one of their decks with its questions and practice history. The plan count stays.
@@ -613,6 +617,9 @@ def admin_delete_account(req: https_fn.CallableRequest) -> dict:
     for collection in ("groups", "testTakers"):
         for r in db.collection(collection).where("ownerUid", "==", uid).stream():
             writer.delete(r.reference)
+    for r in db.collection("testTakers").where("uid", "==", uid).stream():  # their own class link attempts
+        if r.get("ownerUid") != uid:  # already deleted above
+            writer.delete(r.reference)
     for t in db.collection("tests").where("ownerUid", "==", uid).stream():
         db.recursive_delete(t.reference)  # the test and its copy of the questions
     for c in db.collection("challenges").where("challengerUid", "==", uid).stream():
@@ -975,10 +982,7 @@ def assign_test(req: https_fn.CallableRequest) -> dict:
     emails = list(group.get("emails") or [])
     if not emails:
         raise _invalid("Add some emails to the group first.")
-    try:
-        limit = max(0, min(6 * 3600, int(data.get("timeLimitSec") or 0)))
-    except (TypeError, ValueError):
-        limit = 0
+    limit = _time_limit(data)
 
     tests = db.collection("tests")
     existing = next((t for t in tests.where("ownerUid", "==", uid).stream()
@@ -993,13 +997,8 @@ def assign_test(req: https_fn.CallableRequest) -> dict:
         existing.reference.update({"groupName": group.get("name")})
         return {"id": existing.id, "added": len(added)}
 
-    questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
-    if not questions:
-        raise _invalid("That deck has no questions.")
     ref = tests.document()
-    for i, q in enumerate(questions):
-        q = {k: v for k, v in q.items() if k != "check"}  # the SymPy check isn't needed to grade
-        writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    questions = _copy_test_questions(deck, ref, writer)
     for e in emails:
         _new_taker(db, writer, ref.id, uid, e)
     writer.close()
@@ -1018,6 +1017,72 @@ def assign_test(req: https_fn.CallableRequest) -> dict:
     return {"id": ref.id, "added": len(emails)}
 
 
+def _copy_test_questions(deck, ref, writer) -> list[dict]:
+    """The test keeps its own copy of the deck's questions, so editing the deck later doesn't change a test."""
+    questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
+    if not questions:
+        raise _invalid("That deck has no questions.")
+    for i, q in enumerate(questions):
+        q = {k: v for k, v in q.items() if k != "check"}  # the SymPy check isn't needed to grade
+        writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
+    return questions
+
+
+def _time_limit(data: dict) -> int:
+    try:
+        return max(0, min(6 * 3600, int(data.get("timeLimitSec") or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+@https_fn.on_call(timeout_sec=120)
+def create_class_test(req: https_fn.CallableRequest) -> dict:
+    """One link for a whole class. Students sign in with Google to take it, and each Google account gets one attempt.
+    An optional domain (a school's Google Workspace, such as Google Classroom accounts) keeps everyone else out."""
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    data = req.data or {}
+    deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
+    try:
+        domain = groups.clean_domain(data.get("domain"))
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    name = _clean(data.get("name"), groups.MAX_CLASS_NAME)
+    ref = db.collection("tests").document()
+    writer = db.bulk_writer()
+    questions = _copy_test_questions(deck, ref, writer)
+    writer.close()
+    ref.set({
+        "ownerUid": uid,
+        "ownerName": (req.auth.token or {}).get("name") or (req.auth.token or {}).get("email", ""),
+        "deckId": deck.id,
+        "deckTitle": deck.get("title"),
+        "kind": "class",
+        "classToken": groups.new_test_token(),
+        "allowedDomain": domain,
+        "groupId": None,
+        "groupName": name,
+        "questionCount": len(questions),
+        "timeLimitSec": _time_limit(data),
+        "open": True,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"id": ref.id}
+
+
+@https_fn.on_call()
+def set_class_test_open(req: https_fn.CallableRequest) -> dict:
+    """Closes a class link to new students, or opens it again. Students who already started can still finish."""
+    db = firestore.client()
+    uid, _ = _group_owner(db, req)
+    data = req.data or {}
+    test = _owned(db, "tests", data.get("id"), uid, "That test no longer exists.")
+    if test.to_dict().get("kind") != "class":
+        raise _invalid("Only a class link can be closed.")
+    test.reference.update({"open": bool(data.get("open"))})
+    return _test_row(db, test.reference.get())
+
+
 def _test_row(db, doc) -> dict:
     r = doc.to_dict()
     takers = db.collection("testTakers").where("testId", "==", doc.id)
@@ -1027,6 +1092,10 @@ def _test_row(db, doc) -> dict:
         "deckTitle": r.get("deckTitle", ""),
         "groupId": r.get("groupId"),
         "groupName": r.get("groupName", ""),
+        "kind": r.get("kind", "group"),
+        "classToken": r.get("classToken"),
+        "allowedDomain": r.get("allowedDomain", ""),
+        "open": r.get("open", True),
         "questionCount": r.get("questionCount", 0),
         "timeLimitSec": r.get("timeLimitSec", 0),
         "createdAt": _ms(r.get("createdAt")),
@@ -1054,6 +1123,7 @@ def _taker_row(doc) -> dict:
     return {
         "token": doc.id,
         "email": r.get("email", ""),
+        "name": r.get("name", ""),
         "code": r.get("code", ""),
         "status": r.get("status", "assigned"),
         "score": r.get("score"),
@@ -1186,10 +1256,13 @@ def open_test(req: https_fn.CallableRequest) -> dict:
     meta = _test_meta(test, taker)
     if taker.get("status") == "completed":
         return {**meta, "result": _own_result(questions, taker)}
-    limit = int(meta["timeLimitSec"] or 0)
+    return {**meta, **_test_in_progress(questions, taker, int(meta["timeLimitSec"] or 0), now)}
+
+
+def _test_in_progress(questions: list[dict], taker: dict, limit: int, now: int) -> dict:
+    """The questions without their answers, and how much time is left."""
     elapsed = (now - int(taker.get("startedAtMs") or now)) / 1000
     return {
-        **meta,
         "elapsedSec": elapsed,
         "remainingSec": max(0, limit - elapsed) if limit else None,
         "questions": [{
@@ -1211,7 +1284,114 @@ def submit_test(req: https_fn.CallableRequest) -> dict:
     snap, test = _taker(db, data.get("token"))
     _check_test_code(snap, data.get("code"))
     questions = _test_questions(test.reference)
-    ref = snap.reference
+    taker = _grade_taker(db, test, questions, snap.reference, data)
+    return {**_test_meta(test, taker), "result": _own_result(questions, taker)}
+
+
+# A class link's student side. They sign in with Google; their uid picks their one attempt.
+
+
+def _class_test(db, token: object):
+    token = _clean(token, 64)
+    found = next(iter(db.collection("tests").where("classToken", "==", token).limit(1).stream()), None) if token else None
+    if found is None:
+        raise _not_found("This class link doesn't work. Ask your teacher for a new one.")
+    return found
+
+
+def _class_student(req: https_fn.CallableRequest, test) -> dict:
+    """The student's Google name and email. Anything but a Google sign-in from the allowed domain is turned away."""
+    if req.auth is None:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAUTHENTICATED, "Sign in with Google to take this test.")
+    who = groups.google_identity(req.auth.token)
+    if who is None:
+        raise _denied("This test needs a Google sign-in. Sign out, then continue with Google.")
+    domain = test.to_dict().get("allowedDomain") or ""
+    if not groups.email_in_domain(who["email"], domain):
+        raise _denied(f"This test is only for @{domain} accounts. You're signed in as {who['email']}.")
+    return who
+
+
+def _class_meta(test, taker: dict, who: dict) -> dict:
+    return {**_test_meta(test, taker), "email": who["email"], "name": who["name"], "domain": test.to_dict().get("allowedDomain") or "",
+            "open": bool(test.to_dict().get("open", True))}
+
+
+@https_fn.on_call()
+def open_class_test(req: https_fn.CallableRequest) -> dict:
+    """Signed out: only the test's title and who it's from, so the page can ask for a Google sign-in. Signed in with
+    Google: their status. With start: starts their clock (once) and returns the questions, or their result if they finished."""
+    db = firestore.client()
+    data = req.data or {}
+    test = _class_test(db, data.get("token"))
+    t = test.to_dict()
+    outline = {"title": t.get("deckTitle", ""), "from": t.get("ownerName", ""), "groupName": t.get("groupName", ""),
+               "questionCount": t.get("questionCount", 0), "timeLimitSec": t.get("timeLimitSec", 0),
+               "domain": t.get("allowedDomain") or "", "open": bool(t.get("open", True)), "status": "assigned", "signedIn": False}
+    if req.auth is None:
+        return outline
+    try:
+        who = _class_student(req, test)
+    except https_fn.HttpsError as e:
+        if data.get("start"):
+            raise
+        # Signed in, but not with a Google account this test takes: say why, so the page can offer to switch.
+        return {**outline, "signedIn": True, "problem": e.message}
+    ref = db.collection("testTakers").document(groups.class_taker_id(test.id, req.auth.uid))
+    snap = ref.get()
+    taker = snap.to_dict() if snap.exists else {}
+    if not data.get("start"):
+        return {**_class_meta(test, taker, who), "signedIn": True}
+
+    now = _now_ms()
+
+    @firestore.transactional
+    def begin(transaction) -> dict:
+        current = _txn_data(transaction, ref)
+        if current:
+            return current
+        if not test.to_dict().get("open", True):
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, "Your teacher has closed this test to new students.")
+        fresh = {
+            "testId": test.id,
+            "ownerUid": test.get("ownerUid"),
+            "kind": "class",
+            "uid": req.auth.uid,
+            "email": who["email"],
+            "name": who["name"],
+            "code": "",
+            "status": "started",
+            "startedAtMs": now,
+            "wrongTries": 0,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        }
+        transaction.set(ref, fresh)
+        return fresh
+
+    if not taker and _count(db.collection("testTakers").where("testId", "==", test.id)) >= groups.MAX_CLASS_TAKERS:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.RESOURCE_EXHAUSTED, "This class link is full. Ask your teacher.")
+    taker = begin(db.transaction())
+    questions = _test_questions(test.reference)
+    meta = {**_class_meta(test, taker, who), "signedIn": True}
+    if taker.get("status") == "completed":
+        return {**meta, "result": _own_result(questions, taker)}
+    return {**meta, **_test_in_progress(questions, taker, int(meta["timeLimitSec"] or 0), now)}
+
+
+@https_fn.on_call()
+def submit_class_test(req: https_fn.CallableRequest) -> dict:
+    db = firestore.client()
+    data = req.data or {}
+    test = _class_test(db, data.get("token"))
+    who = _class_student(req, test)
+    ref = db.collection("testTakers").document(groups.class_taker_id(test.id, req.auth.uid))
+    questions = _test_questions(test.reference)
+    taker = _grade_taker(db, test, questions, ref, data)
+    return {**_class_meta(test, taker, who), "signedIn": True, "result": _own_result(questions, taker)}
+
+
+def _grade_taker(db, test, questions: list[dict], ref, data: dict) -> dict:
+    """Grades one student's answers, once. A second tab or a retry gets the first submission back."""
 
     @firestore.transactional
     def run(transaction) -> dict:
@@ -1241,8 +1421,7 @@ def submit_test(req: https_fn.CallableRequest) -> dict:
         transaction.update(ref, changes)
         return {**taker, **changes}
 
-    taker = run(db.transaction())
-    return {**_test_meta(test, taker), "result": _own_result(questions, taker)}
+    return run(db.transaction())
 
 
 # Head-to-head challenges. The challenger is signed in; the friend who plays doesn't need to be.

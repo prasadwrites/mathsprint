@@ -369,13 +369,21 @@ export interface Group {
   updatedAt: number | null;
 }
 
-/** A deck assigned to a group. */
+/** A deck assigned to a group, or a class link: one link where each student signs in with Google. */
 export interface GroupTest {
   id: string;
   deckId: string;
   deckTitle: string;
-  groupId: string;
+  groupId: string | null;
+  /** The group's name, or the class name the owner gave a class link (may be empty). */
   groupName: string;
+  kind: "group" | "class";
+  /** A class link's token, for /class/TOKEN. */
+  classToken?: string | null;
+  /** A class link only takes Google accounts from this domain, such as a school's. Empty for any Google account. */
+  allowedDomain?: string;
+  /** A closed class link takes no new students. */
+  open?: boolean;
   questionCount: number;
   /** 0 means no time limit. */
   timeLimitSec: number;
@@ -388,6 +396,8 @@ export interface GroupTest {
 export interface TestTaker {
   token: string;
   email: string;
+  /** The student's name from Google, for a class link. */
+  name?: string;
   code: string;
   status: "assigned" | "started" | "completed";
   score: number | null;
@@ -436,6 +446,17 @@ export interface OpenTest {
   remainingSec?: number | null;
   questions?: { prompt: string; math: string; figure?: Figure | null; type: "numeric" | "choice"; choices: string[]; answerCount: number; pair?: boolean }[];
   result?: OwnTestResult;
+}
+
+/** What a student sees on a class link: the test, whether they're signed in with Google, then questions or their result. */
+export interface OpenClassTest extends Omit<OpenTest, "email"> {
+  signedIn: boolean;
+  email?: string;
+  name?: string;
+  domain: string;
+  open: boolean;
+  /** Signed in, but not with a Google account this test takes, and why. */
+  problem?: string;
 }
 
 export interface OwnTestResult {

@@ -20,7 +20,7 @@ const taker = (email: string, results: boolean[], usedSec: number, extra: Partia
 });
 
 const data = (takers: TestTaker[]): TestResults => ({
-  test: { id: "t", deckId: "d", deckTitle: "D", groupId: "g", groupName: "G", questionCount: 3, timeLimitSec: 0, createdAt: 0, assigned: takers.length, completed: 0 },
+  test: { id: "t", deckId: "d", deckTitle: "D", groupId: "g", groupName: "G", kind: "group", questionCount: 3, timeLimitSec: 0, createdAt: 0, assigned: takers.length, completed: 0 },
   questions: [q("Linear"), q("Linear"), q("Quadratic")],
   takers,
   overall: { assigned: 0, started: 0, completed: 0, averageScore: null, averageSec: null, questionCorrect: [] },

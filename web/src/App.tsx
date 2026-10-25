@@ -26,6 +26,7 @@ import PlayPublicTest from "./pages/PlayPublicTest";
 import PlayQuestionPost from "./pages/PlayQuestionPost";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
+import ClassTest from "./pages/ClassTest";
 import TestResults from "./pages/TestResults";
 import MemberResult from "./pages/MemberResult";
 import Invite from "./pages/Invite";
@@ -51,13 +52,14 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  // Pages anyone can open without signing in: a group member's test, a friend's challenge, a public test link, a
-  // question post, and the plan comparison.
+  // Pages anyone can open without signing in: a group member's test, a class link (which asks for Google sign-in
+  // itself), a friend's challenge, a public test link, a question post, and the plan comparison.
   const { pathname } = useLocation();
-  if (["/t/", "/c/", "/play/", "/p/", "/quiz/", "/q/", "/question/"].some((p) => pathname.startsWith(p)) || pathname === "/plans") {
+  if (["/t/", "/class/", "/c/", "/play/", "/p/", "/quiz/", "/q/", "/question/"].some((p) => pathname.startsWith(p)) || pathname === "/plans") {
     return (
       <Routes>
         <Route path="/t/:token" element={<TakeTest />} />
+        <Route path="/class/:token" element={<ClassTest />} />
         <Route path="/c/:token" element={<PlayChallenge />} />
         {/* Where /c/ sends visitors if its link-preview function can't reach the site. */}
         <Route path="/play/:token" element={<PlayChallenge />} />
