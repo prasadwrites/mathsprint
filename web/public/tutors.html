@@ -231,7 +231,11 @@ footer a { color: var(--muted); }
 .vplay .pbtn svg { margin-left: 5px; }
 .vplay .len { position: absolute; z-index: 1; left: 12px; bottom: 10px; color: #fff; font-weight: 700; font-size: 14px; }
 .vplay:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.vplay iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* The player replaces the thumbnail button. It has no overlay, so YouTube's own controls (full screen, Watch on YouTube) work. */
+.vbox { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; }
+.vbox iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.vcard .yt { font-size: 14px; font-weight: 700; text-decoration: none; }
+.vcard .yt:hover { text-decoration: underline; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 18px rgba(37, 87, 214, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 87, 214, 0); } }
 .vcard h3 { font-size: 22px; }
 .vcard p { color: var(--muted); font-size: 16px; }
@@ -243,7 +247,7 @@ footer a { color: var(--muted); }
 .mobile .vgrid { grid-template-columns: 1fr 1fr; gap: 12px; }
 .mobile .vcard { padding: 8px; gap: 10px; }
 .mobile .vcard.playing { grid-column: 1 / -1; }
-.mobile .vplay { aspect-ratio: 9 / 16; }
+.mobile .vplay, .mobile .vbox { aspect-ratio: 9 / 16; }
 .mobile .vplay .pbtn { width: 60px; height: 60px; margin: -30px 0 0 -30px; }
 .mobile .vplay .len { font-size: 12px; left: 8px; right: 8px; }
 .mobile .vcard .txt { padding: 0 4px 6px; }
@@ -327,6 +331,7 @@ footer a { color: var(--muted); }
         <div class="txt">
           <h3>Create a test deck on any subject</h3>
           <p>Type a topic or upload a worksheet, and watch a checked deck with worked solutions appear.</p>
+          <a class="yt" target="_blank" rel="noopener">Watch on YouTube ↗</a>
         </div>
       </div>
       <div class="card vcard reveal">
@@ -337,6 +342,7 @@ footer a { color: var(--muted); }
         <div class="txt">
           <h3>Run a group test</h3>
           <p>Assign a deck to your students, send each one a link and code, and see every score come in.</p>
+          <a class="yt" target="_blank" rel="noopener">Watch on YouTube ↗</a>
         </div>
       </div>
     </div>
@@ -587,14 +593,16 @@ footer a { color: var(--muted); }
     img.onerror = function () { img.remove(); };
     img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
     btn.setAttribute("aria-label", "Play video: " + btn.dataset.title);
+    btn.closest(".vcard").querySelector(".yt").href = phone ? "https://www.youtube.com/shorts/" + id : "https://www.youtube.com/watch?v=" + id;
     btn.addEventListener("click", function () {
       var f = document.createElement("iframe");
       f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1&modestbranding=1";
       f.title = btn.dataset.title;
-      f.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      f.allow = "fullscreen; accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
       f.allowFullscreen = true;
+      f.setAttribute("allowfullscreen", "");
       var box = document.createElement("div");
-      box.className = "vplay";
+      box.className = "vbox";
       box.appendChild(f);
       btn.closest(".vcard").classList.add("playing");
       btn.replaceWith(box);
