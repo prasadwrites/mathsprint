@@ -205,6 +205,8 @@ export interface UpgradeRequest {
   status: "pending" | "replied";
   reply: string;
   approved: boolean;
+  /** Upgraded by a Square payment, with no approval needed. */
+  paid: boolean;
   userRead: boolean;
   createdAt: number | null;
   repliedAt: number | null;

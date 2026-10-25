@@ -65,6 +65,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Square payment links and the payments made on them. Only create_checkout and square_webhook touch these.
+    match /squareCheckouts/{orderId} {
+      allow read, write: if false;
+    }
+
     match /invites/{token} {
       allow read, write: if false;
     }

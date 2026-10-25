@@ -365,7 +365,7 @@ function RequestItem({
           <span className="mono small">
             {planLabel(r.currentPlan)} → {planLabel(r.requestedPlan)}
           </span>
-          {r.status === "pending" ? <Chip tone="warn">Waiting</Chip> : r.approved ? <Chip tone="good">Upgraded</Chip> : <Chip>Replied</Chip>}
+          {r.status === "pending" ? <Chip tone="warn">Waiting</Chip> : r.paid ? <Chip tone="good">Paid</Chip> : r.approved ? <Chip tone="good">Upgraded</Chip> : <Chip>Replied</Chip>}
         </div>
       </div>
       <span className="small">

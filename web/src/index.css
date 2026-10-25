@@ -311,6 +311,8 @@ a { color: var(--accent); }
 .square-pay { display: flex; justify-content: center; width: 259px; max-width: 100%; box-sizing: border-box; padding: 20px; background: #fff; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 10px; font-family: "SQ Market", Helvetica, Arial, sans-serif; }
 .square-pay-button { display: inline-block; min-width: 212px; height: 48px; line-height: 48px; font-size: 18px; color: #fff; background-color: #006aff; text-align: center; text-decoration: none; border-radius: 6px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1) inset; }
 .square-pay-button:hover { background-color: #0055cc; }
+button.square-pay-button { border: none; cursor: pointer; font-family: inherit; }
+button.square-pay-button:disabled { opacity: 0.7; cursor: progress; }
 .pay-step { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; }
 .invite-link { display: block; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
