@@ -207,7 +207,7 @@ export async function submitPublicTest(token: string, attempt: string, answers: 
 }
 
 export async function claimPublicTest(token: string, attempt: string) {
-  return (await httpsCallable<object, { saved: boolean; rank: number }>(functions, "claim_public_test")({ token, attempt })).data;
+  return (await httpsCallable<object, { saved: boolean; already?: boolean; rank: number }>(functions, "claim_public_test")({ token, attempt })).data;
 }
 
 /** Admin only: a social media post of one question from a deck. */

@@ -100,7 +100,8 @@ function SignedInApp() {
         clearPostSave();
         const kept = post && (await savePostDeck(post.token).catch(() => null));
         setAccount(a);
-        if (pub && placed?.saved) navigate.current(`/p/${pub.token}`);
+        // Already on that leaderboard from an earlier try: the link shows them that result, not this one.
+        if (pub && (placed?.saved || placed?.already)) navigate.current(`/p/${pub.token}`);
         else if (kept) navigate.current(`/decks/${kept.deckId}`);
       })
       .catch(() => setAccount(null));

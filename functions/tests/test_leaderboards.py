@@ -153,3 +153,12 @@ def test_names_in_other_scripts_get_a_font_that_draws_them():
     t = {**T, "board": [{"name": n, "score": 9, "usedSec": 60} for n in ["आरव शर्मा", "محمد أحمد", "佐藤 ハルト", "יעל כהן", "ณัฐ"]]}
     for size, dims in cards.SIZES.items():
         assert Image.open(io.BytesIO(cards.render_board(t, size, "x.web.app"))).size == dims
+
+
+def test_a_claimed_player_keeps_one_result():
+    assert leaderboards.kept_result([]) is None
+    first = {"score": 7, "usedSec": 300, "at": 1}
+    assert leaderboards.kept_result([first]) is first
+    # Older data with two claimed tries keeps the better one, as the board does.
+    better = {"score": 9, "usedSec": 400, "at": 2}
+    assert leaderboards.kept_result([first, better]) is better
