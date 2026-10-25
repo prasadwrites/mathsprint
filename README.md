@@ -92,7 +92,11 @@ On the Accounts page the admin can **Offer a promotion**: a bigger plan for 1, 2
 
 ### Payments
 
-The Upgrade page shows Square's **Pay now** button for Pro and Pro Max (links in `web/src/components/SquarePay.tsx`). Checkout opens in a popup, the way Square's embed code does. Paying doesn't change the plan by itself: the student sends their upgrade request and the admin approves it on the Accounts page.
+The Upgrade page shows Square's **Pay now** button for Pro and Pro Max. Each press asks `create_checkout` for a Square payment link made for that student and plan (Square API, the seller's main location), and saves the link's order id in `squareCheckouts`. Square brings the student back to `/upgrade?paid=PLAN`, which waits for the plan to switch.
+
+When the payment completes, Square calls `square_webhook` (Hosting sends `https://mathsprint.org/square/webhook` there). It checks Square's signature, finds the checkout by order id, checks the amount, and sets the account's plan once, however many times Square sends the event. The student's waiting upgrade request is marked **Paid** with a note (or a new one is added), so the payment shows on their Upgrade page and on the admin's requests list. A paid plan lasts until the admin changes it, the same as an approved request. Refunds don't change the plan by themselves; lower it on the Accounts page. Requests still work for anyone who paid another way.
+
+Prices are in cents in `SQUARE_PRO_PRICE_CENTS` and `SQUARE_PROMAX_PRICE_CENTS` (the first deploy asks for them and saves them in `functions/.env.<project>`). Set `SQUARE_ENVIRONMENT=sandbox` there, with sandbox keys, to test with Square's test cards.
 
 ### Claude credit
 
@@ -152,6 +156,7 @@ You need Node 20+, Python 3.12, the Firebase CLI (`npm i -g firebase-tools`), a 
 3. Copy `web/.env.example` to `web/.env.local` and fill in the web app config from Project settings.
 4. Store the Claude key as a secret: `firebase functions:secrets:set ANTHROPIC_API_KEY`
    Then set the access code people must enter to build decks after their first 5: `firebase functions:secrets:set DECK_ACCESS_CODE`. Change it any time by running the same command and redeploying the functions.
+   For Square payments: in the [Square Developer Dashboard](https://developer.squareup.com/apps), open your app's **Production** credentials and run `firebase functions:secrets:set SQUARE_ACCESS_TOKEN` with the access token. Then under **Webhooks > Subscriptions**, add a subscription with the URL `https://mathsprint.org/square/webhook` and the events `payment.created` and `payment.updated`, and run `firebase functions:secrets:set SQUARE_WEBHOOK_SIGNATURE_KEY` with its signature key.
 5. Install:
    ```bash
    npm --prefix web install

@@ -329,6 +329,11 @@ export async function requestUpgrade(plan: PlanId, message: string) {
   await httpsCallable<{ plan: PlanId; message: string }, { id: string }>(functions, "request_upgrade")({ plan, message });
 }
 
+/** A Square payment link for this student and plan. Paying it switches the plan on its own. */
+export async function createCheckout(plan: PlanId) {
+  return (await httpsCallable<{ plan: PlanId }, { url: string }>(functions, "create_checkout")({ plan })).data.url;
+}
+
 /** Students get their own requests (markRead clears the reply notification); the admin gets all of them. */
 export async function listUpgradeRequests(markRead = false) {
   return (await httpsCallable<{ markRead: boolean }, { requests: UpgradeRequest[] }>(functions, "list_upgrade_requests")({ markRead })).data.requests;

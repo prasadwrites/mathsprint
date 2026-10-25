@@ -1,43 +1,35 @@
+import { useState } from "react";
+import { createCheckout } from "../lib/db";
 import type { PlanId } from "../lib/types";
 
-/** Square payment links for each paid plan, from the embed codes Square generated. */
-export const PAY_LINKS: Partial<Record<PlanId, string>> = {
-  pro: "https://square.link/u/zfoPN700?src=embed",
-  promax: "https://square.link/u/F0xpDWaS?src=embed",
-};
-
-/** Opens Square checkout in a centered popup, the way Square's embed script does; falls back to a new tab. */
-function openCheckout(url: string) {
-  const top = window.top ?? window;
-  const width = top.innerWidth || document.documentElement.clientWidth || screen.width;
-  const height = top.innerHeight || document.documentElement.clientHeight || screen.height;
-  const zoom = width / top.screen.availWidth;
-  const w = 500;
-  const h = height * 0.75;
-  const left = (width - w) / 2 / zoom + (top.screenLeft ?? top.screenX);
-  const topPos = (height - h) / 2 / zoom + (top.screenTop ?? top.screenY);
-  const popup = window.open(url, "Square Payment Links", `scrollbars=yes, width=${w / zoom}, height=${h / zoom}, top=${topPos}, left=${left}`);
-  if (popup) popup.focus();
-  return !!popup;
-}
-
-/** Square's "Pay now" card for one plan. */
+/** Square's "Pay now" card for one plan. It opens a checkout made for this student, and Square brings them back to
+ * /upgrade?paid=PLAN once they've paid; the plan switches as soon as Square confirms the payment. */
 export default function SquarePay({ plan }: { plan: PlanId }) {
-  const url = PAY_LINKS[plan];
-  if (!url) return null;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (plan === "free") return null;
   return (
-    <div className="square-pay">
-      <a
-        className="square-pay-button"
-        href={url}
-        target="_blank"
-        rel="noopener"
-        onClick={(e) => {
-          if (openCheckout(url)) e.preventDefault(); // popup blocked: let the link open a tab
-        }}
-      >
-        Pay now
-      </a>
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="square-pay">
+        <button
+          type="button"
+          className="square-pay-button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              window.location.assign(await createCheckout(plan));
+            } catch (e) {
+              setError((e as Error).message || "Square checkout didn't open. Try again in a minute.");
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Opening checkout…" : "Pay now"}
+        </button>
+      </div>
+      {error && <p className="error small">{error}</p>}
     </div>
   );
 }

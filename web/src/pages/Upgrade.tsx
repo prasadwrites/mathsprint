@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAccount } from "../App";
 import SquarePay from "../components/SquarePay";
 import TopBar, { Chip } from "../components/TopBar";
@@ -116,6 +116,10 @@ export default function Upgrade() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Square sends a student back here with ?paid=PLAN; the plan switches once Square tells us the payment completed.
+  const [params] = useSearchParams();
+  const paid = PLANS.find((p) => p.id === params.get("paid"))?.id ?? null;
+  const [waited, setWaited] = useState(0);
 
   const load = async () => {
     try {
@@ -135,6 +139,22 @@ export default function Upgrade() {
   const currentIndex = PLANS.findIndex((p) => p.id === current);
   const pending = requests?.find((r) => r.status === "pending" && !r.approved);
   const choice = plan ?? PLANS[currentIndex + 1]?.id ?? null;
+  const paidIndex = paid ? PLANS.findIndex((p) => p.id === paid) : -1;
+  const confirming = paidIndex > currentIndex && waited < 20;
+
+  // Check every few seconds for a minute while the payment is confirmed.
+  useEffect(() => {
+    if (!confirming || !account) return;
+    const t = setTimeout(() => {
+      refresh();
+      setWaited((n) => n + 1);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [confirming, account, waited]);
+  const switched = !!paid && !!account && paidIndex <= currentIndex;
+  useEffect(() => {
+    if (switched) load(); // show the payment on the request list
+  }, [switched]);
 
   const submit = async () => {
     if (!choice) return;
@@ -167,6 +187,22 @@ export default function Upgrade() {
             </b>{" "}
             After that you're back on {label(current)}, unless you upgrade.
           </p>
+        )}
+
+        {paid && account && !account.isAdmin && (
+          switched ? (
+            <p className="notice" role="status">
+              <b>Thanks for your payment. You're on {label(current)} now.</b>
+            </p>
+          ) : confirming ? (
+            <p className="notice" role="status">
+              <b>Thanks! Square is confirming your payment.</b> Your plan switches to {label(paid)} in a few seconds.
+            </p>
+          ) : (
+            <p className="notice" role="status">
+              <b>We haven't heard from Square about your payment yet.</b> It can take a few minutes. If your plan hasn't switched to {label(paid)} soon, send us a request below and we'll sort it out.
+            </p>
+          )
         )}
 
         <div className="tiles">
@@ -206,7 +242,7 @@ export default function Upgrade() {
             <p className="muted">You'll see the reply here and on your home page.</p>
             <div className="pay-step">
               <SquarePay plan={pending.requestedPlan} />
-              <span className="muted">Haven't paid for {label(pending.requestedPlan)} yet? Pay here and we'll switch your plan.</span>
+              <span className="muted">Haven't paid for {label(pending.requestedPlan)} yet? Pay here and your plan switches as soon as Square confirms it.</span>
             </div>
           </div>
         ) : choice ? (
@@ -219,15 +255,15 @@ export default function Upgrade() {
           >
             <h2>Upgrade to {label(choice)}</h2>
             <div className="stack" style={{ gap: 8 }}>
-              <b>1. Pay with Square</b>
+              <b>Pay with Square</b>
               <div className="pay-step">
                 <SquarePay plan={choice} />
-                <span className="muted">Checkout opens in a new window.</span>
+                <span className="muted">Your plan switches to {label(choice)} as soon as Square confirms the payment. No request needed.</span>
               </div>
             </div>
             <div>
               <label htmlFor="upgrade-note">
-                <b>2. Send your request</b> so we can switch your plan. Anything to add? <span className="muted">(optional)</span>
+                <b>Or send us a request</b> if you paid another way or have a question. <span className="muted">(optional)</span>
               </label>
               <textarea
                 id="upgrade-note"
@@ -258,7 +294,7 @@ export default function Upgrade() {
                     <b>
                       {label(r.currentPlan)} → {label(r.requestedPlan)}
                     </b>
-                    {r.status === "pending" ? <Chip tone="warn">Waiting</Chip> : r.approved ? <Chip tone="good">Upgraded</Chip> : <Chip>Replied</Chip>}
+                    {r.status === "pending" ? <Chip tone="warn">Waiting</Chip> : r.paid ? <Chip tone="good">Paid</Chip> : r.approved ? <Chip tone="good">Upgraded</Chip> : <Chip>Replied</Chip>}
                   </div>
                   <span className="small muted">Sent {when(r.createdAt)}</span>
                   <Conversation r={r} viewer="student" />

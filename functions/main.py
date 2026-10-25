@@ -15,6 +15,9 @@ request_upgrade       - A student asks the admin for a bigger plan, with an opti
 list_upgrade_requests - The student's own requests and replies, or every request for the admin.
 admin_reply_upgrade   - Admin only: reply to a request, and optionally move the account to the requested plan.
 reply_upgrade         - A student writes back on one of their requests, which puts it back in the admin's queue.
+create_checkout       - A Square payment link for one student and plan; paying it upgrades the plan (see square_webhook).
+square_webhook        - Square calls this when a payment completes. A signed payment for a link from create_checkout
+                        switches that student's plan, with a note on their upgrade request, so no approval is needed.
 record_activity       - One heartbeat per active minute, so the admin can see how long each person spends in the app.
 create_invite         - A student invites a friend's email and gets a link to share; a friend who joins earns them a deck.
 list_invites          - The student's own invites and whether each friend has joined.
@@ -57,14 +60,18 @@ question_post_page    - Serves /q/TOKEN with the question in its link preview, a
 from __future__ import annotations
 
 import base64
+import json
 import logging
+import secrets
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 
 from firebase_admin import auth, firestore, initialize_app
 from firebase_functions import https_fn, options
+from firebase_functions.params import IntParam, StringParam
 
 import accounts
 import cards
@@ -73,6 +80,7 @@ import credit
 import engagement
 import groups
 import leaderboards
+import payments
 import posts
 import sharing
 import subjects
@@ -656,6 +664,7 @@ def _request_row(doc) -> dict:
         "thread": _thread(r),
         "updatedAt": _ms(r.get("updatedAt")) or _ms(r.get("repliedAt")) or _ms(r.get("createdAt")),
         "approved": bool(r.get("approved")),
+        "paid": bool(r.get("paid")),
         "userRead": bool(r.get("userRead")),
         "createdAt": _ms(r.get("createdAt")),
         "repliedAt": _ms(r.get("repliedAt")),
@@ -811,6 +820,174 @@ def reply_upgrade(req: https_fn.CallableRequest) -> dict:
         "updatedAt": firestore.SERVER_TIMESTAMP,
     })
     return {"ok": True}
+
+
+# Square payments. Prices are asked for on the first deploy and kept in functions/.env.<project>, in cents.
+SQUARE_PRICES = {
+    "pro": IntParam("SQUARE_PRO_PRICE_CENTS", description="Price of Pro in cents, e.g. 999 for $9.99"),
+    "promax": IntParam("SQUARE_PROMAX_PRICE_CENTS", description="Price of Pro Max in cents, e.g. 1999 for $19.99"),
+}
+SQUARE_ENVIRONMENT = StringParam("SQUARE_ENVIRONMENT", default="production", description="production, or sandbox for testing")
+_square_location: dict = {}
+
+
+def _price_cents(plan: object) -> int:
+    try:
+        return int(SQUARE_PRICES[plan].value) if plan in SQUARE_PRICES else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _square(method: str, path: str, body: dict | None = None) -> dict:
+    """One call to the Square API with the seller's access token."""
+    request = urllib.request.Request(
+        payments.api_host(SQUARE_ENVIRONMENT.value) + path,
+        data=json.dumps(body).encode("utf-8") if body is not None else None,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {os.environ.get('SQUARE_ACCESS_TOKEN', '')}",
+            "Square-Version": payments.SQUARE_VERSION,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as r:  # noqa: S310 - Square's API
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        log.error("Square %s %s failed: %s %s", method, path, e.code, e.read().decode("utf-8", "replace")[:1000])
+        raise
+
+
+def _main_location() -> dict:
+    """The seller's main Square location, which payments are taken at, and its currency."""
+    if not _square_location:
+        location = _square("GET", "/v2/locations/main")["location"]
+        _square_location.update(id=location["id"], currency=location.get("currency") or "USD")
+    return _square_location
+
+
+@https_fn.on_call(secrets=["SQUARE_ACCESS_TOKEN"], timeout_sec=30)
+def create_checkout(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    db = firestore.client()
+    account = _load_account(db, req)
+    if account.get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    plan = (req.data or {}).get("plan")
+    price = _price_cents(plan)
+    try:
+        payments.check_checkout(accounts.base_plan_id(account), plan, price, accounts.is_admin(req.auth.token))
+    except AccessDenied as e:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
+    email = (req.auth.token or {}).get("email") or account.get("email", "")
+    checkout_id = secrets.token_hex(16)
+    try:
+        location = _main_location()
+        link = _square("POST", "/v2/online-checkout/payment-links",
+                       payments.payment_link_body(checkout_id, uid, plan, email, location["id"], location["currency"], price))["payment_link"]
+    except Exception:
+        log.exception("Square checkout for %s failed", uid)
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAVAILABLE, "Square checkout didn't open. Try again in a minute, or send us a request.")
+    # Keyed by Square's order id, which every payment on this link carries back to square_webhook.
+    db.collection("squareCheckouts").document(link["order_id"]).set({
+        "checkoutId": checkout_id,
+        "uid": uid,
+        "email": email,
+        "plan": plan,
+        "fromPlan": accounts.base_plan_id(account),
+        "amount": price,
+        "currency": location["currency"],
+        "linkId": link.get("id", ""),
+        "status": "open",
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
+    return {"url": link["url"]}
+
+
+@https_fn.on_request(secrets=["SQUARE_WEBHOOK_SIGNATURE_KEY"], timeout_sec=60)
+def square_webhook(req: https_fn.Request) -> https_fn.Response:
+    """Hosting sends /square/webhook here (firebase.json). Square retries anything but a 2xx, so a payment that isn't
+    ours, or isn't complete yet, still gets a 200."""
+    if req.method != "POST":
+        return https_fn.Response("Method not allowed", status=405)
+    body = req.get_data()
+    signature = req.headers.get("x-square-hmacsha256-signature", "")
+    if not payments.signature_ok(body, signature, os.environ.get("SQUARE_WEBHOOK_SIGNATURE_KEY", "")):
+        log.warning("Square webhook with a bad signature")
+        return https_fn.Response("Bad signature", status=403)
+    payment = payments.completed_payment(body)
+    if payment is None:
+        return https_fn.Response("Ignored")
+    db = firestore.client()
+    ref = db.collection("squareCheckouts").document(payment["orderId"])
+    if not ref.get().exists:
+        log.info("Square payment %s isn't from a MathSprint checkout", payment["id"])
+        return https_fn.Response("Not a MathSprint checkout")
+    _apply_payment(db, ref, payment)
+    return https_fn.Response("OK")
+
+
+def _apply_payment(db, ref, payment: dict) -> None:
+    """Switches the plan once per checkout, however many times Square sends the payment."""
+
+    @firestore.transactional
+    def run(transaction) -> tuple[dict, str] | None:
+        c = _txn_data(transaction, ref)
+        if c.get("status") == "paid":
+            return None
+        paid = {"paymentId": payment["id"], "paidAmount": payment["amount"], "paidCurrency": payment["currency"], "paidAt": firestore.SERVER_TIMESTAMP}
+        if not payments.paid_in_full(c, payment):
+            log.warning("Square payment %s for %s is short: %s", payment["id"], c.get("uid"), payment)
+            transaction.update(ref, {**paid, "status": "short"})
+            return None
+        account_ref = _account_ref(db, c["uid"])
+        account = _txn_data(transaction, account_ref)
+        if not account:
+            log.warning("Square payment %s is for a deleted account %s", payment["id"], c.get("uid"))
+            transaction.update(ref, {**paid, "status": "no-account"})
+            return None
+        plan = payments.plan_after_payment(accounts.base_plan_id(account), c["plan"])
+        transaction.update(account_ref, {"plan": plan, "paidAt": firestore.SERVER_TIMESTAMP, "updatedAt": firestore.SERVER_TIMESTAMP})
+        transaction.update(ref, {**paid, "status": "paid"})
+        return {**c, "displayName": account.get("displayName", "")}, plan
+
+    done = run(db.transaction())
+    if done:
+        _note_payment(db, *done, payment)
+
+
+def _note_payment(db, c: dict, plan: str, payment: dict) -> None:
+    """Marks the student's waiting request as upgraded, or adds an upgraded one, so the payment shows on /upgrade and
+    on the admin's requests list like an approval."""
+    text = payments.paid_message(plan, payment["amount"], payment["currency"])
+    message = {"from": "admin", "text": text, "at": _now_ms(), "approved": True}
+    fields = {
+        "status": "replied",
+        "approved": True,
+        "paid": True,
+        "paymentId": payment["id"],
+        "reply": text,
+        "requestedPlan": plan,
+        "userRead": False,
+        "repliedAt": firestore.SERVER_TIMESTAMP,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    }
+    requests = db.collection("upgradeRequests")
+    for d in requests.where("uid", "==", c["uid"]).where("status", "==", "pending").stream():
+        r = d.to_dict()
+        if _awaiting_plan(r) and accounts.PLAN_ORDER.index(r.get("requestedPlan") if r.get("requestedPlan") in accounts.PLANS else plan) <= accounts.PLAN_ORDER.index(plan):
+            d.reference.update({**fields, "thread": _thread(r) + [message]})
+            return
+    requests.document().set({
+        **fields,
+        "uid": c["uid"],
+        "email": c.get("email", ""),
+        "displayName": c.get("displayName", ""),
+        "currentPlan": c.get("fromPlan", accounts.DEFAULT_PLAN),
+        "message": "",
+        "thread": [message],
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    })
 
 
 @https_fn.on_call()
