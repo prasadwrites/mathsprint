@@ -134,6 +134,12 @@ def board(attempts: list[dict], samples: list[dict] | None = None) -> list[dict]
              **({"sample": True} if r.get("sample") else {})} for r in rows]
 
 
+def kept_result(attempts: list[dict]) -> dict | None:
+    """The one result an account keeps on a test: once a player has claimed a spot, that link shows them this result
+    and they can't play it again or claim another try. Normally one attempt; older data may hold more, so the best."""
+    return min(attempts, key=_key, default=None) if attempts else None
+
+
 def rank_of(rows: list[dict], score: int, used_sec: int, at: int) -> int:
     """Where a result places (1 is top) among the board's rows: one past every row that beats or ties it earlier."""
     me = _key({"score": score, "usedSec": used_sec, "at": at})

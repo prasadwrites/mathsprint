@@ -40,7 +40,8 @@ create_public_test, list_public_tests, public_test_players, remove_public_player
                         Admin only: public links to a deck's test, everyone who played each one, taking a result off
                         the leaderboard, and sample players that fill a new leaderboard until real players join.
 open_public_test, submit_public_test - No sign-in: anyone plays a public link under a name, graded here.
-claim_public_test     - A player who signs up after playing puts their result on that test's leaderboard.
+claim_public_test     - A player who signs up after playing puts their result on that test's leaderboard. One result per
+                        account and test: once claimed, the link shows that player their result instead of a new try.
 public_test_page      - Serves /p/TOKEN with the leaderboard in its link preview, and /p/TOKEN/card.png, the leaderboard card.
 create_question_post, list_question_posts, delete_question_post - Admin only: a social media post of one question from a
                         deck, with a card picture and a link.
@@ -1616,6 +1617,16 @@ def _public_attempt(db, test, attempt_token: object):
     return snap
 
 
+def _claimed_by(db, test, uid: str | None):
+    """The result this account has claimed on this test, if any. A claimed player gets one try: the link shows them
+    that result from then on, so they can't come back and play again with the answers they got wrong fixed."""
+    if not uid:
+        return None
+    snaps = list(db.collection("publicAttempts").where("testId", "==", test.id).where("claimedUid", "==", uid).stream())
+    best = leaderboards.kept_result([{**s.to_dict(), "at": s.get("completedAtMs"), "_snap": s} for s in snaps])
+    return best["_snap"] if best else None
+
+
 def _refresh_board(db, test_ref) -> list[dict]:
     """Rebuilds the leaderboard kept on the test from every claimed result. Runs on each claim, which is rare, so a
     visitor's page and the share card read one document."""
@@ -1829,6 +1840,9 @@ def open_public_test(req: https_fn.CallableRequest) -> dict:
     data = req.data or {}
     test = _public_test(db, data.get("token"))
     meta = _public_meta(test)
+    kept = _claimed_by(db, test, req.auth.uid if req.auth else None)
+    if kept is not None:  # already on this leaderboard: their result, never a new try
+        return {**meta, "attempt": kept.id, "result": _public_result(test, _test_questions(test.reference), kept.to_dict())}
     attempt = _public_attempt(db, test, data.get("attempt"))
     if attempt is None and not data.get("start"):
         return meta
@@ -1878,6 +1892,9 @@ def submit_public_test(req: https_fn.CallableRequest) -> dict:
     if attempt is None:
         raise _not_found("This attempt no longer exists. Open the test link again.")
     questions = _test_questions(test.reference)
+    kept = _claimed_by(db, test, req.auth.uid if req.auth else None)
+    if kept is not None and kept.id != attempt.id:  # a second try by a player already on the board isn't graded
+        return {**_public_meta(test), "attempt": kept.id, "result": _public_result(test, questions, kept.to_dict())}
     ref = attempt.reference
 
     @firestore.transactional
@@ -1909,8 +1926,9 @@ def submit_public_test(req: https_fn.CallableRequest) -> dict:
 
 @https_fn.on_call()
 def claim_public_test(req: https_fn.CallableRequest) -> dict:
-    """Puts a finished result on the leaderboard under the signed-in account. A result is claimed by one account only;
-    an account that plays more than once keeps its best place."""
+    """Puts a finished result on the leaderboard under the signed-in account. A result is claimed by one account only,
+    and an account claims one result per test: a later try (from another browser, say) isn't put on the board, and
+    the player is sent to the result they already have there."""
     uid = _require_user(req)
     db = firestore.client()
     if _load_account(db, req).get("status") == "suspended":
@@ -1920,6 +1938,12 @@ def claim_public_test(req: https_fn.CallableRequest) -> dict:
     attempt = _public_attempt(db, test, data.get("attempt"))
     if attempt is None or attempt.get("status") != "completed":
         raise _not_found("That result no longer exists.")
+    kept = _claimed_by(db, test, uid)
+    if kept is not None and kept.id != attempt.id:
+        k = kept.to_dict()
+        board = test.get("board") or []
+        rank = leaderboards.rank_of(board, int(k.get("score") or 0), int(k.get("usedSec") or 0), int(k.get("completedAtMs") or 0))
+        return {"saved": False, "already": True, "rank": rank}
     ref = attempt.reference
 
     @firestore.transactional

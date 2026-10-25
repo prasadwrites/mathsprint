@@ -6,6 +6,7 @@ import ShareButtons from "../components/ShareButtons";
 import TimedQuestions from "../components/TimedQuestions";
 import { Brand, Chip, Icon } from "../components/TopBar";
 import { openPublicTest, submitPublicTest } from "../lib/db";
+import { auth } from "../lib/firebase";
 import { formatClock } from "../lib/pace";
 import { publicStoreKey, publicTestCard, publicTestLink, rememberPublicClaim, saveAttempt, savedAttempt } from "../lib/publicTest";
 import type { OpenPublicTest, PublicTestResult } from "../lib/types";
@@ -68,6 +69,7 @@ function Result({ token, t, result }: { token: string; t: OpenPublicTest; result
           <span className="muted">{t.ranked} {t.ranked === 1 ? "player" : "players"}</span>
         </div>
         <Leaderboard rows={t.board} total={t.total} highlight={result.claimed ? result.rank : undefined} />
+        {result.claimed && <p className="muted">Your spot is saved. Each account gets one try per leaderboard, so this link now shows your result.</p>}
       </section>
 
       <div className="panel stack">
@@ -124,7 +126,10 @@ export default function PlayPublicTest() {
 
   useEffect(() => {
     const attempt = savedAttempt(token);
-    openPublicTest(attempt ? { token, attempt } : { token })
+    // Wait for sign-in to load: a player who already claimed a spot here gets their saved result, not a new try.
+    auth
+      .authStateReady()
+      .then(() => openPublicTest(attempt ? { token, attempt } : { token }))
       .then(show)
       .catch((e) => setError((e as Error).message || "This test link doesn't work."));
   }, [token, show]);
