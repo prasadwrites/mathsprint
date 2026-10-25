@@ -219,6 +219,38 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 15p
 footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 footer a { color: var(--muted); }
 
+/* Promo videos: a thumbnail first, the YouTube player only after a click */
+.videos { padding: 64px 0 24px; }
+.vgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.vcard { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.vplay { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; border: 0; padding: 0; background: #0b1220; cursor: pointer; }
+.vplay img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s ease; }
+.vplay:hover img { transform: scale(1.03); }
+.vplay::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 50%, rgba(11, 18, 32, .55)); }
+.vplay .pbtn { position: absolute; z-index: 1; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 99px; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 0 rgba(37, 87, 214, .6); animation: pulse 2.2s ease-out infinite; }
+.vplay .pbtn svg { margin-left: 5px; }
+.vplay .len { position: absolute; z-index: 1; left: 12px; bottom: 10px; color: #fff; font-weight: 700; font-size: 14px; }
+.vplay:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.vplay iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 18px rgba(37, 87, 214, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 87, 214, 0); } }
+.vcard h3 { font-size: 22px; }
+.vcard p { color: var(--muted); font-size: 16px; }
+.vcard .txt { padding: 0 8px 8px; display: grid; gap: 6px; }
+.btn-watch .ico { width: 22px; height: 22px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 10px; }
+/* Phones get the vertical Shorts version */
+@media (max-width: 900px) { .vgrid { grid-template-columns: 1fr; } }
+/* Phones get the vertical Shorts version, two side by side; the one playing takes the full width */
+.mobile .vgrid { grid-template-columns: 1fr 1fr; gap: 12px; }
+.mobile .vcard { padding: 8px; gap: 10px; }
+.mobile .vcard.playing { grid-column: 1 / -1; }
+.mobile .vplay { aspect-ratio: 9 / 16; }
+.mobile .vplay .pbtn { width: 60px; height: 60px; margin: -30px 0 0 -30px; }
+.mobile .vplay .len { font-size: 12px; left: 8px; right: 8px; }
+.mobile .vcard .txt { padding: 0 4px 6px; }
+.mobile .vcard h3 { font-size: 16px; }
+.mobile .vcard p { font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .vplay .pbtn { animation: none; } }
+
 /* Reveal on scroll */
 .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
 .reveal.in { opacity: 1; transform: none; }
@@ -235,6 +267,7 @@ footer a { color: var(--muted); }
   <div class="wrap">
     <a class="brand" href="/" data-cta>Math<span>Sprint</span></a>
     <nav>
+      <a class="plain" href="#videos">Videos</a>
       <a class="plain" href="#how">How it works</a>
       <a class="plain" href="#groups">Groups</a>
       <a class="plain" href="#plans">Plans</a>
@@ -252,7 +285,7 @@ footer a { color: var(--muted); }
       <p class="lede">Type a topic and level, or upload a worksheet. MathSprint writes a timed practice deck with worked solutions, and a math engine checks every answer before your students see it.</p>
       <div class="ctas">
         <a class="btn btn-primary" href="/" data-cta>Build your first deck free →</a>
-        <a class="btn" href="#how">See how it works</a>
+        <a class="btn btn-watch" href="#videos"><span class="ico">▶</span>Watch the demo videos</a>
       </div>
       <div class="fine"><span>5 free decks</span><span>No card needed</span><span>Checked answers on every plan</span></div>
     </div>
@@ -276,6 +309,39 @@ footer a { color: var(--muted); }
     </div>
   </div>
 </div>
+
+<section class="videos" id="videos">
+  <div class="wrap">
+    <div class="section-head center reveal">
+      <span class="eyebrow">See it in action</span>
+      <h2>Watch MathSprint build a deck and run a test.</h2>
+      <p>Two short videos: making a practice deck on any subject, and giving it to a group as a test.</p>
+    </div>
+    <div class="vgrid">
+      <!-- Video IDs: data-desktop is the regular YouTube video, data-mobile the Short. Change them here. -->
+      <div class="card vcard reveal">
+        <button type="button" class="vplay" data-desktop="fxvrUCLrzcg" data-mobile="6F12WCMocwg" data-title="Create a test deck on any subject">
+          <img alt="" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
+          <span class="len">▶ Watch: deck creation</span>
+        </button>
+        <div class="txt">
+          <h3>Create a test deck on any subject</h3>
+          <p>Type a topic or upload a worksheet, and watch a checked deck with worked solutions appear.</p>
+        </div>
+      </div>
+      <div class="card vcard reveal">
+        <button type="button" class="vplay" data-desktop="fxvrUCLrzcg" data-mobile="SATt7eBtxtI" data-title="Run a group test">
+          <img alt="" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
+          <span class="len">▶ Watch: group tests</span>
+        </button>
+        <div class="txt">
+          <h3>Run a group test</h3>
+          <p>Assign a deck to your students, send each one a link and code, and see every score come in.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section id="how">
   <div class="wrap">
@@ -510,6 +576,30 @@ footer a { color: var(--muted); }
   } else {
     els.forEach(function (el) { el.classList.add("in"); });
   }
+
+  // Promo videos: phones (narrow, or portrait touch screens) get the vertical Short, everyone else the regular video.
+  // The YouTube player loads only when the visitor clicks, which keeps the page fast.
+  var phone = matchMedia("(max-width: 640px), (orientation: portrait) and (pointer: coarse)").matches;
+  document.getElementById("videos").classList.toggle("mobile", phone);
+  document.querySelectorAll(".vplay").forEach(function (btn) {
+    var id = phone ? btn.dataset.mobile : btn.dataset.desktop;
+    var img = btn.querySelector("img");
+    img.onerror = function () { img.remove(); };
+    img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+    btn.setAttribute("aria-label", "Play video: " + btn.dataset.title);
+    btn.addEventListener("click", function () {
+      var f = document.createElement("iframe");
+      f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1&modestbranding=1";
+      f.title = btn.dataset.title;
+      f.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      f.allowFullscreen = true;
+      var box = document.createElement("div");
+      box.className = "vplay";
+      box.appendChild(f);
+      btn.closest(".vcard").classList.add("playing");
+      btn.replaceWith(box);
+    }, { once: true });
+  });
 
   // The hero demo: the clock runs, the student types an answer, and the pace chip reacts.
   var fmt = function (s) { return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
