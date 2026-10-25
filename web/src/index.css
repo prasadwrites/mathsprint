@@ -411,3 +411,21 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .menu .credit-form .row { gap: 8px; flex-wrap: nowrap; }
 .menu .credit-form button { flex-shrink: 0; white-space: nowrap; }
 .menu .credit-form input { width: 100%; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+
+/* Editing a question on the deck page */
+.edit-question { grid-column: 1 / -1; margin-top: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.edit-question fieldset { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.edit-question legend { font-weight: 700; padding: 0; margin-bottom: 6px; }
+.edit-question .hint { font-size: 14px; margin: 6px 0 0; }
+.edit-option { flex-wrap: nowrap; gap: 8px; }
+.edit-option input[type=radio] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.edit-step { display: grid; grid-template-columns: 24px 1fr 1fr auto; gap: 8px; align-items: center; }
+.edit-step .n { font-family: var(--f-mono); color: var(--muted); }
+.edit-meta > div { flex: 1 1 180px; }
+@media (max-width: 640px) {
+  /* On a phone the chips and Edit go under the question, so the question keeps the row's width. */
+  .qlist li { grid-template-columns: 32px 1fr; }
+  .qlist li > .row { grid-column: 2; }
+  .edit-step { grid-template-columns: 24px 1fr auto; }
+  .edit-step input.mono { grid-column: 2; grid-row: 2; }
+}

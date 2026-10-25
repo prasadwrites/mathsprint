@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 import subjects
 from credit import METER
-from schema import GeneratedDeck, GeneratedQuestion, picture_formats
+from schema import Check, GeneratedDeck, GeneratedQuestion, picture_formats
 from validator import check_question
 
 MODEL = "claude-opus-5-5"
@@ -503,3 +503,67 @@ def explain_step(question: dict, step_index: int | None, style: str, client: ant
     if response.stop_reason == "refusal":
         raise GenerationError("Claude could not explain this step.")
     return "".join(b.text for b in response.content if b.type == "text").strip()
+
+
+class WrittenCheck(BaseModel):
+    checkable: bool = Field(description="False if the question has no single well-defined numeric answer a program could compute.")
+    problem: str = Field(description="When not checkable: one short sentence for the question's author saying why. '' otherwise.")
+    check: Check
+
+
+CHECK_RULES = """You restate one practice question in SymPy syntax so a program can solve it and check the answer
+its author gave. You are not shown that answer, and you must not solve the question yourself: write the problem
+exactly as stated, so the program's solution is an independent check.
+
+Use ** for powers and * for multiplication. Only use the variable you solve for, numbers, + - * / ** ( ), the
+functions sqrt, exp, log, sin, cos, tan, abs, and the constants pi and E, plus any picture names listed.
+- kind 'solve': an equation with one '=' whose real solutions are the answer, e.g. 'x**2 - 5*x + 6 = 0', with a
+  one-letter `variable`. For a word problem, the equation you would set up, with `domain` ruling out answers that
+  make no sense ('positive' for a length).
+- kind 'evaluate': an expression whose value is the answer, e.g. '2**2 - 4*1*5'; `variable` ''.
+- kind 'point': only when the answer is a point; the expression is 'x, y' with both coordinates.
+- For a multiple-choice question, restate the question itself; the program finds which option matches.
+If the question is ambiguous, has no numeric answer, or can't be written with this vocabulary, set checkable false,
+kind 'none', expression '' and variable '', and say why in `problem`."""
+
+
+def write_check(client: anthropic.Anthropic | None, question: dict, picture: str = "", subject: str = subjects.DEFAULT) -> WrittenCheck:
+    """Claude restates an edited question as a SymPy check, without seeing the author's answer (see editing.py)."""
+    client = client or anthropic.Anthropic()
+    lines = [f"Subject: {subjects.clean(subject)}", f"Question: {question['prompt']}"]
+    if question.get("math"):
+        lines.append(f"Formula shown: {question['math']}")
+    if question["type"] == "choice":
+        lines.append("Multiple choice. Options: " + " | ".join(question.get("choices", [])))
+    if question.get("pair"):
+        lines.append("The answer is a point (x, y): use kind 'point'.")
+    if picture:
+        lines.append(picture)
+    try:
+        response = client.beta.messages.parse(
+            model=MODEL,
+            max_tokens=4000,
+            system=CHECK_RULES,
+            messages=[{"role": "user", "content": "\n".join(lines)}],
+            output_format=WrittenCheck,
+            output_config={"effort": "medium"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIError as e:
+        raise api_error(e) from e
+    METER.add(response)
+    if response.stop_reason == "refusal" or response.parsed_output is None:
+        raise GenerationError("The question couldn't be checked. Try rewording it.")
+    return response.parsed_output
+
+
+def review_choice(client: anthropic.Anthropic | None, question: GeneratedQuestion, subject: str, level: str) -> str:
+    """Claude answers an edited multiple-choice question (outside math) without the key, as it does for generated decks.
+    Returns '' if it picks the author's option and sees no problem, or a message for the author."""
+    client = client or anthropic.Anthropic()
+    req = DeckRequest(topic="", count=1, difficulty="Mixed", level=level or "High school or college", subject=subject)
+    reason = _review(client, req, [question])[0]
+    if not reason:
+        return ""
+    return f"{reason[0].upper()}{reason[1:].rstrip('.')}. Check the answer and the options."

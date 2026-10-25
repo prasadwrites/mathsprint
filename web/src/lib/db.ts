@@ -67,6 +67,26 @@ export async function generateDeck(input: GenerateInput) {
   return (await call(input)).data;
 }
 
+/** The owner's edit to one question. It's saved only if the server confirms the answer; a rejection says why. */
+export interface QuestionEdit {
+  deckId: string;
+  questionId: string;
+  prompt: string;
+  math: string;
+  steps: Question["steps"];
+  concept: string;
+  difficulty: Question["difficulty"];
+  /** Numeric questions: the answer as students should see it, e.g. "x = 2, 3". */
+  answer?: string;
+  choices?: string[];
+  answerChoice?: string;
+}
+
+export async function editQuestion(edit: QuestionEdit) {
+  const call = httpsCallable<QuestionEdit, { question: Partial<Question>; checked: boolean }>(functions, "edit_question", { timeout: 120_000 });
+  return (await call(edit)).data.question;
+}
+
 export async function explainStep(args: { deckId: string; questionId: string; step: number | null; style: string }) {
   const call = httpsCallable<typeof args, { explanation: string }>(functions, "explain_step");
   return (await call(args)).data.explanation;
