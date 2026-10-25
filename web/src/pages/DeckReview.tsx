@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Figure from "../components/Figure";
+import EditQuestion from "../components/EditQuestion";
 import DeleteDeck from "../components/DeleteDeck";
 import AssignTest from "../components/AssignTest";
 import ShareDeck from "../components/ShareDeck";
@@ -29,6 +30,7 @@ export default function DeckReview() {
   const [deck, setDeck] = useState<Deck | null | undefined>(undefined);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [postPick, setPostPick] = useState<{ id: string } | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
 
   useEffect(() => {
     getDeck(deckId).then(setDeck);
@@ -112,7 +114,7 @@ export default function DeckReview() {
         <div className="panel">
           <div className="row spread">
             <h2>Questions</h2>
-            <span className="muted">Answers stay hidden until after you practice</span>
+            <span className="muted">Answers stay hidden until after you practice{mine ? ", or until you edit a question" : ""}</span>
           </div>
           <ul className="qlist" style={{ marginTop: 12 }}>
             {questions.map((q, i) => (
@@ -130,7 +132,24 @@ export default function DeckReview() {
                       Post it
                     </button>
                   )}
+                  {mine && editing !== q.id && (
+                    <button type="button" className="btn-link" onClick={() => setEditing(q.id)} aria-label={`Edit question ${i + 1}`}>
+                      Edit
+                    </button>
+                  )}
                 </span>
+                {editing === q.id && (
+                  <EditQuestion
+                    deckId={deck.id}
+                    subject={subjectOf(deck)}
+                    question={q}
+                    onCancel={() => setEditing(null)}
+                    onSaved={(saved) => {
+                      setQuestions(questions.map((x) => (x.id === saved.id ? saved : x)));
+                      setEditing(null);
+                    }}
+                  />
+                )}
               </li>
             ))}
           </ul>

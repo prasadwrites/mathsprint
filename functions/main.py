@@ -22,6 +22,8 @@ list_groups, save_group, delete_group - Pro and Pro Max: contact groups of email
 assign_test           - Pro and Pro Max: assign a deck to a group, with a link and access code for each member.
 list_tests, get_test_results, reset_test_link, delete_test - the owner's assigned tests and each member's result.
 open_test, submit_test - No sign-in: a group member opens their test with the link and code, and gets their own result.
+edit_question         - The owner edits one question of their deck; the edit is saved only if its answer checks out
+                        (SymPy for math, Claude answering without the key for other subjects; see editing.py).
 delete_deck           - The owner deletes one of their decks with its questions and practice history. The plan count stays.
 share_deck, list_deck_shares, unshare_deck - Pro and Pro Max: the owner shares a deck with another registered user by email,
                         sees who has it, and takes it back; someone it was shared with can remove it from their decks.
@@ -2414,6 +2416,49 @@ def respond_promotion(req: https_fn.CallableRequest) -> dict:
         return {"accepted": True, "endsAt": ends}
 
     return run(db.transaction())
+
+
+@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=120)
+def edit_question(req: https_fn.CallableRequest) -> dict:
+    """Saves the owner's edit to one question, after checking its answer. People the deck is shared with see the edit;
+    tests, challenges, public links and posts already made from the deck keep their own copy of the questions."""
+    import editing  # slow to load (SymPy, anthropic); see generate_deck
+
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    data = req.data or {}
+    deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
+    question_id = _clean(data.get("questionId"), 128)
+    ref = deck.reference.collection("questions").document(question_id) if question_id else None
+    snap = ref.get() if ref else None
+    if snap is None or not snap.exists:
+        raise _not_found("That question no longer exists.")
+    old = snap.to_dict()
+    try:
+        new = editing.apply_edit(old, data)
+    except editing.EditError as e:
+        raise _invalid(str(e))
+    saved = {**old, **new}
+    if editing.needs_check(old, new):
+        from generator import GenerationError
+
+        d = deck.to_dict()
+        try:
+            verdict = editing.verify(saved, subjects.of(d), d.get("level", ""), None)
+        except GenerationError as e:
+            message = f"{e} ({e.detail})" if accounts.is_admin(req.auth.token) and e.detail else str(e)
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAVAILABLE, message)
+        finally:
+            _record_spend(db)
+        if not verdict.ok:
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, verdict.message)
+        new["check"] = verdict.check
+        new["verified"] = True
+    ref.update({**new, "editedAt": firestore.SERVER_TIMESTAMP})
+    # Only the edited fields: the app merges them into the question it shows.
+    return {"question": {k: v for k, v in new.items() if k != "check"}, "checked": "check" in new}
 
 
 @https_fn.on_call(timeout_sec=120)
