@@ -193,3 +193,11 @@ def test_deck_prompt_includes_the_pdf_summary():
     client = FakeClient([deck(make_q([2, 3]))])
     generate_deck(DeckRequest("Factoring", 1, "Medium", "Algebra I", source="Factor trinomials like x² − 5x + 6."), client)
     assert "material the student uploaded" in client.prompts[0] and "x² − 5x + 6" in client.prompts[0]
+
+
+def test_choices_only_deck_asks_for_multiple_choice():
+    from generator import DeckRequest, _initial_prompt
+
+    req = DeckRequest(topic="Quadratics", count=5, difficulty="Medium", level="Algebra 1", choices_only=True)
+    assert "no 'numeric' questions" in _initial_prompt(req)
+    assert "no 'numeric' questions" not in _initial_prompt(DeckRequest(topic="Quadratics", count=5, difficulty="Medium", level="Algebra 1"))

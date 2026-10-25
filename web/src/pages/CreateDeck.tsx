@@ -64,6 +64,7 @@ export default function CreateDeck() {
   const [difficulty, setDifficulty] = useState<Difficulty>("Medium");
   const [level, setLevel] = useState("");
   const [notes, setNotes] = useState(params.get("notes") ?? "");
+  const [choicesOnly, setChoicesOnly] = useState(false);
   const [accessCode, setAccessCode] = useState(storedCode);
   // Set when the server asks for a code the account summary didn't know about yet.
   const [codeAsked, setCodeAsked] = useState(false);
@@ -128,6 +129,7 @@ export default function CreateDeck() {
         notes,
         subject,
         accessCode: accessCode.trim(),
+        choicesOnly,
         ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
       });
       if (needsCode) storeCode(accessCode.trim());
@@ -291,6 +293,12 @@ export default function CreateDeck() {
                       </button>
                     ))}
                   </div>
+                </div>
+                <div>
+                  <label className="radio" htmlFor="choices-only">
+                    <input id="choices-only" type="checkbox" checked={choicesOnly} onChange={(e) => setChoicesOnly(e.target.checked)} /> Multiple choice only
+                  </label>
+                  <p className="muted small">Every question has four options to pick from, so nobody types an answer.</p>
                 </div>
                 <div>
                   <label htmlFor="notes">

@@ -4,6 +4,7 @@ import ShareButtons from "./ShareButtons";
 import { Chip } from "./TopBar";
 import { createPublicTest, deletePublicTest, listPublicTests, publicTestPlayers, removePublicPlayer, setPublicSamples } from "../lib/db";
 import { formatClock } from "../lib/pace";
+import ChoicesOnly, { choicesNote } from "./ChoicesOnly";
 import { publicTestCard, publicTestLink } from "../lib/publicTest";
 import { parseSampleLines, sampleLines } from "../lib/samplePlayers";
 import type { Deck, PublicPlayer, PublicTest } from "../lib/types";
@@ -107,7 +108,7 @@ function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }
     <div className="panel stack" style={{ boxShadow: "none" }}>
       <div className="row spread">
         <div className="muted small">
-          {test.timeLimitSec ? `${formatClock(test.timeLimitSec)} limit` : "No time limit"} · {test.plays} played · {test.finished} finished · {test.ranked} on the leaderboard
+          {test.timeLimitSec ? `${formatClock(test.timeLimitSec)} limit` : "No time limit"}{choicesNote(test)} · {test.plays} played · {test.finished} finished · {test.ranked} on the leaderboard
         </div>
         <a className="btn btn-small" href={link} target="_blank" rel="noreferrer">
           Open
@@ -196,12 +197,13 @@ function LinkCard({ test, onChange }: { test: PublicTest; onChange: () => void }
 }
 
 /** Admin only, on a deck's page: public links anyone can play without an account, each with its own leaderboard. */
-export default function PublicTestLinks({ deck, total, suggestedSec }: { deck: Deck; total: number; suggestedSec: number }) {
+export default function PublicTestLinks({ deck, total, suggestedSec, typed }: { deck: Deck; total: number; suggestedSec: number; typed: number }) {
   const [tests, setTests] = useState<PublicTest[] | null>(null);
   const [timed, setTimed] = useState(true);
   const [fill, setFill] = useState<"made-up" | "own" | "none">("made-up");
   const [own, setOwn] = useState("");
   const [minutes, setMinutes] = useState(1);
+  const [choicesOnly, setChoicesOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -216,7 +218,7 @@ export default function PublicTestLinks({ deck, total, suggestedSec }: { deck: D
     setBusy(true);
     setError("");
     try {
-      const t = await createPublicTest(deck.id, timed ? minutes * 60 : 0, fill === "made-up", fill === "own" ? parseSampleLines(own) : undefined);
+      const t = await createPublicTest(deck.id, timed ? minutes * 60 : 0, fill === "made-up", fill === "own" ? parseSampleLines(own) : undefined, choicesOnly);
       setTests((ts) => [t, ...(ts ?? [])]);
     } catch (e) {
       setError((e as Error).message || "The link wasn't made. Try again.");
@@ -273,6 +275,9 @@ export default function PublicTestLinks({ deck, total, suggestedSec }: { deck: D
         <button className="btn btn-primary" type="submit" disabled={busy}>
           {busy ? "Making the link…" : tests?.length ? "Make another link" : "Make a public link"}
         </button>
+        <div style={{ flexBasis: "100%" }}>
+          <ChoicesOnly id="public-choices" typed={typed} checked={choicesOnly} onChange={setChoicesOnly} />
+        </div>
         {fill === "own" && <SampleEditor id="public-own" value={own} onChange={setOwn} total={total} />}
       </form>
       {error && <p className="error">{error}</p>}

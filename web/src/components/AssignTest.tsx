@@ -4,10 +4,11 @@ import { useAccount } from "../App";
 import { assignTest, createClassTest, listGroups, listTests } from "../lib/db";
 import { canUseGroups, type Deck, type Group, type GroupTest } from "../lib/types";
 import { TestList } from "../pages/Groups";
+import ChoicesOnly from "./ChoicesOnly";
 
 /** On a deck's page: assign it to one of your groups, or make one class link where students sign in with Google, and
  * see the tests already assigned. */
-export default function AssignTest({ deck, suggestedSec }: { deck: Deck; suggestedSec: number }) {
+export default function AssignTest({ deck, suggestedSec, typed }: { deck: Deck; suggestedSec: number; typed: number }) {
   const { account } = useAccount();
   const allowed = canUseGroups(account);
   const navigate = useNavigate();
@@ -19,6 +20,7 @@ export default function AssignTest({ deck, suggestedSec }: { deck: Deck; suggest
   const [domain, setDomain] = useState("");
   const [timed, setTimed] = useState(true);
   const [minutes, setMinutes] = useState(0);
+  const [choicesOnly, setChoicesOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -53,8 +55,8 @@ export default function AssignTest({ deck, suggestedSec }: { deck: Deck; suggest
       const timeLimitSec = timed ? minutes * 60 : 0;
       const { id } =
         mode === "class"
-          ? await createClassTest({ deckId: deck.id, name: className.trim(), domain: domain.trim(), timeLimitSec })
-          : await assignTest({ deckId: deck.id, groupId, timeLimitSec });
+          ? await createClassTest({ deckId: deck.id, name: className.trim(), domain: domain.trim(), timeLimitSec, choicesOnly })
+          : await assignTest({ deckId: deck.id, groupId, timeLimitSec, choicesOnly });
       navigate(`/tests/${id}`);
     } catch (e) {
       setError((e as Error).message || "The test wasn't assigned. Try again.");
@@ -149,6 +151,7 @@ export default function AssignTest({ deck, suggestedSec }: { deck: Deck; suggest
               </div>
             </div>
           </div>
+          <ChoicesOnly id="assign-choices" typed={typed} checked={already ? !!already.choicesOnly : choicesOnly} disabled={!!already} onChange={setChoicesOnly} />
           <p className="muted small">
             {mode === "class"
               ? `You get one link to post in Google Classroom or anywhere else. Each student signs in with their Google account${domain.trim() ? ` from ${domain.trim().replace(/^@/, "")}` : ""}, gets one try, and shows up in your results with their Google name and email.`

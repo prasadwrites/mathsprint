@@ -44,6 +44,7 @@ export default function DeckReview() {
   const mine = deck.ownerId === user.uid;
   const dropped = Number(params.get("dropped") || 0);
   const verified = questions.length > 0 && questions.every((q) => q.verified);
+  const typed = questions.filter((q) => q.type !== "choice").length;
   const spread = LEVELS.map(([l, c]) => ({ l, c, n: questions.filter((q) => q.difficulty === l).length }));
 
   return (
@@ -107,8 +108,8 @@ export default function DeckReview() {
         </div>
 
         {mine && <ShareDeck deck={deck} />}
-        {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} />}
-        {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} />}
+        {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} typed={typed} />}
+        {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} typed={typed} />}
         {mine && admin && <QuestionPosts deck={deck} questions={questions} pick={postPick} />}
 
         <div className="panel">

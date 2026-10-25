@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import TopBar, { Chip } from "../components/TopBar";
 import { deleteTest, getTestResults, resetTestLink, setClassTestOpen } from "../lib/db";
 import { formatClock } from "../lib/pace";
+import { choicesNote } from "../components/ChoicesOnly";
 import { conceptStats, groupStats, questionStats, rankOf } from "../lib/testStats";
 import { classLink, classShareText, shareText, takerLabel, testLink, testMailto } from "../lib/tests";
 import type { TestResults as Results, TestTaker } from "../lib/types";
@@ -161,7 +162,7 @@ export default function TestResults() {
         <div className="stack">
           <div>
             <div className="eyebrow">
-              {isClass ? `Class link${test.groupName ? ` · ${test.groupName}` : ""}` : `Group test · ${test.groupName}`} · {N} questions · {test.timeLimitSec ? `${Math.round(test.timeLimitSec / 60)} min` : "no time limit"}
+              {isClass ? `Class link${test.groupName ? ` · ${test.groupName}` : ""}` : `Group test · ${test.groupName}`} · {N} questions · {test.timeLimitSec ? `${Math.round(test.timeLimitSec / 60)} min` : "no time limit"}{choicesNote(test)}
             </div>
             <h1>{test.deckTitle}</h1>
           </div>

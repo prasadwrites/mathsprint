@@ -389,6 +389,10 @@ export interface GroupTest {
   questionCount: number;
   /** 0 means no time limit. */
   timeLimitSec: number;
+  /** Every question is answered by picking an option; typed-answer questions in the deck were converted or left out. */
+  choicesOnly?: boolean;
+  /** How many of the deck's questions a multiple choice only test left out. */
+  leftOut?: number;
   createdAt: number | null;
   assigned: number;
   completed: number;
@@ -583,6 +587,8 @@ export interface PublicTest {
   deckTitle: string;
   total: number;
   timeLimitSec: number;
+  choicesOnly?: boolean;
+  leftOut?: number;
   createdAt: number | null;
   plays: number;
   finished: number;
