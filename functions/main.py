@@ -76,6 +76,7 @@ from firebase_functions.params import IntParam, StringParam
 import accounts
 import cards
 import challenges
+import choices
 import credit
 import engagement
 import groups
@@ -240,6 +241,7 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         level=_clean(data.get("level"), 80),
         notes=_clean(data.get("notes"), 600),
         subject=subjects.pick(data.get("subject"), _subject_list(db)),
+        choices_only=bool(data.get("choicesOnly")),
     )
 
     try:
@@ -287,9 +289,38 @@ def _subject_list(db) -> list[str]:
 
 def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name: str = "") -> dict:
     from figures import diagram_doc, figure_doc
-    from generator import generate_deck as _generate
+    from generator import GenerationError, generate_deck as _generate
 
     result = _generate(request)
+    docs = [{
+        "order": i,
+        "prompt": q.prompt,
+        "math": q.math,
+        "type": q.type,
+        "choices": q.choices,
+        "answerValues": q.answer_values,
+        "answerChoice": q.answer_choice,
+        "answerDisplay": q.answer_display,
+        "tolerance": q.tolerance,
+        "concept": q.concept,
+        "difficulty": q.difficulty,
+        "steps": [s.model_dump() for s in q.steps],
+        "check": q.check.model_dump(),
+        # Math answers were checked by SymPy; other subjects' by Claude answering again without the key.
+        "verified": True,
+        **({"figure": figure_doc(q.figure)} if q.figure else {}),
+        **({"figure": diagram_doc(q.diagram)} if q.diagram else {}),
+        **({"pair": True} if q.pair else {}),
+    } for i, q in enumerate(result.deck.questions)]
+    dropped = result.dropped
+    if request.choices_only:
+        # Claude was asked for multiple choice only; any typed-answer question that slipped through is converted.
+        docs, left_out = choices.all_choice(docs)
+        dropped += left_out
+        for i, d in enumerate(docs):
+            d["order"] = i
+        if not docs:
+            raise GenerationError("No multiple choice questions could be made for that. Try again.")
     deck_ref = db.collection("decks").document()
     batch = db.batch()
     batch.set(deck_ref, {
@@ -301,35 +332,17 @@ def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name
         "difficulty": difficulty,
         "topics": result.deck.topics,
         "notes": request.notes,
-        "questionCount": len(result.deck.questions),
+        "questionCount": len(docs),
         "source": "ai",
         **({"sourcePdf": pdf_name or "PDF"} if request.source else {}),
+        **({"choicesOnly": True} if request.choices_only else {}),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
-    for i, q in enumerate(result.deck.questions):
-        batch.set(deck_ref.collection("questions").document(), {
-            "order": i,
-            "prompt": q.prompt,
-            "math": q.math,
-            "type": q.type,
-            "choices": q.choices,
-            "answerValues": q.answer_values,
-            "answerChoice": q.answer_choice,
-            "answerDisplay": q.answer_display,
-            "tolerance": q.tolerance,
-            "concept": q.concept,
-            "difficulty": q.difficulty,
-            "steps": [s.model_dump() for s in q.steps],
-            "check": q.check.model_dump(),
-            # Math answers were checked by SymPy; other subjects' by Claude answering again without the key.
-            "verified": True,
-            **({"figure": figure_doc(q.figure)} if q.figure else {}),
-            **({"figure": diagram_doc(q.diagram)} if q.diagram else {}),
-            **({"pair": True} if q.pair else {}),
-        })
+    for d in docs:
+        batch.set(deck_ref.collection("questions").document(), d)
     batch.commit()
 
-    return {"deckId": deck_ref.id, "questionCount": len(result.deck.questions), "dropped": result.dropped}
+    return {"deckId": deck_ref.id, "questionCount": len(docs), "dropped": dropped}
 
 
 @https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=120)
@@ -1175,7 +1188,7 @@ def assign_test(req: https_fn.CallableRequest) -> dict:
         return {"id": existing.id, "added": len(added)}
 
     ref = tests.document()
-    questions = _copy_test_questions(deck, ref, writer)
+    questions, left_out = _copy_test_questions(deck, ref, writer, bool(data.get("choicesOnly")))
     for e in emails:
         _new_taker(db, writer, ref.id, uid, e)
     writer.close()
@@ -1189,20 +1202,37 @@ def assign_test(req: https_fn.CallableRequest) -> dict:
         "groupName": group.get("name"),
         "questionCount": len(questions),
         "timeLimitSec": limit,
+        **_choices_fields(data, left_out),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
-    return {"id": ref.id, "added": len(emails)}
+    return {"id": ref.id, "added": len(emails), "leftOut": left_out}
 
 
-def _copy_test_questions(deck, ref, writer) -> list[dict]:
-    """The test keeps its own copy of the deck's questions, so editing the deck later doesn't change a test."""
+def _test_questions_from(deck, choices_only: bool) -> tuple[list[dict], int]:
+    """The deck's questions for a new test, and how many were left out. A multiple choice only test turns typed-answer
+    questions into four-option ones and leaves out any that can't be (see choices.py)."""
     questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
     if not questions:
         raise _invalid("That deck has no questions.")
+    if not choices_only:
+        return questions, 0
+    picked, left_out = choices.all_choice(questions)
+    if not picked:
+        raise _invalid("None of this deck's questions could be made multiple choice. Turn off \"Multiple choice only\" to use it.")
+    return picked, left_out
+
+
+def _choices_fields(data: dict, left_out: int) -> dict:
+    return {"choicesOnly": True, "leftOut": left_out} if data.get("choicesOnly") else {}
+
+
+def _copy_test_questions(deck, ref, writer, choices_only: bool = False) -> tuple[list[dict], int]:
+    """The test keeps its own copy of the deck's questions, so editing the deck later doesn't change a test."""
+    questions, left_out = _test_questions_from(deck, choices_only)
     for i, q in enumerate(questions):
         q = {k: v for k, v in q.items() if k != "check"}  # the SymPy check isn't needed to grade
         writer.set(ref.collection("questions").document(f"{i:04d}"), {**q, "order": i})
-    return questions
+    return questions, left_out
 
 
 def _time_limit(data: dict) -> int:
@@ -1227,7 +1257,7 @@ def create_class_test(req: https_fn.CallableRequest) -> dict:
     name = _clean(data.get("name"), groups.MAX_CLASS_NAME)
     ref = db.collection("tests").document()
     writer = db.bulk_writer()
-    questions = _copy_test_questions(deck, ref, writer)
+    questions, left_out = _copy_test_questions(deck, ref, writer, bool(data.get("choicesOnly")))
     writer.close()
     ref.set({
         "ownerUid": uid,
@@ -1242,9 +1272,10 @@ def create_class_test(req: https_fn.CallableRequest) -> dict:
         "questionCount": len(questions),
         "timeLimitSec": _time_limit(data),
         "open": True,
+        **_choices_fields(data, left_out),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
-    return {"id": ref.id}
+    return {"id": ref.id, "leftOut": left_out}
 
 
 @https_fn.on_call()
@@ -1275,6 +1306,8 @@ def _test_row(db, doc) -> dict:
         "open": r.get("open", True),
         "questionCount": r.get("questionCount", 0),
         "timeLimitSec": r.get("timeLimitSec", 0),
+        "choicesOnly": bool(r.get("choicesOnly")),
+        "leftOut": r.get("leftOut", 0),
         "createdAt": _ms(r.get("createdAt")),
         "assigned": _count(takers),
         "completed": _count(takers.where("status", "==", "completed")),
@@ -2043,6 +2076,8 @@ def _public_row(db, doc) -> dict:
         "deckTitle": t.get("deckTitle", ""),
         "total": t.get("total", 0),
         "timeLimitSec": t.get("timeLimitSec", 0),
+        "choicesOnly": bool(t.get("choicesOnly")),
+        "leftOut": t.get("leftOut", 0),
         "createdAt": _ms(t.get("createdAt")),
         "plays": _count(attempts),
         "finished": _count(attempts.where("status", "==", "completed")),
@@ -2076,9 +2111,7 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
         limit = max(0, min(6 * 3600, int(data.get("timeLimitSec") or 0)))
     except (TypeError, ValueError):
         limit = 0
-    questions = sorted((q.to_dict() for q in deck.reference.collection("questions").stream()), key=lambda q: q.get("order", 0))
-    if not questions:
-        raise _invalid("That deck has no questions.")
+    questions, left_out = _test_questions_from(deck, bool(data.get("choicesOnly")))
     samples = _samples_from(data, len(questions), limit)
     ref = db.collection("publicTests").document(leaderboards.new_token())
     writer = db.bulk_writer()
@@ -2095,6 +2128,7 @@ def create_public_test(req: https_fn.CallableRequest) -> dict:
         "timeLimitSec": limit,
         "samples": samples,
         "board": leaderboards.board([], samples),
+        **_choices_fields(data, left_out),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
     return _public_row(db, ref.get())

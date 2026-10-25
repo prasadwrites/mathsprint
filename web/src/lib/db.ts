@@ -55,6 +55,8 @@ export interface GenerateInput {
   /** A PDF to write the deck from, base64-encoded; `topic` is then an optional focus. */
   pdf?: string;
   pdfName?: string;
+  /** Every question multiple choice, so nobody types an answer. */
+  choicesOnly?: boolean;
 }
 
 export async function generateDeck(input: GenerateInput) {
@@ -120,12 +122,12 @@ export async function deleteGroup(id: string) {
 }
 
 /** Gives every member of the group their own link and code. Assigning again adds anyone new to the group. */
-export async function assignTest(args: { deckId: string; groupId: string; timeLimitSec: number }) {
-  return (await httpsCallable<typeof args, { id: string; added: number }>(functions, "assign_test", { timeout: 120_000 })(args)).data;
+export async function assignTest(args: { deckId: string; groupId: string; timeLimitSec: number; choicesOnly?: boolean }) {
+  return (await httpsCallable<typeof args, { id: string; added: number; leftOut?: number }>(functions, "assign_test", { timeout: 120_000 })(args)).data;
 }
 
-export async function createClassTest(args: { deckId: string; name: string; domain: string; timeLimitSec: number }) {
-  return (await httpsCallable<typeof args, { id: string }>(functions, "create_class_test", { timeout: 120_000 })(args)).data;
+export async function createClassTest(args: { deckId: string; name: string; domain: string; timeLimitSec: number; choicesOnly?: boolean }) {
+  return (await httpsCallable<typeof args, { id: string; leftOut?: number }>(functions, "create_class_test", { timeout: 120_000 })(args)).data;
 }
 
 export async function setClassTestOpen(id: string, open: boolean) {
@@ -188,8 +190,8 @@ export async function listChallenges() {
 
 /** Admin only: a public link to one of the admin's decks, which anyone can play from without an account. */
 /** `samples` are the admin's own sample players; without them, `fill` asks for made-up ones. */
-export async function createPublicTest(deckId: string, timeLimitSec: number, fill: boolean, samples?: SampleRow[]) {
-  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec, fill, samples })).data;
+export async function createPublicTest(deckId: string, timeLimitSec: number, fill: boolean, samples?: SampleRow[], choicesOnly = false) {
+  return (await httpsCallable<object, PublicTest>(functions, "create_public_test", { timeout: 120_000 })({ deckId, timeLimitSec, fill, samples, choicesOnly })).data;
 }
 
 /** Admin only: the admin's own sample players on a link's leaderboard, new made-up ones (fill), or none. */

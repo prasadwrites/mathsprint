@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAccount } from "../App";
+import { choicesNote } from "../components/ChoicesOnly";
 import TopBar, { Chip } from "../components/TopBar";
 import { deleteGroup, listGroups, listTests, saveGroup } from "../lib/db";
 import { canUseGroups, type Group, type GroupTest } from "../lib/types";
@@ -189,7 +190,7 @@ export function TestList({ tests }: { tests: GroupTest[] }) {
             </Chip>
           </div>
           <span className="small">
-            {t.kind === "class" ? `Class link${t.groupName ? `: ${t.groupName}` : ""}${t.open === false ? " (closed)" : ""}` : t.groupName} · {t.questionCount} questions · {t.timeLimitSec ? `${Math.round(t.timeLimitSec / 60)} min` : "no time limit"} · Assigned{" "}
+            {t.kind === "class" ? `Class link${t.groupName ? `: ${t.groupName}` : ""}${t.open === false ? " (closed)" : ""}` : t.groupName} · {t.questionCount} questions · {t.timeLimitSec ? `${Math.round(t.timeLimitSec / 60)} min` : "no time limit"}{choicesNote(t)} · Assigned{" "}
             {when(t.createdAt)}
           </span>
         </li>

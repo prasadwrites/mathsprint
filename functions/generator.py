@@ -158,6 +158,8 @@ class DeckRequest:
     subject: str = subjects.DEFAULT
     # What Claude read in a PDF the student uploaded; the questions are written to match it.
     source: str = ""
+    # Every question multiple choice, so students never type an answer.
+    choices_only: bool = False
     part: int = 1
     parts: int = 1
 
@@ -249,6 +251,13 @@ def _initial_prompt(req: DeckRequest) -> str:
             f"Level: {req.level}. Difficulty: {mix}.",
             "Make most of them 'choice' questions with four options; use 'numeric' only for calculations.",
         ]
+    if req.choices_only:
+        lines.append(
+            "Make every question a 'choice' question with four options; no 'numeric' questions. "
+            + ("Each option is a single number (fractions, roots and π are fine), so when an equation has several "
+               "solutions, ask for one of them, such as the larger root, and never ask for a point."
+               if subjects.is_math(req.subject) else "")
+        )
     if req.source:
         lines.append(
             "Base the deck on this summary of material the student uploaded. Cover its topics in proportion, "
