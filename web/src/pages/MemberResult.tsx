@@ -23,7 +23,7 @@ function summary(data: TestResults, t: TestTaker, s: ReturnType<typeof memberSta
   const N = data.questions.length;
   const lines = [
     `MathSprint test result: ${data.test.deckTitle}`,
-    `${t.email}`,
+    t.name ? `${t.name} (${t.email})` : t.email,
     `Score: ${s.score}/${N} (${pct(s.pct)})`,
     `Time: ${formatClock(t.usedSec ?? 0)}${t.late ? " (sent late)" : ""}`,
     s.of > 1 ? `Place: ${ordinal(s.rank)} of ${s.of}` : "",
@@ -72,9 +72,10 @@ export default function MemberResult() {
         <div className="stack">
           <div>
             <div className="eyebrow">
-              {data.test.deckTitle} · {data.test.groupName}
+              {data.test.deckTitle} · {data.test.kind === "class" ? data.test.groupName || "Class link" : data.test.groupName}
             </div>
-            <h1 style={{ overflowWrap: "anywhere" }}>{t.email}</h1>
+            <h1 style={{ overflowWrap: "anywhere" }}>{t.name || t.email}</h1>
+            {t.name && <p className="muted" style={{ overflowWrap: "anywhere" }}>{t.email}</p>}
             <p className="muted">
               Started {when(t.startedAt)} · finished {when(t.completedAt)}
               {t.late && " · sent after the time ran out"}
@@ -176,7 +177,7 @@ export default function MemberResult() {
             <div className="row spread">
               <h2>By topic</h2>
               <span className="legend">
-                <span><i style={{ background: "var(--accent)" }} /> {t.email.split("@")[0]}</span>
+                <span><i style={{ background: "var(--accent)" }} /> {t.name || t.email.split("@")[0]}</span>
                 <span><i className="mark" /> Group</span>
               </span>
             </div>

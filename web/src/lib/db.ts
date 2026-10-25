@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, ClaudeCredit, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, ClaudeCredit, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -122,6 +122,22 @@ export async function deleteGroup(id: string) {
 /** Gives every member of the group their own link and code. Assigning again adds anyone new to the group. */
 export async function assignTest(args: { deckId: string; groupId: string; timeLimitSec: number }) {
   return (await httpsCallable<typeof args, { id: string; added: number }>(functions, "assign_test", { timeout: 120_000 })(args)).data;
+}
+
+export async function createClassTest(args: { deckId: string; name: string; domain: string; timeLimitSec: number }) {
+  return (await httpsCallable<typeof args, { id: string }>(functions, "create_class_test", { timeout: 120_000 })(args)).data;
+}
+
+export async function setClassTestOpen(id: string, open: boolean) {
+  return (await httpsCallable<{ id: string; open: boolean }, GroupTest>(functions, "set_class_test_open")({ id, open })).data;
+}
+
+export async function openClassTest(token: string, start = false) {
+  return (await httpsCallable<{ token: string; start: boolean }, OpenClassTest>(functions, "open_class_test")({ token, start })).data;
+}
+
+export async function submitClassTest(token: string, answers: Record<string, string>, track: { times: number[]; visits: number[]; changes: number[] }) {
+  return (await httpsCallable<object, OpenClassTest>(functions, "submit_class_test")({ token, answers, ...track })).data;
 }
 
 export async function listTests(deckId?: string) {

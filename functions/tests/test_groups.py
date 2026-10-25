@@ -93,3 +93,31 @@ def test_grading_reads_roots_pi_and_points():
     assert groups.is_correct(point, "(2, 5)")
     assert not groups.is_correct(point, "(5, 2)")
     assert groups.is_correct({**point, "answerValues": [3, 3]}, "(3, 3)")
+
+
+def test_class_domain_is_cleaned_and_checked():
+    assert groups.clean_domain("") == ""
+    assert groups.clean_domain(" @LincolnHigh.org ") == "lincolnhigh.org"
+    assert groups.clean_domain("teacher@school.k12.ca.us") == "school.k12.ca.us"
+    with pytest.raises(AccessDenied, match="valid email domain"):
+        groups.clean_domain("not a domain")
+    assert groups.email_in_domain("a@school.org", "")
+    assert groups.email_in_domain("A@School.org", "school.org")
+    assert groups.email_in_domain("a@students.school.org", "school.org")
+    assert not groups.email_in_domain("a@notschool.org", "school.org")
+    assert not groups.email_in_domain("a@school.org.evil.com", "school.org")
+
+
+def test_only_verified_google_sign_ins_take_class_links():
+    google = {"email": "Ann@School.org", "email_verified": True, "name": "Ann Lee", "firebase": {"sign_in_provider": "google.com"}}
+    assert groups.google_identity(google) == {"email": "ann@school.org", "name": "Ann Lee"}
+    assert groups.google_identity({**google, "firebase": {"sign_in_provider": "password"}}) is None
+    assert groups.google_identity({**google, "email_verified": False}) is None
+    assert groups.google_identity({**google, "email": ""}) is None
+    assert groups.google_identity(None) is None
+
+
+def test_one_class_attempt_per_account():
+    assert groups.class_taker_id("t1", "u1") == groups.class_taker_id("t1", "u1")
+    assert groups.class_taker_id("t1", "u1") != groups.class_taker_id("t1", "u2")
+    assert groups.class_taker_id("t1", "u1") != groups.class_taker_id("t2", "u1")

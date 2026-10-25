@@ -189,7 +189,7 @@ export function TestList({ tests }: { tests: GroupTest[] }) {
             </Chip>
           </div>
           <span className="small">
-            {t.groupName} · {t.questionCount} questions · {t.timeLimitSec ? `${Math.round(t.timeLimitSec / 60)} min` : "no time limit"} · Assigned{" "}
+            {t.kind === "class" ? `Class link${t.groupName ? `: ${t.groupName}` : ""}${t.open === false ? " (closed)" : ""}` : t.groupName} · {t.questionCount} questions · {t.timeLimitSec ? `${Math.round(t.timeLimitSec / 60)} min` : "no time limit"} · Assigned{" "}
             {when(t.createdAt)}
           </span>
         </li>

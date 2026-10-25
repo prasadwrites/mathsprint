@@ -52,6 +52,45 @@ def clean_group(name: object, emails: object) -> tuple[str, list[str]]:
     return name, out
 
 
+# Class links: one link for a whole class. Each student signs in with Google (such as their Google Classroom school
+# account), so the owner's results show the name and email Google gives, and each account gets one attempt.
+MAX_CLASS_NAME = 80
+MAX_CLASS_TAKERS = 500
+_DOMAIN = re.compile(r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def clean_domain(value: object) -> str:
+    """An optional school domain such as "lincolnhigh.org" ("" for any Google account). Raises AccessDenied to show."""
+    d = str(value or "").strip().lower().lstrip("@")
+    if "@" in d:
+        d = d.split("@")[-1]
+    if not d:
+        return ""
+    if not _DOMAIN.match(d):
+        raise AccessDenied(f"{d} isn't a valid email domain. Use something like school.org, or leave it empty.")
+    return d
+
+
+def email_in_domain(email: str, domain: str) -> bool:
+    email = (email or "").lower()
+    return not domain or email.endswith("@" + domain) or email.endswith("." + domain)
+
+
+def google_identity(token: dict | None) -> dict | None:
+    """The name and email of a Google sign-in, from the Firebase ID token, or None for any other kind of sign-in."""
+    token = token or {}
+    firebase = token.get("firebase") or {}
+    email = str(token.get("email") or "").strip().lower()
+    if firebase.get("sign_in_provider") != "google.com" or not email or not token.get("email_verified"):
+        return None
+    return {"email": email, "name": str(token.get("name") or "").strip()[:120]}
+
+
+def class_taker_id(test_id: str, uid: str) -> str:
+    """One result per student and class link, so a second tab or device opens the same attempt."""
+    return f"class_{test_id}_{uid}"
+
+
 def new_test_token() -> str:
     return secrets.token_urlsafe(12)
 
