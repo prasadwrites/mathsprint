@@ -324,7 +324,7 @@ footer a { color: var(--muted); }
     <div class="vgrid">
       <!-- Video IDs: data-desktop is the regular YouTube video, data-mobile the Short. Change them here. -->
       <div class="card vcard reveal">
-        <button type="button" class="vplay" data-desktop="fxvrUCLrzcg" data-mobile="6F12WCMocwg" data-title="Create a test deck on any subject">
+        <button type="button" class="vplay" data-desktop="fxvrUCLrzcg" data-mobile="6F12WCMocwg" data-desktop-url="https://www.youtube.com/watch?v=fxvrUCLrzcg" data-mobile-url="https://youtube.com/shorts/6F12WCMocwg" data-title="Create a test deck on any subject">
           <img alt="" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
           <span class="len">▶ Watch: deck creation</span>
         </button>
@@ -335,7 +335,7 @@ footer a { color: var(--muted); }
         </div>
       </div>
       <div class="card vcard reveal">
-        <button type="button" class="vplay" data-desktop="fxvrUCLrzcg" data-mobile="SATt7eBtxtI" data-title="Run a group test">
+        <button type="button" class="vplay" data-desktop="GmwPQjpQ5qI" data-mobile="SATt7eBtxtI" data-desktop-url="https://www.youtube.com/watch?v=GmwPQjpQ5qI" data-mobile-url="https://www.youtube.com/shorts/SATt7eBtxtI" data-title="Run a group test">
           <img alt="" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
           <span class="len">▶ Watch: group tests</span>
         </button>
@@ -593,7 +593,8 @@ footer a { color: var(--muted); }
     img.onerror = function () { img.remove(); };
     img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
     btn.setAttribute("aria-label", "Play video: " + btn.dataset.title);
-    btn.closest(".vcard").querySelector(".yt").href = phone ? "https://www.youtube.com/shorts/" + id : "https://www.youtube.com/watch?v=" + id;
+    // The exact links Prasad gave; the embed above needs just the video ID inside them.
+    btn.closest(".vcard").querySelector(".yt").href = phone ? btn.dataset.mobileUrl : btn.dataset.desktopUrl;
     btn.addEventListener("click", function () {
       var f = document.createElement("iframe");
       f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&playsinline=1&modestbranding=1";
