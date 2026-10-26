@@ -252,6 +252,36 @@ footer a { color: var(--muted); }
 .float.conf .dot { background: var(--good-soft); color: var(--good); }
 @media (max-width: 640px) { .float.conf { position: static; margin-top: 12px; animation: none; } }
 
+
+/* Hero video: the poster and a big play button first, the player only after a click */
+.hvid-wrap { display: grid; gap: 14px; }
+@media (min-width: 901px) { .hero .wrap { grid-template-columns: .9fr 1.2fr; } }
+.hvid { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; border: 0; padding: 0; background: #0b1220; cursor: pointer; box-shadow: var(--shadow), 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent); }
+.hvid img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s ease; }
+.hvid:hover img { transform: scale(1.03); }
+.hvid .pbtn { position: absolute; left: 50%; top: 76%; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 99px; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 0 rgba(37, 87, 214, .6); animation: pulse 2s ease-out infinite; transition: transform .2s ease; }
+.hvid:hover .pbtn { transform: scale(1.08); }
+.hvid .pbtn svg { margin-left: 6px; }
+.hvid .vtag { position: absolute; left: 14px; bottom: 14px; background: rgba(11, 18, 32, .78); color: #fff; font-weight: 700; font-size: 15px; padding: 7px 12px; border-radius: 99px; }
+.hvid:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.hvid-wrap video { width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; background: #000; display: block; }
+.hvid-wrap.vertical .hvid, .hvid-wrap.vertical video { aspect-ratio: 9 / 16; max-height: 64vh; width: auto; max-width: 100%; margin-inline: auto; }
+.vcap { font-size: 15px; color: var(--muted); text-align: center; }
+.vcap b { color: var(--ink); }
+@keyframes pulse { 70% { box-shadow: 0 0 0 22px rgba(37, 87, 214, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 87, 214, 0); } }
+.btn-watch .ico { width: 22px; height: 22px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 10px; }
+.stackcol { display: grid; gap: 20px; }
+/* Phones: the video sits right under the headline, before the longer copy */
+@media (max-width: 900px) {
+  .hero .copy { display: contents; }
+  .hero .wrap { gap: 0; }
+  .hero .vertical .pbtn { top: 70%; }
+  .hero .eyebrow { order: 1; } .hero h1 { order: 2; } .hvid-wrap { order: 3; margin-bottom: 24px; }
+  .hero .lede { order: 4; } .hero .ctas { order: 5; } .hero .fine { order: 6; }
+}
+.stackcol .float { display: none; }
+@media (prefers-reduced-motion: reduce) { .hvid .pbtn { animation: none; } }
+
 /* Pain points */
 .worry { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .worry .card { padding: 24px; }
@@ -287,6 +317,7 @@ footer a { color: var(--muted); }
   <div class="wrap">
     <a class="brand" href="/" data-cta>Math<span>Sprint</span></a>
     <nav>
+      <a class="plain" href="#video">Video</a>
       <a class="plain" href="#how">How it works</a>
       <a class="plain" href="#pinpoint">Find the gaps</a>
       <a class="plain" href="#week">Test week plan</a>
@@ -299,31 +330,24 @@ footer a { color: var(--muted); }
 <main>
 <div class="hero">
   <div class="wrap">
-    <div>
+    <div class="copy">
       <span class="eyebrow">For parents of high school and college students</span>
       <h1>Know they're ready <em>before</em> the class test.</h1>
       <p class="lede">MathSprint gives your student timed practice tests on exactly what's coming up, built from the topic or the teacher's review sheet. Their results pinpoint the topics that still need work, so they can fix them this week and walk into the real test with confidence.</p>
       <div class="ctas">
         <a class="btn btn-primary" href="/" data-cta>Start a free practice test →</a>
-        <a class="btn" href="#how">See how it works</a>
+        <a class="btn btn-watch" href="#video" id="watchCta"><span class="ico">▶</span>Watch the 1-minute video</a>
       </div>
       <div class="fine"><span>5 free decks</span><span>No card needed</span><span>Every answer checked</span></div>
     </div>
 
-    <div class="demo" aria-label="Example: a practice test result that shows which topics to practice next">
-      <div class="card check">
-        <div class="topic">Practice test · Unit 4 review · Algebra 2</div>
-        <div class="score"><b>7<small>/10</small></b><span>70%</span></div>
-        <div class="verdict"><b>Good accuracy, but pace can improve</b><p>Most answers were right. A few topics took a lot longer than they should.</p></div>
-        <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--f-display);font-size:18px">Practice next</b><span class="chip">From their sessions</span></div>
-        <ul class="weak" id="heroWeak">
-          <li><span>Completing the square</span><b style="color:var(--bad)">40%</b><span class="t"><i style="--w:40%;background:var(--bad)"></i></span></li>
-          <li><span>Quadratic word problems</span><b style="color:var(--warn)">60%</b><span class="t"><i style="--w:60%;background:var(--miss)"></i></span></li>
-          <li><span>Vertex form</span><b style="color:var(--warn)">75%</b><span class="t"><i style="--w:75%;background:var(--miss)"></i></span></li>
-        </ul>
-        <div class="acts"><span class="pri">Build a deck from these</span><span>Retry the 3 I missed</span></div>
-      </div>
-      <div class="card float conf" aria-hidden="true"><span class="dot">✓</span><span><b>Fix it before Friday</b><br />Practice the weak topics, not the whole chapter</span></div>
+    <div class="hvid-wrap" id="video">
+      <button type="button" class="hvid" id="hvid" aria-label="Play the 78-second video for parents">
+        <img id="hvidPoster" src="/videos/parents-poster.jpg" alt="" />
+        <span class="pbtn" aria-hidden="true"><svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
+        <span class="vtag">▶ Watch · 78 seconds</span>
+      </button>
+      <p class="vcap"><b>See how MathSprint finds the weak spots.</b> Results, the topics to practice next, and a new deck that targets them.</p>
     </div>
   </div>
 </div>
@@ -394,6 +418,22 @@ footer a { color: var(--muted); }
         <li><span class="ic">↻</span><div><b>Turn a weak spot into a deck</b><span>"Build a deck from these" makes new questions on just those topics.</span></div></li>
       </ul>
     </div>
+    <div class="stackcol">
+    <div class="demo reveal" aria-label="Example: a practice test result that shows which topics to practice next">
+      <div class="card check">
+        <div class="topic">Practice test · Unit 4 review · Algebra 2</div>
+        <div class="score"><b>7<small>/10</small></b><span>70%</span></div>
+        <div class="verdict"><b>Good accuracy, but pace can improve</b><p>Most answers were right. A few topics took a lot longer than they should.</p></div>
+        <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--f-display);font-size:18px">Practice next</b><span class="chip">From their sessions</span></div>
+        <ul class="weak" id="heroWeak">
+          <li><span>Completing the square</span><b style="color:var(--bad)">40%</b><span class="t"><i style="--w:40%;background:var(--bad)"></i></span></li>
+          <li><span>Quadratic word problems</span><b style="color:var(--warn)">60%</b><span class="t"><i style="--w:60%;background:var(--miss)"></i></span></li>
+          <li><span>Vertex form</span><b style="color:var(--warn)">75%</b><span class="t"><i style="--w:75%;background:var(--miss)"></i></span></li>
+        </ul>
+        <div class="acts"><span class="pri">Build a deck from these</span><span>Retry the 3 I missed</span></div>
+      </div>
+      <div class="card float conf" aria-hidden="true"><span class="dot">✓</span><span><b>Fix it before Friday</b><br />Practice the weak topics, not the whole chapter</span></div>
+    </div>
     <div class="card results reveal" aria-label="Example: where the time went on a practice test">
       <div class="topic">Practice test · Algebra 2 · 10 questions · 12 min</div>
       <h3>Where the time went</h3>
@@ -405,6 +445,7 @@ footer a { color: var(--muted); }
         <div class="r"><span class="mono muted">Q5</span><span class="bar slow" style="--w:78%"></span><span class="mono" style="color:var(--miss)">1:41</span></div>
       </div>
       <p style="margin-top:16px;font-size:15px">They spent the most time on <b>completing the square</b>: 3:46 across 2 questions, and missed both of them.</p>
+    </div>
     </div>
   </div>
 </section>
@@ -569,6 +610,26 @@ footer a { color: var(--muted); }
   addEventListener("scroll", function () { top.classList.toggle("scrolled", scrollY > 8); }, { passive: true });
 
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Hero video: phones (narrow, or portrait touch screens) get the vertical cut. It loads only on click.
+  var phone = matchMedia("(max-width: 640px), (orientation: portrait) and (pointer: coarse)").matches;
+  var wrap = document.getElementById("video"), hv = document.getElementById("hvid");
+  if (phone) { wrap.classList.add("vertical"); document.getElementById("hvidPoster").src = "/videos/parents-vertical-poster.jpg"; }
+  function play() {
+    var v = document.createElement("video");
+    v.src = phone ? "/videos/parents-vertical.mp4" : "/videos/parents.mp4";
+    v.poster = document.getElementById("hvidPoster").src;
+    v.controls = true; v.autoplay = true; v.playsInline = true;
+    v.setAttribute("playsinline", "");
+    hv.replaceWith(v);
+    v.play().catch(function () {});
+  }
+  hv.addEventListener("click", play, { once: true });
+  document.getElementById("watchCta").addEventListener("click", function (e) {
+    e.preventDefault();
+    wrap.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+    if (document.contains(hv)) play();
+  });
   var els = document.querySelectorAll(".reveal, #timeTile, #heroWeak");
   if ("IntersectionObserver" in window && !still) {
     var io = new IntersectionObserver(function (entries) {
