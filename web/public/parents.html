@@ -264,8 +264,12 @@ footer a { color: var(--muted); }
 .hvid .pbtn svg { margin-left: 6px; }
 .hvid .vtag { position: absolute; left: 14px; bottom: 14px; background: rgba(11, 18, 32, .78); color: #fff; font-weight: 700; font-size: 15px; padding: 7px 12px; border-radius: 99px; }
 .hvid:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
-.hvid-wrap video { width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; background: #000; display: block; }
-.hvid-wrap.vertical .hvid, .hvid-wrap.vertical video { aspect-ratio: 9 / 16; max-height: 64vh; width: auto; max-width: 100%; margin-inline: auto; }
+/* The player replaces the poster button. It has no overlay, so YouTube's own controls (full screen, Watch on YouTube) work. */
+.hvid-wrap .vbox { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; background: #000; }
+.hvid-wrap .vbox iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.vcap .yt { font-weight: 700; text-decoration: none; white-space: nowrap; }
+.vcap .yt:hover { text-decoration: underline; }
+.hvid-wrap.vertical .hvid, .hvid-wrap.vertical .vbox { aspect-ratio: 9 / 16; width: min(100%, calc(64vh * 9 / 16)); margin-inline: auto; }
 .vcap { font-size: 15px; color: var(--muted); text-align: center; }
 .vcap b { color: var(--ink); }
 @keyframes pulse { 70% { box-shadow: 0 0 0 22px rgba(37, 87, 214, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 87, 214, 0); } }
@@ -342,12 +346,13 @@ footer a { color: var(--muted); }
     </div>
 
     <div class="hvid-wrap" id="video">
-      <button type="button" class="hvid" id="hvid" aria-label="Play the 78-second video for parents">
+      <!-- YouTube videos: data-desktop is the regular video, data-mobile the Short; the -url attributes are the exact links Prasad gave. -->
+      <button type="button" class="hvid" id="hvid" aria-label="Play the 78-second video for parents" data-desktop="YiDQOVtOZMk" data-mobile="czocVjjQbH4" data-desktop-url="https://youtu.be/YiDQOVtOZMk?is=n-jWoU7CfoxB25LL" data-mobile-url="https://youtube.com/shorts/czocVjjQbH4?is=WESVvEr2rKGxmQAs">
         <img id="hvidPoster" src="/videos/parents-poster.jpg" alt="" />
         <span class="pbtn" aria-hidden="true"><svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
         <span class="vtag">▶ Watch · 78 seconds</span>
       </button>
-      <p class="vcap"><b>See how MathSprint finds the weak spots.</b> Results, the topics to practice next, and a new deck that targets them.</p>
+      <p class="vcap"><b>See how MathSprint finds the weak spots.</b> Results, the topics to practice next, and a new deck that targets them. <a class="yt" id="hvidYt" target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
     </div>
   </div>
 </div>
@@ -444,7 +449,7 @@ footer a { color: var(--muted); }
         <div class="r"><span class="mono muted">Q4</span><span class="bar" style="--w:40%"></span><span class="mono">0:52</span></div>
         <div class="r"><span class="mono muted">Q5</span><span class="bar slow" style="--w:78%"></span><span class="mono" style="color:var(--miss)">1:41</span></div>
       </div>
-      <p style="margin-top:16px;font-size:15px">They spent the most time on <b>completing the square</b>: 3:46 across 2 questions, and missed both of them.</p>
+      <p style="margin-top:16px;font-size:15px">They spent the most time on <b>completing the square</b>: 3:46 across 2 questions, and missed both of them. <a class="yt" id="hvidYt" target="_blank" rel="noopener">Watch on YouTube ↗</a></p>
     </div>
     </div>
   </div>
@@ -611,18 +616,24 @@ footer a { color: var(--muted); }
 
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Hero video: phones (narrow, or portrait touch screens) get the vertical cut. It loads only on click.
+  // Hero video: phones (narrow, or portrait touch screens) get the YouTube Short, everyone else the regular video.
+  // The YouTube player loads only on click, which keeps the page fast.
   var phone = matchMedia("(max-width: 640px), (orientation: portrait) and (pointer: coarse)").matches;
   var wrap = document.getElementById("video"), hv = document.getElementById("hvid");
   if (phone) { wrap.classList.add("vertical"); document.getElementById("hvidPoster").src = "/videos/parents-vertical-poster.jpg"; }
+  var vid = phone ? hv.dataset.mobile : hv.dataset.desktop;
+  document.getElementById("hvidYt").href = phone ? hv.dataset.mobileUrl : hv.dataset.desktopUrl;
   function play() {
-    var v = document.createElement("video");
-    v.src = phone ? "/videos/parents-vertical.mp4" : "/videos/parents.mp4";
-    v.poster = document.getElementById("hvidPoster").src;
-    v.controls = true; v.autoplay = true; v.playsInline = true;
-    v.setAttribute("playsinline", "");
-    hv.replaceWith(v);
-    v.play().catch(function () {});
+    var f = document.createElement("iframe");
+    f.src = "https://www.youtube-nocookie.com/embed/" + vid + "?autoplay=1&rel=0&playsinline=1&modestbranding=1";
+    f.title = "MathSprint for parents: find the weak spots, then fix them";
+    f.allow = "fullscreen; accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+    f.allowFullscreen = true;
+    f.setAttribute("allowfullscreen", "");
+    var box = document.createElement("div");
+    box.className = "vbox";
+    box.appendChild(f);
+    hv.replaceWith(box);
   }
   hv.addEventListener("click", play, { once: true });
   document.getElementById("watchCta").addEventListener("click", function (e) {
