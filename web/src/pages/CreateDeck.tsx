@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAccount, useIsAdmin } from "../App";
 import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip, Icon } from "../components/TopBar";
-import { type DeckProgress, generateDeck, newProgressId, watchDeckProgress } from "../lib/db";
+import { type DeckProgress, clearDeckProgress, generateDeck, newProgressId, watchDeckProgress } from "../lib/db";
 import { formatClock } from "../lib/pace";
 import { DEFAULT_SUBJECT, STARTER_SUBJECTS, cleanSubjects, isMath, listSubjects, sameSubject } from "../lib/subjects";
 import type { Difficulty } from "../lib/types";
@@ -31,28 +31,46 @@ function storeCode(code: string | null) {
 const MAX_PDF_MB = 10;
 
 /** The progress panel shown while the server builds the deck. `progress` is null until its first update. */
-function BuildProgress({ progress, count, pdf, math }: { progress: DeckProgress | null; count: number; pdf: boolean; math: boolean }) {
+function BuildProgress({ progress, count, pdf, math, cutOff }: { progress: DeckProgress | null; count: number; pdf: boolean; math: boolean; cutOff: boolean }) {
   const [elapsed, setElapsed] = useState(0);
+  const card = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const start = Date.now();
     const t = setInterval(() => setElapsed((Date.now() - start) / 1000), 1000);
     return () => clearInterval(t);
   }, []);
+  // On a phone the Generate button is far down the page; bring the card into view so it's clear something started.
+  useEffect(() => {
+    const el = card.current;
+    if (!el) return;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+    el.focus({ preventScroll: true });
+  }, []);
   const total = progress?.total || count;
   const written = progress?.written ?? 0;
   const checked = progress?.checked ?? 0;
+  const fixing = progress?.fixing ?? 0;
   // Parts of a big deck run side by side, so one can be checking while others are still writing.
-  const stage = !progress ? (pdf ? "reading" : "writing") : written < total && progress.stage !== "reading" ? "writing" : progress.stage;
+  const stage = !progress
+    ? pdf ? "reading" : "writing"
+    : progress.stage === "reading" ? "reading"
+    : written < total ? "writing"
+    : fixing > 0 ? "fixing"
+    : progress.stage;
   const doing = {
     reading: "Reading your PDF",
-    writing: written === 0 ? "Planning the questions" : `Writing question ${written + 1}`,
+    writing: written === 0 ? "Planning the deck. Claude thinks it through first, so the count starts after a short wait" : `Writing question ${written + 1}`,
     checking: math ? "Checking every answer with a math engine" : "Checking every answer",
-    fixing: "Rewriting questions that didn't check out",
+    fixing: `Rewriting ${fixing === 1 ? "1 question" : `${fixing} questions`} that didn't check out`,
     saving: "Saving your deck",
+    done: "Opening your deck",
+    failed: "",
   }[stage];
-  const waiting = stage === "reading" || (stage === "writing" && written === 0);
+  // Stages with no count to show: the stripes keep moving so the card never looks stuck.
+  const waiting = stage !== "writing" || written === 0;
   return (
-    <div className="panel stack" aria-live="polite">
+    <div ref={card} tabIndex={-1} className="panel stack build" aria-live="polite">
       <div className="row spread">
         <h2 className="row" style={{ gap: 10 }}>
           <span className="spinner" /> Building your deck
@@ -65,7 +83,7 @@ function BuildProgress({ progress, count, pdf, math }: { progress: DeckProgress 
       </p>
       <div>
         <div
-          className={`progress${waiting ? " waiting" : ""}`}
+          className={`progress${waiting && stage !== "saving" ? " waiting" : ""}`}
           role="progressbar"
           aria-label="Questions written"
           aria-valuemin={0}
@@ -78,11 +96,16 @@ function BuildProgress({ progress, count, pdf, math }: { progress: DeckProgress 
           <strong>
             {written} of {total} questions written
           </strong>
-          {checked > 0 && <span className="muted small">{checked} checked</span>}
+          {checked > 0 && <span className="muted small">{checked} of {total} checked</span>}
         </div>
         <p className="muted small" style={{ margin: "4px 0 0" }}>
           {doing}…
         </p>
+        {cutOff && (
+          <p className="muted small" style={{ margin: "4px 0 0" }}>
+            The connection dropped for a moment, but your deck is still being built. This page will open it when it's done.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -121,6 +144,7 @@ export default function CreateDeck() {
   const needsCode = codeAsked || !!account?.needsCode;
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<DeckProgress | null>(null);
+  const [cutOff, setCutOff] = useState(false);
   // The build keeps going if the student leaves the page; when it ends, don't pull them back to the deck.
   const here = useRef(true);
   useEffect(() => () => void (here.current = false), []);
@@ -160,39 +184,84 @@ export default function CreateDeck() {
     reader.readAsDataURL(file);
   };
 
-  const submit = async () => {
+  const submit = () => {
     setBusy(true);
     setError("");
     setProgress(null);
+    setCutOff(false);
     const progressId = newProgressId();
-    // The server writes progress there as it goes; the watch starts first so no update is missed.
-    const stop = watchDeckProgress(progressId, (p) => p && setProgress(p));
-    try {
-      const res = await generateDeck({
-        topic,
-        count: clamp(count),
-        difficulty,
-        // With a PDF, an empty level lets the server use the course the PDF is pitched at.
-        level: level || (pdf ? "" : "High school or college"),
-        notes,
-        subject,
-        accessCode: accessCode.trim(),
-        choicesOnly,
-        progressId,
-        ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
-      });
-      if (needsCode) storeCode(accessCode.trim());
-      refresh();
-      if (here.current) navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
-    } catch (e) {
-      if ((e as Error).message === "That access code isn't right.") storeCode(null);
-      if (/access code/i.test((e as Error).message)) setCodeAsked(true);
-      refresh();
-      setError((e as Error).message || "The deck couldn't be generated. Try again.");
-      setBusy(false);
-    } finally {
+    const code = accessCode.trim();
+    const rememberCode = needsCode;
+    let ended = false;
+    let heard = false;
+    let lost: Error | null = null;
+    let giveUp: number | undefined;
+
+    const finish = () => {
+      ended = true;
       stop();
-    }
+      window.clearTimeout(giveUp);
+      clearDeckProgress(progressId);
+    };
+    const succeed = (deckId: string, dropped: number) => {
+      if (ended) return;
+      finish();
+      if (rememberCode) storeCode(code);
+      refresh();
+      if (here.current) navigate(`/decks/${deckId}?fresh=1${dropped ? `&dropped=${dropped}` : ""}`);
+    };
+    const fail = (message: string) => {
+      if (ended) return;
+      finish();
+      if (message === "That access code isn't right.") storeCode(null);
+      if (/access code/i.test(message)) setCodeAsked(true);
+      refresh();
+      setError(message || "The deck couldn't be generated. Try again.");
+      setBusy(false);
+    };
+    // If the server goes quiet after the connection dropped, it isn't coming back.
+    const waitForServer = () => {
+      window.clearTimeout(giveUp);
+      giveUp = window.setTimeout(() => fail(lost?.message || "The deck couldn't be generated. Try again."), 4 * 60_000);
+    };
+
+    // The server writes progress there as it goes, and how the build ended. The watch starts first so no update is
+    // missed, and it picks up again by itself when a phone wakes the page.
+    const stop = watchDeckProgress(progressId, (p) => {
+      if (!p) return;
+      heard = true;
+      if (p.stage === "done" && p.deckId) succeed(p.deckId, p.dropped ?? 0);
+      else if (p.stage === "failed") fail(p.error ?? "");
+      else {
+        setProgress(p);
+        if (lost) waitForServer();
+      }
+    });
+
+    generateDeck({
+      topic,
+      count: clamp(count),
+      difficulty,
+      // With a PDF, an empty level lets the server use the course the PDF is pitched at.
+      level: level || (pdf ? "" : "High school or college"),
+      notes,
+      subject,
+      accessCode: code,
+      choicesOnly,
+      progressId,
+      ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
+    })
+      .then((res) => succeed(res.deckId, res.dropped))
+      .catch((e: Error) => {
+        // Turned away before the build started (plan limits, access code): nothing more is coming.
+        if (!heard) return fail(e.message);
+        // Otherwise the request may only have been cut off, e.g. by a phone putting the browser to sleep, while the
+        // server carries on. The progress record says how it ends; a real error is written there too.
+        lost = e;
+        // A real error usually lands in the record within moments; only say the connection dropped if it doesn't.
+        window.setTimeout(() => !ended && setCutOff(true), 3000);
+        waitForServer();
+      });
   };
 
   const clamp = (n: number) => Math.max(3, Math.min(maxQuestions, n || 3));
@@ -297,7 +366,7 @@ export default function CreateDeck() {
               )}
             </div>
 
-            {busy && <BuildProgress progress={progress} count={clamp(count)} pdf={!!pdf} math={math} />}
+            {busy && <BuildProgress progress={progress} count={clamp(count)} pdf={!!pdf} math={math} cutOff={cutOff} />}
 
             {asked && !busy && (
               <form

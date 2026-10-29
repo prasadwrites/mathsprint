@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -63,17 +64,27 @@ export interface GenerateInput {
 }
 
 /** How far a deck being built has got. `written` counts questions Claude has finished writing, `checked` those
- * whose answers passed the check. */
+ * whose answers passed the check, `fixing` those being rewritten because they didn't. It ends as "done" with the
+ * new deck's id, or "failed" with the error. */
 export interface DeckProgress {
   total: number;
   written: number;
   checked: number;
-  stage: "reading" | "writing" | "checking" | "fixing" | "saving";
+  fixing?: number;
+  stage: "reading" | "writing" | "checking" | "fixing" | "saving" | "done" | "failed";
+  deckId?: string;
+  dropped?: number;
+  error?: string;
 }
 
 export const newProgressId = () => doc(collection(db, "deckProgress")).id;
 
 /** Calls back with each update the server makes while building the deck; returns the function that stops watching. */
+/** Deletes the progress record once the app has read how the build ended. */
+export function clearDeckProgress(id: string) {
+  deleteDoc(doc(db, "deckProgress", id)).catch(() => {});
+}
+
 export function watchDeckProgress(id: string, onChange: (p: DeckProgress | null) => void) {
   return onSnapshot(
     doc(db, "deckProgress", id),

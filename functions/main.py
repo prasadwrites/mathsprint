@@ -259,35 +259,38 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             if request.progress:
                 request.progress.set_stage("writing")
         request.level = request.level or "High school or college"
-        return _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "")
+        result = _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "")
+        if request.progress:
+            request.progress.end(deckId=result["deckId"], dropped=result["dropped"])
+        return result
     except Exception as e:
         # A deck that never got saved shouldn't count against the plan.
         _account_ref(db, uid).update({"decksCreated": firestore.Increment(-1)})
         if isinstance(e, GenerationError):
             message = f"{e} ({e.detail})" if admin and e.detail else str(e)
-            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, message)
-        # Anything else would reach the app as a bare "INTERNAL"; log the cause and say something useful instead.
-        log.exception("generate_deck failed for topic %r", request.topic)
-        detail = f" ({type(e).__name__}: {e})" if admin else ""
-        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INTERNAL, f"The deck couldn't be built. Try again.{detail}")
+            code = https_fn.FunctionsErrorCode.FAILED_PRECONDITION
+        else:
+            # Anything else would reach the app as a bare "INTERNAL"; log the cause and say something useful instead.
+            log.exception("generate_deck failed for topic %r", request.topic)
+            detail = f" ({type(e).__name__}: {e})" if admin else ""
+            message, code = f"The deck couldn't be built. Try again.{detail}", https_fn.FunctionsErrorCode.INTERNAL
+        if request.progress:
+            request.progress.end(error=message)
+        raise https_fn.HttpsError(code, message)
     finally:
         _record_spend(db)
-        if progress_ref is not None:
-            try:
-                progress_ref.delete()
-            except Exception:
-                log.warning("couldn't clear deck progress", exc_info=True)
 
 
 def _progress_ref(db, uid: str, progress_id, total: int, pdf: bool):
     """The document the app watches for the progress bar while a deck is built, under an id the app picked.
-    None if the app didn't ask for one (an older version) or the id isn't a plain Firestore id."""
+    None if the app didn't ask for one (an older version) or the id isn't a plain Firestore id. It ends with the new
+    deck's id or the error, and the app deletes it once it has read that."""
     if not isinstance(progress_id, str) or not re.fullmatch(r"[A-Za-z0-9]{10,40}", progress_id):
         return None
     ref = db.collection("deckProgress").document(progress_id)
     try:
         ref.set({
-            "ownerId": uid, "total": total, "written": 0, "checked": 0,
+            "ownerId": uid, "total": total, "written": 0, "checked": 0, "fixing": 0,
             "stage": "reading" if pdf else "writing", "updatedAt": firestore.SERVER_TIMESTAMP,
         })
     except Exception:

@@ -152,26 +152,59 @@ def api_error(e: anthropic.APIError) -> GenerationError:
 
 class Progress:
     """How far a deck build has got, for the progress bar in the app. Parts of a big deck run side by side and all
-    report here; `save` gets a snapshot at most about once a second, and at once when the stage changes."""
+    report here; `save` gets a snapshot at most about once a second, and at once when the stage changes. An update
+    that comes too soon is saved when the second is up, so the bar never sits on an old count."""
 
     def __init__(self, total: int, save=None, every: float = 1.0):
         self.total, self.written, self.checked, self.stage = total, 0, 0, "writing"
+        # While questions that failed their check are rewritten: how many are being rewritten.
+        self.fixing = 0
         self._save, self._every, self._last = save, every, 0.0
         self._lock = threading.Lock()
+        self._timer: threading.Timer | None = None
 
     def snapshot(self) -> dict:
-        return {"total": self.total, "written": self.written, "checked": self.checked, "stage": self.stage}
+        return {"total": self.total, "written": self.written, "checked": self.checked, "stage": self.stage, "fixing": self.fixing}
+
+    def _flush(self) -> None:
+        self._last = time.monotonic()
+        try:
+            self._save(self.snapshot())
+        except Exception:  # a missed update only makes the bar lag; never fail the deck over it
+            log.warning("progress update failed", exc_info=True)
+
+    def _later(self) -> None:
+        with self._lock:
+            self._timer = None
+            self._flush()
 
     def _changed(self, force: bool = False) -> None:
         if self._save is None:
             return
-        now = time.monotonic()
-        if force or now - self._last >= self._every:
-            self._last = now
-            try:
-                self._save(self.snapshot())
-            except Exception:  # a missed update only makes the bar lag; never fail the deck over it
-                log.warning("progress update failed", exc_info=True)
+        wait = self._every - (time.monotonic() - self._last)
+        if force or wait <= 0:
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
+            self._flush()
+        elif self._timer is None:
+            self._timer = threading.Timer(wait, self._later)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def end(self, **fields) -> None:
+        """The last update: the deck is saved (`deckId`) or the build failed (`error`). The app goes on from here
+        even if its own request to build the deck was cut off, e.g. by a phone putting the browser to sleep."""
+        with self._lock:
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
+            self.stage = "done" if "deckId" in fields else "failed"
+            if self._save is not None:
+                try:
+                    self._save({**self.snapshot(), **fields})
+                except Exception:
+                    log.warning("progress update failed", exc_info=True)
 
     def set_stage(self, stage: str) -> None:
         with self._lock:
@@ -186,6 +219,13 @@ class Progress:
     def passed(self, n: int) -> None:
         with self._lock:
             self.checked = min(self.total, self.checked + n)
+            self._changed(force=True)
+
+    def rewriting(self, n: int) -> None:
+        """`n` more questions go back to be rewritten (negative once they're done)."""
+        with self._lock:
+            self.fixing = max(0, self.fixing + n)
+            self.stage = "fixing" if self.fixing else "checking"
             self._changed(force=True)
 
 
@@ -534,11 +574,16 @@ def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
         if not failed:
             break
         log.info("repairing %d questions: %s", len(failed), [r for _, r in failed])
-        repairs += len(failed)
+        asked = len(failed)
+        repairs += asked
         if progress:
-            progress.set_stage("fixing")
-        fixed = _ask(client, _repair_prompt(req, failed), system)
-        fixed_good, failed = _sort(client, req, fixed.questions[: len(failed)])
+            progress.rewriting(asked)
+        try:
+            fixed = _ask(client, _repair_prompt(req, failed), system)
+            fixed_good, failed = _sort(client, req, fixed.questions[:asked])
+        finally:
+            if progress:
+                progress.rewriting(-asked)
         good += fixed_good
         if progress:
             progress.passed(len(fixed_good))
