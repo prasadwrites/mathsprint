@@ -241,8 +241,9 @@ def test_progress_counts_questions_as_they_are_written():
     assert len(result.deck.questions) == 3
     written = [s["written"] for s in seen if s["stage"] == "writing"]
     assert written == [1, 2, 3]  # one at a time, and the last once the reply ends
-    assert [s["stage"] for s in seen if s["stage"] != "writing"] == ["checking", "checking", "fixing", "fixing"]
-    assert progress.snapshot() == {"total": 3, "written": 3, "checked": 3, "stage": "fixing"}
+    later = [(s["stage"], s["fixing"], s["checked"]) for s in seen if s["stage"] != "writing"]
+    assert later == [("checking", 0, 0), ("checking", 0, 2), ("fixing", 1, 2), ("checking", 0, 2), ("checking", 0, 3)]
+    assert progress.snapshot() == {"total": 3, "written": 3, "checked": 3, "stage": "checking", "fixing": 0}
     assert not client.decks  # the repair was asked too (without streaming)
 
 
@@ -253,3 +254,27 @@ def test_progress_never_passes_the_total():
     extra = deck(make_q([2, 3]), make_q([2, 3]), make_q([2, 3]))
     generate_deck(DeckRequest("Quadratics", 2, "Medium", "Algebra II", progress=progress), StreamingFakeClient([extra], chunk=1))
     assert progress.written == 2 and progress.checked == 2
+
+
+def test_progress_saves_a_held_back_update_when_its_second_is_up():
+    import time
+
+    from generator import Progress
+
+    seen = []
+    progress = Progress(5, seen.append, every=0.2)
+    progress.wrote()  # saved at once
+    progress.wrote()  # too soon: held back
+    assert [s["written"] for s in seen] == [1]
+    time.sleep(0.4)
+    assert [s["written"] for s in seen] == [1, 2]
+
+
+def test_progress_ends_with_the_deck_or_the_error():
+    from generator import Progress
+
+    seen = []
+    Progress(5, seen.append).end(deckId="d1", dropped=0)
+    Progress(5, seen.append).end(error="Claude is busy right now.")
+    assert (seen[0]["stage"], seen[0]["deckId"]) == ("done", "d1")
+    assert (seen[1]["stage"], seen[1]["error"]) == ("failed", "Claude is busy right now.")
