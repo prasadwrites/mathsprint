@@ -212,7 +212,7 @@ def _reserve_deck(db, req: https_fn.CallableRequest, count: int, admin: bool, co
 def generate_deck(req: https_fn.CallableRequest) -> dict:
     # Imported here, not at the top: anthropic and SymPy are slow to load, and Firebase gives a deploy
     # only 10 seconds to load this file and list its functions.
-    from generator import DeckRequest, GenerationError
+    from generator import DeckRequest, GenerationError, Progress
 
     uid = _require_user(req)
     admin = accounts.is_admin(req.auth.token)
@@ -243,6 +243,9 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         subject=subjects.pick(data.get("subject"), _subject_list(db)),
         choices_only=bool(data.get("choicesOnly")),
     )
+    progress_ref = _progress_ref(db, uid, data.get("progressId"), count, pdf is not None)
+    if progress_ref is not None:
+        request.progress = Progress(count, lambda snap: progress_ref.set({**snap, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True))
 
     try:
         # Read only after the deck is reserved, so plan limits and access codes apply before any AI credit is spent.
@@ -253,6 +256,8 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             request.topic = topic or source.topic
             request.level = request.level or source.level
             request.source = source.summary
+            if request.progress:
+                request.progress.set_stage("writing")
         request.level = request.level or "High school or college"
         return _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "")
     except Exception as e:
@@ -267,6 +272,28 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INTERNAL, f"The deck couldn't be built. Try again.{detail}")
     finally:
         _record_spend(db)
+        if progress_ref is not None:
+            try:
+                progress_ref.delete()
+            except Exception:
+                log.warning("couldn't clear deck progress", exc_info=True)
+
+
+def _progress_ref(db, uid: str, progress_id, total: int, pdf: bool):
+    """The document the app watches for the progress bar while a deck is built, under an id the app picked.
+    None if the app didn't ask for one (an older version) or the id isn't a plain Firestore id."""
+    if not isinstance(progress_id, str) or not re.fullmatch(r"[A-Za-z0-9]{10,40}", progress_id):
+        return None
+    ref = db.collection("deckProgress").document(progress_id)
+    try:
+        ref.set({
+            "ownerId": uid, "total": total, "written": 0, "checked": 0,
+            "stage": "reading" if pdf else "writing", "updatedAt": firestore.SERVER_TIMESTAMP,
+        })
+    except Exception:
+        log.warning("couldn't start deck progress", exc_info=True)
+        return None
+    return ref
 
 
 def _pdf_bytes(value) -> bytes | None:
@@ -292,6 +319,8 @@ def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name
     from generator import GenerationError, generate_deck as _generate
 
     result = _generate(request)
+    if request.progress:
+        request.progress.set_stage("saving")
     docs = [{
         "order": i,
         "prompt": q.prompt,

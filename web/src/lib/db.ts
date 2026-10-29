@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   type QueryDocumentSnapshot,
@@ -57,6 +58,29 @@ export interface GenerateInput {
   pdfName?: string;
   /** Every question multiple choice, so nobody types an answer. */
   choicesOnly?: boolean;
+  /** Where the server reports how far it has got; see `watchDeckProgress`. */
+  progressId?: string;
+}
+
+/** How far a deck being built has got. `written` counts questions Claude has finished writing, `checked` those
+ * whose answers passed the check. */
+export interface DeckProgress {
+  total: number;
+  written: number;
+  checked: number;
+  stage: "reading" | "writing" | "checking" | "fixing" | "saving";
+}
+
+export const newProgressId = () => doc(collection(db, "deckProgress")).id;
+
+/** Calls back with each update the server makes while building the deck; returns the function that stops watching. */
+export function watchDeckProgress(id: string, onChange: (p: DeckProgress | null) => void) {
+  return onSnapshot(
+    doc(db, "deckProgress", id),
+    (snap) => onChange(snap.exists() ? (snap.data() as DeckProgress) : null),
+    // The bar is a nicety: if it can't be watched, the build carries on and the page just shows it running.
+    () => onChange(null),
+  );
 }
 
 export async function generateDeck(input: GenerateInput) {
