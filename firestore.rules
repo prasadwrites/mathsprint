@@ -40,6 +40,13 @@ service cloud.firestore {
       }
     }
 
+    // How far a deck being built has got, for the app's progress bar. Only generate_deck writes it. The app starts
+    // watching before the function creates it, so a missing document can be read too (it holds nothing).
+    match /deckProgress/{progressId} {
+      allow read: if signedIn() && (resource == null || resource.data.ownerId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /sessions/{sessionId} {
       allow read: if owns(resource.data);
       allow create: if owns(request.resource.data) && request.resource.data.status == "active";

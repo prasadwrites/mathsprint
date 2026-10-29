@@ -201,3 +201,55 @@ def test_choices_only_deck_asks_for_multiple_choice():
     req = DeckRequest(topic="Quadratics", count=5, difficulty="Medium", level="Algebra 1", choices_only=True)
     assert "no 'numeric' questions" in _initial_prompt(req)
     assert "no 'numeric' questions" not in _initial_prompt(DeckRequest(topic="Quadratics", count=5, difficulty="Medium", level="Algebra 1"))
+
+
+class StreamingFakeClient(FakeClient):
+    """Streams each queued deck's JSON in small chunks, as the API does when the app is watching progress."""
+
+    def __init__(self, decks, chunk=5):
+        super().__init__(decks)
+        self.chunk = chunk
+        self.beta.messages.stream = self._stream
+
+    def _stream(self, **kw):
+        self.prompts.append(kw["messages"][0]["content"])
+        d = self.decks.pop(0)
+        text, size = d.model_dump_json(), self.chunk
+
+        class Stream:
+            text_stream = (text[i : i + size] for i in range(0, len(text), size))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def get_final_message(self):
+                return SimpleNamespace(stop_reason="end_turn", parsed_output=d)
+
+        return Stream()
+
+
+def test_progress_counts_questions_as_they_are_written():
+    from generator import Progress
+
+    seen = []
+    progress = Progress(3, seen.append, every=0)
+    client = StreamingFakeClient([deck(make_q([2, 3]), make_q([2, 3]), make_q([-2, -3])), deck(make_q([4], expr="x - 4 = 0"))])
+    result = generate_deck(DeckRequest("Quadratics", 3, "Medium", "Algebra II", progress=progress), client)
+    assert len(result.deck.questions) == 3
+    written = [s["written"] for s in seen if s["stage"] == "writing"]
+    assert written == [1, 2, 3]  # one at a time, and the last once the reply ends
+    assert [s["stage"] for s in seen if s["stage"] != "writing"] == ["checking", "checking", "fixing", "fixing"]
+    assert progress.snapshot() == {"total": 3, "written": 3, "checked": 3, "stage": "fixing"}
+    assert not client.decks  # the repair was asked too (without streaming)
+
+
+def test_progress_never_passes_the_total():
+    from generator import Progress
+
+    progress = Progress(2)
+    extra = deck(make_q([2, 3]), make_q([2, 3]), make_q([2, 3]))
+    generate_deck(DeckRequest("Quadratics", 2, "Medium", "Algebra II", progress=progress), StreamingFakeClient([extra], chunk=1))
+    assert progress.written == 2 and progress.checked == 2

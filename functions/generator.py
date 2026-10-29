@@ -11,6 +11,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import List
@@ -148,6 +150,45 @@ def api_error(e: anthropic.APIError) -> GenerationError:
     return GenerationError(UNAVAILABLE, detail)
 
 
+class Progress:
+    """How far a deck build has got, for the progress bar in the app. Parts of a big deck run side by side and all
+    report here; `save` gets a snapshot at most about once a second, and at once when the stage changes."""
+
+    def __init__(self, total: int, save=None, every: float = 1.0):
+        self.total, self.written, self.checked, self.stage = total, 0, 0, "writing"
+        self._save, self._every, self._last = save, every, 0.0
+        self._lock = threading.Lock()
+
+    def snapshot(self) -> dict:
+        return {"total": self.total, "written": self.written, "checked": self.checked, "stage": self.stage}
+
+    def _changed(self, force: bool = False) -> None:
+        if self._save is None:
+            return
+        now = time.monotonic()
+        if force or now - self._last >= self._every:
+            self._last = now
+            try:
+                self._save(self.snapshot())
+            except Exception:  # a missed update only makes the bar lag; never fail the deck over it
+                log.warning("progress update failed", exc_info=True)
+
+    def set_stage(self, stage: str) -> None:
+        with self._lock:
+            self.stage = stage
+            self._changed(force=True)
+
+    def wrote(self, n: int = 1) -> None:
+        with self._lock:
+            self.written = min(self.total, self.written + n)
+            self._changed()
+
+    def passed(self, n: int) -> None:
+        with self._lock:
+            self.checked = min(self.total, self.checked + n)
+            self._changed(force=True)
+
+
 @dataclass
 class DeckRequest:
     topic: str
@@ -162,6 +203,8 @@ class DeckRequest:
     choices_only: bool = False
     part: int = 1
     parts: int = 1
+    # Shared by every part of the deck; None when nobody is watching.
+    progress: Progress | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass
@@ -176,19 +219,35 @@ def _too_large(e: anthropic.APIError) -> bool:
     return isinstance(e, anthropic.BadRequestError) and "grammar is too large" in str(e)
 
 
-def _ask(client: anthropic.Anthropic, prompt: str, system: str = SYSTEM) -> GeneratedDeck:
+QUESTION_KEY = '"prompt"'
+
+
+def _ask(client: anthropic.Anthropic, prompt: str, system: str = SYSTEM, on_question=None) -> GeneratedDeck:
+    """Asks Claude for a deck. With `on_question`, the reply is streamed and it's called as each question starts."""
+    args = dict(
+        model=MODEL,
+        max_tokens=20000,  # room for figures; kept under the SDK's non-streaming limit
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=GeneratedDeck,
+        output_config={"effort": "medium"},
+        # If a request is declined by a safety classifier, retry on a fallback model.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+    )
     try:
-        response = client.beta.messages.parse(
-            model=MODEL,
-            max_tokens=20000,  # room for figures; kept under the SDK's non-streaming limit
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            output_format=GeneratedDeck,
-            output_config={"effort": "medium"},
-            # If a request is declined by a safety classifier, retry on a fallback model.
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
+        if on_question is None:
+            response = client.beta.messages.parse(**args)
+        else:
+            with client.beta.messages.stream(**args) as stream:
+                # Each question is the only object with a "prompt" key; quotes inside strings arrive escaped.
+                tail = ""
+                for chunk in stream.text_stream:
+                    text = tail + chunk
+                    for _ in range(text.count(QUESTION_KEY)):
+                        on_question()
+                    tail = text[-(len(QUESTION_KEY) - 1):]
+                response = stream.get_final_message()
     except anthropic.APIError as e:
         if _too_large(e):
             # The API refuses to compile the deck schema into a grammar: ask for the same JSON as plain text instead.
@@ -450,8 +509,25 @@ def _sort(client: anthropic.Anthropic, req: DeckRequest, questions: list[Generat
 
 def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
     system = system_for(req.subject)
-    draft = _ask(client, _initial_prompt(req), system)
+    progress = req.progress
+    started, written = 0, 0
+
+    def on_question() -> None:
+        # A question starting means the one before it is written.
+        nonlocal started, written
+        started += 1
+        if 1 < started <= req.count:  # Claude sometimes writes one extra; it's cut below
+            written += 1
+            progress.wrote()
+
+    draft = _ask(client, _initial_prompt(req), system, on_question if progress else None)
+    if progress:
+        # The last question is written only once the reply ends; this also covers any the stream count missed.
+        progress.wrote(max(0, min(req.count, len(draft.questions)) - written))
+        progress.set_stage("checking")
     good, failed = _sort(client, req, draft.questions[: req.count])
+    if progress:
+        progress.passed(len(good))
 
     repairs = 0
     for _ in range(MAX_REPAIR_ROUNDS):
@@ -459,9 +535,13 @@ def _generate_part(req: DeckRequest, client: anthropic.Anthropic) -> DeckResult:
             break
         log.info("repairing %d questions: %s", len(failed), [r for _, r in failed])
         repairs += len(failed)
+        if progress:
+            progress.set_stage("fixing")
         fixed = _ask(client, _repair_prompt(req, failed), system)
         fixed_good, failed = _sort(client, req, fixed.questions[: len(failed)])
         good += fixed_good
+        if progress:
+            progress.passed(len(fixed_good))
 
     if not good:
         raise GenerationError("None of the generated questions passed the answer check. Try a narrower topic.")

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAccount, useIsAdmin } from "../App";
 import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip, Icon } from "../components/TopBar";
-import { generateDeck } from "../lib/db";
+import { type DeckProgress, generateDeck, newProgressId, watchDeckProgress } from "../lib/db";
+import { formatClock } from "../lib/pace";
 import { DEFAULT_SUBJECT, STARTER_SUBJECTS, cleanSubjects, isMath, listSubjects, sameSubject } from "../lib/subjects";
 import type { Difficulty } from "../lib/types";
 
@@ -29,14 +30,63 @@ function storeCode(code: string | null) {
 // Matches the server's limit; base64 makes the upload a third bigger, still well inside a function request.
 const MAX_PDF_MB = 10;
 
-const steps = (count: number, pdf: boolean, math: boolean) => [
-  ...(pdf ? ["Reading your PDF"] : []),
-  `Writing ${count} questions with Claude`,
-  math ? "Writing step-by-step solutions" : "Writing explanations",
-  math ? "Checking answers with SymPy" : "Answering each question again to check it",
-  "Fixing anything that didn't check out",
-  "Saving your deck",
-];
+/** The progress panel shown while the server builds the deck. `progress` is null until its first update. */
+function BuildProgress({ progress, count, pdf, math }: { progress: DeckProgress | null; count: number; pdf: boolean; math: boolean }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const t = setInterval(() => setElapsed((Date.now() - start) / 1000), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const total = progress?.total || count;
+  const written = progress?.written ?? 0;
+  const checked = progress?.checked ?? 0;
+  // Parts of a big deck run side by side, so one can be checking while others are still writing.
+  const stage = !progress ? (pdf ? "reading" : "writing") : written < total && progress.stage !== "reading" ? "writing" : progress.stage;
+  const doing = {
+    reading: "Reading your PDF",
+    writing: written === 0 ? "Planning the questions" : `Writing question ${written + 1}`,
+    checking: math ? "Checking every answer with a math engine" : "Checking every answer",
+    fixing: "Rewriting questions that didn't check out",
+    saving: "Saving your deck",
+  }[stage];
+  const waiting = stage === "reading" || (stage === "writing" && written === 0);
+  return (
+    <div className="panel stack" aria-live="polite">
+      <div className="row spread">
+        <h2 className="row" style={{ gap: 10 }}>
+          <span className="spinner" /> Building your deck
+        </h2>
+        <span className="muted small mono">{formatClock(elapsed)}</span>
+      </div>
+      <p className="note">
+        This runs in the background and takes a while: {count > 20 ? "big decks can take several minutes" : "usually a minute or two"}.
+        You can leave this page; the deck still gets finished and shows up under My decks.
+      </p>
+      <div>
+        <div
+          className={`progress${waiting ? " waiting" : ""}`}
+          role="progressbar"
+          aria-label="Questions written"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={written}
+        >
+          <i style={{ width: `${(written / total) * 100}%` }} />
+        </div>
+        <div className="row spread" style={{ marginTop: 8 }}>
+          <strong>
+            {written} of {total} questions written
+          </strong>
+          {checked > 0 && <span className="muted small">{checked} checked</span>}
+        </div>
+        <p className="muted small" style={{ margin: "4px 0 0" }}>
+          {doing}…
+        </p>
+      </div>
+    </div>
+  );
+}
 
 /** Example topics for the topic box, by subject. */
 const EXAMPLES: Record<string, { topic: string; level: string; notes: string }> = {
@@ -70,7 +120,10 @@ export default function CreateDeck() {
   const [codeAsked, setCodeAsked] = useState(false);
   const needsCode = codeAsked || !!account?.needsCode;
   const [busy, setBusy] = useState(false);
-  const [step, setStep] = useState(0);
+  const [progress, setProgress] = useState<DeckProgress | null>(null);
+  // The build keeps going if the student leaves the page; when it ends, don't pull them back to the deck.
+  const here = useRef(true);
+  useEffect(() => () => void (here.current = false), []);
   const [error, setError] = useState("");
   const [pdf, setPdf] = useState<{ name: string; data: string } | null>(null);
   const [subjects, setSubjects] = useState(() => cleanSubjects(STARTER_SUBJECTS));
@@ -78,7 +131,6 @@ export default function CreateDeck() {
   const [editing, setEditing] = useState(false);
   const math = isMath(subject);
   const ex = examples(subject);
-  const STEPS = steps(count, !!pdf, math);
 
   useEffect(() => {
     listSubjects().then((list) => {
@@ -108,17 +160,13 @@ export default function CreateDeck() {
     reader.readAsDataURL(file);
   };
 
-  // The pipeline runs server-side in one call; advance the checklist so the wait is legible.
-  useEffect(() => {
-    if (!busy) return;
-    setStep(0);
-    const t = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 9000);
-    return () => clearInterval(t);
-  }, [busy, STEPS.length]);
-
   const submit = async () => {
     setBusy(true);
     setError("");
+    setProgress(null);
+    const progressId = newProgressId();
+    // The server writes progress there as it goes; the watch starts first so no update is missed.
+    const stop = watchDeckProgress(progressId, (p) => p && setProgress(p));
     try {
       const res = await generateDeck({
         topic,
@@ -130,17 +178,20 @@ export default function CreateDeck() {
         subject,
         accessCode: accessCode.trim(),
         choicesOnly,
+        progressId,
         ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
       });
       if (needsCode) storeCode(accessCode.trim());
       refresh();
-      navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
+      if (here.current) navigate(`/decks/${res.deckId}?fresh=1${res.dropped ? `&dropped=${res.dropped}` : ""}`);
     } catch (e) {
       if ((e as Error).message === "That access code isn't right.") storeCode(null);
       if (/access code/i.test((e as Error).message)) setCodeAsked(true);
       refresh();
       setError((e as Error).message || "The deck couldn't be generated. Try again.");
       setBusy(false);
+    } finally {
+      stop();
     }
   };
 
@@ -246,7 +297,9 @@ export default function CreateDeck() {
               )}
             </div>
 
-            {asked && (
+            {busy && <BuildProgress progress={progress} count={clamp(count)} pdf={!!pdf} math={math} />}
+
+            {asked && !busy && (
               <form
                 className="panel stack"
                 onSubmit={(e) => {
@@ -356,13 +409,11 @@ export default function CreateDeck() {
                 )}
                 {suspended && <p className="error">Your account is suspended. Contact the person who runs MathSprint.</p>}
                 <div className="row">
-                  <button className="btn btn-primary btn-big" type="submit" disabled={busy || outOfDecks || suspended}>
-                    <Icon name="sparkle" /> {busy ? "Generating…" : "Generate deck"}
+                  <button className="btn btn-primary btn-big" type="submit" disabled={outOfDecks || suspended}>
+                    <Icon name="sparkle" /> Generate deck
                   </button>
-                  {busy ? (
-                    <span className="muted">{count > 20 ? "Big decks are written in parts and can take several minutes" : "Usually under a minute for 10 questions"}</span>
-                  ) : (
-                    <button
+                  <span className="muted small">Takes a minute or two, longer for big decks</span>
+                  <button
                       type="button"
                       className="btn-link"
                       onClick={() => {
@@ -372,34 +423,20 @@ export default function CreateDeck() {
                       }}
                     >
                       {pdf ? "Choose another file" : "Change topic"}
-                    </button>
-                  )}
+                  </button>
                 </div>
                 {error && <p className="error">{error}</p>}
               </form>
             )}
           </div>
 
-          <aside className="side panel stack" aria-live="polite">
-            <div className="row spread">
-              <h2>{busy ? "Generating" : "Every answer gets checked"}</h2>
-            </div>
+          <aside className="side panel stack">
+            <h2>Every answer gets checked</h2>
             <p className="muted">
               {math
                 ? "Claude writes the questions. A math engine solves each one again on its own, and anything that disagrees is rewritten before you see it."
                 : "Claude writes the questions, then answers each one again without seeing the key. Anything it answers differently, or finds unclear, is rewritten before you see it. Calculations are also checked by a math engine."}
             </p>
-            <ul className="checklist">
-              {STEPS.map((s, i) => {
-                const state = !busy ? "" : i < step ? "done" : i === step ? "on" : "";
-                return (
-                  <li key={s} className={state}>
-                    <span className="dot">{state === "done" && <Icon name="check" size={14} />}</span>
-                    <span>{s}</span>
-                  </li>
-                );
-              })}
-            </ul>
           </aside>
         </div>
       </main>

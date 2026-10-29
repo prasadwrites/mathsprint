@@ -31,6 +31,14 @@ export default function DeckReview() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [postPick, setPostPick] = useState<{ id: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  // Questions show as one line each; these are the ones opened to full size.
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setOpen((o) => {
+    const next = new Set(o);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
 
   useEffect(() => {
     getDeck(deckId).then(setDeck);
@@ -115,44 +123,73 @@ export default function DeckReview() {
         <div className="panel">
           <div className="row spread">
             <h2>Questions</h2>
-            <span className="muted">Answers stay hidden until after you practice{mine ? ", or until you edit a question" : ""}</span>
+            {questions.length > 0 && (
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => setOpen(open.size === questions.length ? new Set() : new Set(questions.map((q) => q.id)))}
+              >
+                {open.size === questions.length ? "Collapse all" : "Expand all"}
+              </button>
+            )}
           </div>
+          <p className="muted small" style={{ margin: "4px 0 0" }}>
+            Tap a question to see it in full. Answers stay hidden until after you practice{mine ? ", or until you edit a question" : ""}.
+          </p>
           <ul className="qlist" style={{ marginTop: 12 }}>
-            {questions.map((q, i) => (
-              <li key={q.id}>
-                <span className="n">{i + 1}</span>
-                <span className="q">
-                  {q.prompt} <span className="mono">{q.math}</span>
-                  {q.figure && <Figure figure={q.figure} small />}
-                </span>
-                <span className="row" style={{ gap: 6 }}>
-                  <Chip>{q.concept}</Chip>
-                  <Chip tone={q.difficulty === "Hard" ? "miss" : "neutral"}>{q.difficulty}</Chip>
-                  {mine && admin && (
-                    <button type="button" className="btn-link" onClick={() => setPostPick({ id: q.id })} aria-label={`Make a post of question ${i + 1}`}>
-                      Post it
+            {questions.map((q, i) => {
+              const full = open.has(q.id) || editing === q.id;
+              return (
+                <li key={q.id} className={full ? "open" : "closed"}>
+                  <span className="n">{i + 1}</span>
+                  {full ? (
+                    <span className="q">
+                      <button type="button" className="qline-toggle" aria-expanded onClick={() => toggle(q.id)}>
+                        <span className="qfull">
+                          {q.prompt} <span className="mono">{q.math}</span>
+                        </span>
+                        <span className="chev"><Icon name="chevron" size={16} /></span>
+                      </button>
+                      {q.figure && <Figure figure={q.figure} small />}
+                    </span>
+                  ) : (
+                    <button type="button" className="q qline-toggle" aria-expanded={false} onClick={() => toggle(q.id)}>
+                      <span className="qline">
+                        {q.prompt} {q.math && <span className="mono">{q.math}</span>}
+                        {q.figure && <span className="muted"> · with a picture</span>}
+                      </span>
+                      <span className="chev"><Icon name="chevron" size={16} /></span>
                     </button>
                   )}
-                  {mine && editing !== q.id && (
-                    <button type="button" className="btn-link" onClick={() => setEditing(q.id)} aria-label={`Edit question ${i + 1}`}>
-                      Edit
-                    </button>
+                  <span className="row" style={{ gap: 6 }}>
+                    <Chip tone={q.difficulty === "Hard" ? "miss" : "neutral"}>{q.difficulty}</Chip>
+                    {full && <Chip>{q.concept}</Chip>}
+                    {full && mine && admin && (
+                      <button type="button" className="btn-link" onClick={() => setPostPick({ id: q.id })} aria-label={`Make a post of question ${i + 1}`}>
+                        Post it
+                      </button>
+                    )}
+                    {full && mine && editing !== q.id && (
+                      <button type="button" className="btn-link" onClick={() => setEditing(q.id)} aria-label={`Edit question ${i + 1}`}>
+                        Edit
+                      </button>
+                    )}
+                  </span>
+                  {editing === q.id && (
+                    <EditQuestion
+                      deckId={deck.id}
+                      subject={subjectOf(deck)}
+                      question={q}
+                      onCancel={() => setEditing(null)}
+                      onSaved={(saved) => {
+                        setQuestions(questions.map((x) => (x.id === saved.id ? saved : x)));
+                        setEditing(null);
+                      }}
+                    />
                   )}
-                </span>
-                {editing === q.id && (
-                  <EditQuestion
-                    deckId={deck.id}
-                    subject={subjectOf(deck)}
-                    question={q}
-                    onCancel={() => setEditing(null)}
-                    onSaved={(saved) => {
-                      setQuestions(questions.map((x) => (x.id === saved.id ? saved : x)));
-                      setEditing(null);
-                    }}
-                  />
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </div>
       </main>
