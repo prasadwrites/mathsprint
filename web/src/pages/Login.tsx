@@ -7,6 +7,13 @@ import { pendingRef } from "../lib/signupRef";
 import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
 
+/** Who sent this visitor, from the ?ref= tag a landing page puts on its sign-up links (like "tutors-oct-email"). */
+function audience(ref: string | null) {
+  if (ref?.startsWith("tutors")) return "Type a topic or upload a worksheet, and get a timed practice deck with worked solutions and checked answers for your next session.";
+  if (ref?.startsWith("parents")) return "Build a practice test on exactly what's coming up, and see which topics need work before test day.";
+  return "Timed practice for high school and college math, SAT, ACT and AP: build a deck on any topic and see exactly where your time went.";
+}
+
 export default function Login() {
   const invite = pendingInvite();
   const board = pendingPublicClaim();
@@ -39,10 +46,23 @@ export default function Login() {
     <div className="wrap" style={{ maxWidth: 440 }}>
       <div className="stack" style={{ paddingTop: "10vh" }}>
         <Brand />
-        <h1>Timed math practice for high school and college students.</h1>
-        <p className="muted">
-          Create a deck on any topic, practice against the clock, and see exactly where your time went. <Link to="/plans">Compare plans</Link>
-        </p>
+        {mode === "signup" ? (
+          <>
+            {/* Every "Start free" button on the landing pages lands here, so this repeats their promise. */}
+            <h1>Build your first deck free, no card needed.</h1>
+            <p className="muted">
+              {audience(pendingRef())} Your first 5 decks are free. <Link to="/plans">Compare plans</Link>
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>Timed math practice for high school and college students.</h1>
+            <p className="muted">
+              Create a deck on any topic, practice against the clock, and see exactly where your time went. New here? Your first 5 decks are free, no card
+              needed. <Link to="/plans">Compare plans</Link>
+            </p>
+          </>
+        )}
         {invite && (
           <p className="notice" role="status">
             <b>A friend invited you to MathSprint.</b>
@@ -57,6 +77,9 @@ export default function Login() {
         <button className="btn-primary btn-big" onClick={() => run(() => signInWithPopup(auth, googleProvider))}>
           Continue with Google
         </button>
+        <p className="muted" style={{ textAlign: "center", margin: 0, fontSize: 14 }}>
+          or use your email
+        </p>
         <form
           className="panel stack"
           onSubmit={(e) => {

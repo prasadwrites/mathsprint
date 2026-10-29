@@ -3,6 +3,10 @@
     "public": "web/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "predeploy": ["npm --prefix web run build"],
+    "redirects": [
+      { "source": "/pricing", "destination": "/plans", "type": 301 },
+      { "source": "/features", "destination": "/tutors", "type": 301 }
+    ],
     "rewrites": [
       { "source": "/c/**", "function": { "functionId": "challenge_page", "region": "us-central1" } },
       { "source": "/p/**", "function": { "functionId": "public_test_page", "region": "us-central1" } },
@@ -12,6 +16,11 @@
       { "source": "/tutors/", "destination": "/tutors.html" },
       { "source": "/parents", "destination": "/parents.html" },
       { "source": "/parents/", "destination": "/parents.html" },
+      { "source": "/plans", "destination": "/plans.html" },
+      { "source": "/about", "destination": "/about.html" },
+      { "source": "/privacy", "destination": "/privacy.html" },
+      { "source": "/vs/worksheets", "destination": "/vs/worksheets.html" },
+      { "source": "/api/stats", "function": { "functionId": "site_stats", "region": "us-central1" } },
       { "source": "**", "destination": "/index.html" }
     ]
   },

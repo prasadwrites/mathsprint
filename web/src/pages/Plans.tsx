@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Brand, Icon } from "../components/TopBar";
 import { auth } from "../lib/firebase";
-import { PLANS, type PlanId } from "../lib/types";
+import { PLANS, planPrice, type PlanId } from "../lib/types";
 
 type Cell = boolean | string;
 const value = (by: Record<PlanId, number>) => Object.fromEntries(PLANS.map((p) => [p.id, String(by[p.id])])) as Record<PlanId, Cell>;
@@ -12,6 +12,7 @@ const paid: Record<PlanId, Cell> = { free: false, pro: true, promax: true };
 
 /** Deck and question limits come from PLANS, which mirrors the server. */
 const ROWS: { label: string; detail?: string; cells: Record<PlanId, Cell> }[] = [
+  { label: "Price", detail: "Free needs no card", cells: Object.fromEntries(PLANS.map((p) => [p.id, planPrice(p.usdPerMonth)])) as Record<PlanId, Cell> },
   { label: "Decks you can build", detail: "Counted when you build them, so deleting one doesn't give it back", cells: value({ free: PLANS[0].decks, pro: PLANS[1].decks, promax: PLANS[2].decks }) },
   { label: "Questions per deck", cells: value({ free: PLANS[0].questions, pro: PLANS[1].questions, promax: PLANS[2].questions }) },
   { label: "AI decks on any topic, every answer checked", cells: all },
@@ -37,10 +38,16 @@ function Mark({ cell }: { cell: Cell }) {
   );
 }
 
+/** Same as the served plans.html title (see vite.config.ts), for visits that arrive from inside the app. */
+const PLANS_TITLE = "MathSprint plans and pricing: timed practice decks for tutors";
+
 /** Anyone can compare the plans, signed in or not. */
 export default function Plans() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useEffect(() => {
+    document.title = PLANS_TITLE;
+  }, []);
 
   return (
     <>
@@ -64,7 +71,9 @@ export default function Plans() {
       <main className="page narrow">
         <div className="stack" style={{ gap: 8 }}>
           <h1>Compare plans</h1>
-          <p className="muted">Every plan gets timed practice with AI-built decks. Bigger plans give you more and bigger decks, plus tools for teachers and tutors.</p>
+          <p className="muted">
+            Every plan gets timed practice with AI-built decks and checked answers. Bigger plans give you more and bigger decks, plus tools for teachers and tutors. Pro costs less than one tutoring hour a month.
+          </p>
         </div>
 
         <div className="panel plans-table-wrap">

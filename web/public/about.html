@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="MathSprint" />
+<meta property="og:image" content="https://mathsprint.org/tutors-og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="theme-color" content="#2557d6" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%232557d6%22/%3E%3Cpath d=%22M9 17l5 5 9-12%22 stroke=%22white%22 stroke-width=%224%22 fill=%22none%22 stroke-linecap=%22round%22/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap" />
+<link rel="stylesheet" href="/site.css" />
+<title>About MathSprint: who we are and how answers are checked</title>
+<meta name="description" content="MathSprint builds timed practice decks with worked solutions, and a math engine checks every answer. Who we are, how it works, and how to reach us." />
+<link rel="canonical" href="https://mathsprint.org/about" />
+<meta property="og:url" content="https://mathsprint.org/about" />
+<meta property="og:title" content="About MathSprint" />
+<meta property="og:description" content="Who makes MathSprint, how every answer gets checked, and how to reach us." />
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/tutors">Math<span>Sprint</span></a>
+    <nav>
+      <a class="plain" href="/tutors">For tutors</a>
+      <a class="plain" href="/parents">For parents</a>
+      <a class="plain" href="/plans">Plans</a>
+      <a class="btn" href="/?ref=site">Start free</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <span class="eyebrow">About us</span>
+    <h1>We make checked, timed practice for math and science.</h1>
+    <p class="lede">MathSprint builds a timed practice deck with worked solutions in about a minute, from a topic or your own worksheet. Tutors and teachers assign decks as tests. Students practice against the clock and see where their time went.</p>
+
+    <!-- Founder block. Hidden until it's filled in with real details: your name, a photo (put it in web/public, e.g.
+         /team/photo.jpg), two sentences on why you built MathSprint in your own words, and a LinkedIn or X link.
+         Then delete the hidden attribute. -->
+    <section class="card" id="founder" hidden style="display:flex;gap:18px;align-items:flex-start;margin-top:28px">
+      <img src="" alt="" width="88" height="88" style="border-radius:99px;object-fit:cover;flex:none" />
+      <div>
+        <h3>NAME, founder</h3>
+        <p>WHY I BUILT THIS: two sentences in your own voice.</p>
+        <a href="">LinkedIn or X profile</a>
+      </div>
+    </section>
+
+    <h2>Why we built it</h2>
+    <p>AI can write a practice set in seconds, but it makes arithmetic slips, and a wrong answer key is the last thing a tutor wants to explain mid-session. So MathSprint doesn't take its word for it: every answer is solved a second time by a separate math engine before a student sees it.</p>
+
+    <h2>How a deck gets made</h2>
+    <ul>
+      <li>You type a topic and level, like "related rates, AP Calc AB," or upload a worksheet or chapter PDF.</li>
+      <li>Claude, an AI model made by Anthropic, writes the questions and step-by-step solutions.</li>
+      <li>SymPy, an open source math engine, solves each question again on its own. Anything that disagrees is rewritten, and anything that still doesn't check out is left out of the deck.</li>
+      <li>We read an uploaded PDF to build the deck, then don't store the file.</li>
+    </ul>
+
+    <h2>Who it's for, and who it isn't</h2>
+    <p>MathSprint is for high school and college students, from Algebra 1 through AP Calculus and college math, SAT and ACT prep, and subjects like physics and chemistry. It's for the tutors, teachers and parents who set their practice, too. Accounts are for ages 13 and up.</p>
+    <p>It isn't a full tutoring business tool: there's no scheduling, invoicing or lesson notes. It does practice decks, timed tests and results.</p>
+
+    <h2>Talk to us</h2>
+    <p>Write to <a href="mailto:team@mathsprint.org">team@mathsprint.org</a> with a question, a bug, or a deck that came out wrong. A person reads every message. Our demo videos are on <a href="https://www.youtube.com/@mathsprint_go" rel="noopener">YouTube</a>.</p>
+    <p>See also our <a href="/privacy">privacy statement</a> and <a href="/plans">plans and pricing</a>.</p>
+
+    <div class="cta">
+      <a class="btn" href="/?ref=about">Build your first deck free →</a>
+      <p class="muted">5 free decks. No card needed.</p>
+    </div>
+  </div>
+</main>
+<footer>
+  <div class="wrap">
+    <span><b style="color:var(--ink)">MathSprint</b> · Timed practice for high school and college students</span>
+    <nav aria-label="Footer"><a href="/plans">Plans</a><a href="/about">About us</a><a href="/privacy">Privacy</a><a href="/vs/worksheets">MathSprint vs worksheets</a><a href="/tutors">For tutors</a><a href="/parents">For parents</a><a href="mailto:team@mathsprint.org">team@mathsprint.org</a></nav>
+  </div>
+</footer>
+</body>
+</html>

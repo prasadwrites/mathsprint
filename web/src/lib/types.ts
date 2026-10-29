@@ -356,12 +356,15 @@ export interface PlanLimits {
   max_questions: number;
 }
 
-/** Mirrors PLANS in functions/accounts.py, for showing the choices. The server enforces the limits. */
-export const PLANS: { id: PlanId; label: string; decks: number; questions: number }[] = [
-  { id: "free", label: "Free", decks: 5, questions: 20 },
-  { id: "pro", label: "Pro", decks: 50, questions: 120 },
-  { id: "promax", label: "Pro Max", decks: 100, questions: 200 },
+/** Mirrors PLANS in functions/accounts.py, for showing the choices. The server enforces the limits.
+ * usdPerMonth is the advertised price; Square charges SQUARE_PRO_PRICE_CENTS / SQUARE_PROMAX_PRICE_CENTS, so keep them equal. */
+export const PLANS: { id: PlanId; label: string; decks: number; questions: number; usdPerMonth: number }[] = [
+  { id: "free", label: "Free", decks: 5, questions: 20, usdPerMonth: 0 },
+  { id: "pro", label: "Pro", decks: 50, questions: 120, usdPerMonth: 5 },
+  { id: "promax", label: "Pro Max", decks: 100, questions: 200, usdPerMonth: 10 },
 ];
+
+export const planPrice = (usd: number) => (usd ? `$${usd} / month` : "$0");
 
 /** A Pro or Pro Max user's contact group, such as a class. */
 export interface Group {

@@ -1,0 +1,12 @@
+# MathSprint
+
+> MathSprint builds timed practice decks with worked solutions in about a minute, from a typed topic or an uploaded worksheet. Claude writes the questions and solutions; a separate math engine (SymPy) solves every question again, and anything that disagrees is rewritten or left out. For high school and college math (Algebra 1 through AP Calculus and college math), SAT and ACT prep, and subjects like physics and chemistry.
+
+Plans (monthly, USD): Free $0 (5 decks, up to 20 questions each, no card needed); Pro $5/month (50 decks, up to 120 questions each, student groups, assigned tests with per-student results, deck sharing by email); Pro Max $10/month (100 decks, up to 200 questions each). Payments by Square. Contact: team@mathsprint.org.
+
+- [For tutors](https://mathsprint.org/tutors): build a deck, assign it as a test, see each student's score and time on every question
+- [For parents](https://mathsprint.org/parents): practice tests on what's coming up, and the topics that need work
+- [Plans and pricing](https://mathsprint.org/plans): every plan compared
+- [About us](https://mathsprint.org/about): how decks are made and checked
+- [Privacy](https://mathsprint.org/privacy): what we store and what we never do
+- [MathSprint vs hand-written worksheets](https://mathsprint.org/vs/worksheets)
