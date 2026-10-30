@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import Figure from "../components/Figure";
 import EditQuestion from "../components/EditQuestion";
 import DeleteDeck from "../components/DeleteDeck";
+import RenameDeck from "../components/RenameDeck";
 import AssignTest from "../components/AssignTest";
 import ShareDeck from "../components/ShareDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
@@ -90,7 +91,10 @@ export default function DeckReview() {
               <Icon name="play" /> Start practice
             </Link>
             {mine ? (
-              <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
+              <>
+                <RenameDeck deck={deck} onRenamed={(title) => setDeck({ ...deck, title })} />
+                <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
+              </>
             ) : (
               <RemoveSharedDeck deck={deck} onRemoved={() => navigate("/#decks", { replace: true })} />
             )}
