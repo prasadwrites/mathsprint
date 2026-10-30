@@ -31,6 +31,8 @@ open_class_test, submit_class_test - A student signs in with Google (such as a G
                         link, once per account; the owner's results show their Google name and email.
 edit_question         - The owner edits one question of their deck; the edit is saved only if its answer checks out
                         (SymPy for math, Claude answering without the key for other subjects; see editing.py).
+add_question          - The owner adds a question of their own to a deck; it's saved only if its answer checks out.
+delete_question       - The owner deletes one question from a deck (not its last one).
 delete_deck           - The owner deletes one of their decks with its questions and practice history. The plan count stays.
 share_deck, list_deck_shares, unshare_deck - Pro and Pro Max: the owner shares a deck with another registered user by email,
                         sees who has it, and takes it back; someone it was shared with can remove it from their decks.
@@ -1713,10 +1715,14 @@ def create_challenge(req: https_fn.CallableRequest) -> dict:
     if not deck.exists:
         raise _not_found("That deck no longer exists.")
     by_id = {q.id: q.to_dict() for q in deck.reference.collection("questions").stream()}
-    questions = [by_id[i] for i in (s.get("questionIds") or []) if i in by_id]
+    # Questions deleted from the deck since are left out, and each answer stays with its own question.
+    kept = [(k, by_id[i]) for k, i in enumerate(s.get("questionIds") or []) if i in by_id]
+    questions = [q for _, q in kept]
     if not questions:
         raise _invalid("That session has no questions.")
-    graded = groups.grade(questions, groups.clean_answers(s.get("answers"), len(questions)))
+    answers = s.get("answers") if isinstance(s.get("answers"), dict) else {}
+    answers = {str(n): answers.get(str(k), answers.get(k)) for n, (k, _) in enumerate(kept)}
+    graded = groups.grade(questions, groups.clean_answers(answers, len(questions)))
     limit = max(0, int(s.get("timeLimitSec") or 0))
     who = req.auth.token or {}
     name = challenges.clean_name((who.get("name") or "").split(" ")[0] or (who.get("email") or "").split("@")[0])
@@ -2913,6 +2919,70 @@ def edit_question(req: https_fn.CallableRequest) -> dict:
     ref.update({**new, "editedAt": firestore.SERVER_TIMESTAMP})
     # Only the edited fields: the app merges them into the question it shows.
     return {"question": {k: v for k, v in new.items() if k != "check"}, "checked": "check" in new}
+
+
+@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=120)
+def add_question(req: https_fn.CallableRequest) -> dict:
+    """Adds the owner's own question to the end of their deck, after checking its answer the way edits are checked.
+    Like edits, it doesn't reach tests, challenges, public links or posts already made from the deck."""
+    import editing  # slow to load (SymPy, anthropic); see generate_deck
+    from generator import GenerationError
+
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    data = req.data or {}
+    deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
+    d = deck.to_dict()
+    subject = subjects.of(d)
+    existing = [q.get("order") or 0 for q in deck.reference.collection("questions").select(["order"]).stream()]
+    if len(existing) >= editing.MAX_QUESTIONS:
+        raise _invalid(f"A deck can have at most {editing.MAX_QUESTIONS} questions. Delete one first, or start a new deck.")
+    try:
+        new = editing.new_question(data, subjects.is_math(subject), bool(d.get("choicesOnly")))
+    except editing.EditError as e:
+        raise _invalid(str(e))
+    try:
+        verdict = editing.verify(new, subject, d.get("level", ""), None)
+    except GenerationError as e:
+        message = f"{e} ({e.detail})" if accounts.is_admin(req.auth.token) and e.detail else str(e)
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAVAILABLE, message)
+    finally:
+        _record_spend(db)
+    if not verdict.ok:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, verdict.message)
+    saved = {**new, "order": max(existing, default=-1) + 1, "check": verdict.check, "verified": True, "addedByOwner": True}
+    ref = deck.reference.collection("questions").document()
+    batch = db.batch()
+    batch.set(ref, {**saved, "createdAt": firestore.SERVER_TIMESTAMP})
+    batch.update(deck.reference, {"questionCount": firestore.Increment(1)})
+    batch.commit()
+    return {"question": {"id": ref.id, **{k: v for k, v in saved.items() if k != "check"}}}
+
+
+@https_fn.on_call(timeout_sec=60)
+def delete_question(req: https_fn.CallableRequest) -> dict:
+    """Deletes one question from the owner's deck. Practice sessions that had it keep their answers and score, and show
+    the rest of their questions; tests, challenges, public links and posts already made keep their own copy."""
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    data = req.data or {}
+    deck = _owned(db, "decks", data.get("deckId"), uid, "That deck no longer exists.")
+    question_id = _clean(data.get("questionId"), 128)
+    ref = deck.reference.collection("questions").document(question_id) if question_id else None
+    if ref is None or not ref.get().exists:
+        raise _not_found("That question no longer exists.")
+    left = int(deck.reference.collection("questions").count(alias="n").get()[0][0].value)
+    if left <= 1:
+        raise _invalid("This is the deck's only question. Add another one first, or delete the deck.")
+    batch = db.batch()
+    batch.delete(ref)
+    batch.update(deck.reference, {"questionCount": left - 1})
+    batch.commit()
+    return {"questionCount": left - 1}
 
 
 @https_fn.on_call(timeout_sec=120)

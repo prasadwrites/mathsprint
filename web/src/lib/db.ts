@@ -126,6 +126,18 @@ export async function editQuestion(edit: QuestionEdit) {
   return (await call(edit)).data.question;
 }
 
+/** A question the owner adds to their deck. Like an edit, it's saved only if the server confirms the answer. */
+export type NewQuestion = Omit<QuestionEdit, "questionId"> & { type: Question["type"] };
+
+export async function addQuestion(q: NewQuestion) {
+  const call = httpsCallable<NewQuestion, { question: Question }>(functions, "add_question", { timeout: 120_000 });
+  return (await call(q)).data.question;
+}
+
+export async function deleteQuestion(deckId: string, questionId: string) {
+  await httpsCallable<{ deckId: string; questionId: string }, { questionCount: number }>(functions, "delete_question")({ deckId, questionId });
+}
+
 export async function explainStep(args: { deckId: string; questionId: string; step: number | null; style: string }) {
   const call = httpsCallable<typeof args, { explanation: string }>(functions, "explain_step");
   return (await call(args)).data.explanation;

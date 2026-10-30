@@ -11,6 +11,8 @@ How an edited answer is checked, by subject:
 - Multiple choice outside math (Biology, History...): no program can solve those, so Claude answers the edited
   question without the key (generator.review_choice), as it does for every generated question, and must pick the
   owner's option.
+A question the owner adds (new_question) goes through the same shape rules and is always checked this way before it's
+saved. It has no graph or diagram.
 An edit that changes only the steps, the concept, the difficulty or the also-accepted answers is saved without a new
 check: those other answers are the owner's call ("ten", "10 meters"), and the grader matches them as typed.
 
@@ -35,6 +37,9 @@ MAX_ACCEPTED = 10
 MAX_STEPS = 12
 MAX_STEP_TEXT = 400
 MAX_CONCEPT = 80
+MIN_CHOICES, MAX_CHOICES = 2, 6
+# The biggest deck a plan builds; added questions stop there too.
+MAX_QUESTIONS = 200
 DIFFICULTIES = ("Easy", "Medium", "Hard")
 # Fields that change what the question asks or what its answer is. Editing any of them means checking again.
 CHECKED_FIELDS = ("prompt", "math", "choices", "answerChoice", "answerValues")
@@ -149,6 +154,26 @@ def apply_edit(old: dict, data: dict) -> dict:
             acceptedAnswers=_accepted(data.get("acceptedAnswers"), answer),
         )
     return new
+
+
+def new_question(data: dict, math: bool, choices_only: bool = False) -> dict:
+    """A question the owner adds, cleaned and checked for shape like an edit (not yet for correctness)."""
+    kind = data.get("type")
+    if kind not in ("numeric", "choice"):
+        raise EditError("Pick a typed answer or multiple choice.")
+    if choices_only and kind != "choice":
+        raise EditError("This deck is multiple choice only. Add a multiple choice question.")
+    blank = {"type": kind, "choices": [], "answerValues": [], "tolerance": 0, "concept": "", "difficulty": "Medium"}
+    if kind == "choice":
+        n = len(data.get("choices")) if isinstance(data.get("choices"), list) else 0
+        if not MIN_CHOICES <= n <= MAX_CHOICES:
+            raise EditError(f"Give {MIN_CHOICES} to {MAX_CHOICES} options.")
+        # Math options that are numbers keep their value, as generated math choice questions do.
+        blank.update(choices=[""] * n, answerValues=[0.0] if math else [])
+    new = apply_edit(blank, data)
+    if not new["concept"]:
+        raise EditError("Give the concept this question practices.")
+    return {"type": kind, **new}
 
 
 def needs_check(old: dict, new: dict) -> bool:
