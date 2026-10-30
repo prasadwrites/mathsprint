@@ -29,6 +29,8 @@ function storeCode(code: string | null) {
 
 // Matches the server's limit; base64 makes the upload a third bigger, still well inside a function request.
 const MAX_PDF_MB = 10;
+// The file is sent to generate_deck, read once and dropped; nothing stores it.
+const PDF_NOTE = "We don't keep your PDF. We only read it to write your questions, and its content stays yours.";
 
 /** The progress panel shown while the server builds the deck. `progress` is null until its first update. */
 function BuildProgress({ progress, count, pdf, math, cutOff }: { progress: DeckProgress | null; count: number; pdf: boolean; math: boolean; cutOff: boolean }) {
@@ -311,6 +313,9 @@ export default function CreateDeck() {
                         <Icon name="file" /> {pdf.name}
                       </div>
                       <div className="bubble bot">I'll read it and write new questions on the same topics, in the same style. A few quick details first.</div>
+                      <p className="muted" style={{ fontSize: 14, margin: 0 }}>
+                        {PDF_NOTE}
+                      </p>
                     </>
                   ) : (
                     <>
@@ -361,6 +366,9 @@ export default function CreateDeck() {
                     A worksheet, class notes or textbook pages, up to {MAX_PDF_MB} MB
                   </span>
                 </div>
+                <p className="muted" style={{ fontSize: 14, margin: 0 }}>
+                  {PDF_NOTE}
+                </p>
                 {error && <p className="error">{error}</p>}
                 </>
               )}
