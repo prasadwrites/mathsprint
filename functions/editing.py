@@ -1,8 +1,19 @@
 """A deck owner edits one of their questions; the edit is saved only if its answer checks out.
 
 What the owner can change: the question's wording and formula, a choice question's options and correct option, a
-numeric question's answer and other ways of writing it that also count as right (acceptedAnswers), the solution steps, the concept and the difficulty. The type, and any graph or diagram,
-stay as they are.
+numeric question's answer and other ways of writing it that also count as right (acceptedAnswers), the solution steps, the concept and the difficulty. The type stays
+as it is.
+
+The picture (the question's `figure`), by the owner's choice:
+- keep: the graph, diagram or picture stays, and the edited question is checked against it.
+- redraw (math only): Claude draws a new graph or diagram for the edited question (generator.draw_picture), following
+  the owner's instructions if any, the validator checks it as it does every generated picture, and the answer is
+  then checked against the new picture. Also how a question without a picture gets one.
+- upload: the owner's own image, stored with the question as a data URL ({'kind': 'image', ...}) so tests, posts and
+  copies made from the deck carry it with them. No program can read an image, so the check reads the owner's
+  one-line description of it instead, and the question's words and that description must be enough to work out
+  the answer.
+- remove: the question becomes text only, and is checked as such.
 
 How an edited answer is checked, by subject:
 - Math, and numeric questions in any subject: Claude restates the edited question in SymPy syntax without seeing the
@@ -22,6 +33,10 @@ Firestore reads and writes.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import io
+import json
 import re
 from dataclasses import dataclass
 
@@ -42,9 +57,17 @@ MIN_CHOICES, MAX_CHOICES = 2, 6
 MAX_QUESTIONS = 200
 DIFFICULTIES = ("Easy", "Medium", "Hard")
 # Fields that change what the question asks or what its answer is. Editing any of them means checking again.
-CHECKED_FIELDS = ("prompt", "math", "choices", "answerChoice", "answerValues")
+CHECKED_FIELDS = ("prompt", "math", "choices", "answerChoice", "answerValues", "figure")
 # Coordinates of a stored diagram are rounded to 6 places, so measurements on it are only that exact.
 DIAGRAM_TOL = 1e-4
+PICTURE_ACTIONS = ("keep", "redraw", "upload", "remove")
+MAX_PICTURE_NOTE = 400
+MAX_ALT = 300
+# The app shrinks a picture before it uploads it, to well under this; a question document must stay under 1 MB.
+MAX_IMAGE_BYTES = 400_000
+MAX_IMAGE_SIDE = 2400
+_DATA_URL = re.compile(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)")
+_FORMATS = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}
 
 
 class EditError(ValueError):
@@ -100,6 +123,46 @@ def _tolerance(text: str, old: float) -> float:
     return tol
 
 
+def picture_request(data: dict) -> tuple[str, dict]:
+    """What the owner wants done with the picture (one of PICTURE_ACTIONS), and the details they sent with it."""
+    picture = data.get("picture") if isinstance(data.get("picture"), dict) else {}
+    action = picture.get("action") if picture.get("action") in PICTURE_ACTIONS else "keep"
+    return action, picture
+
+
+def redraw_note(data: dict) -> str | None:
+    """The owner's instructions for a new drawing ('' for none), or None when they didn't ask for one."""
+    action, picture = picture_request(data)
+    return _text(picture.get("note"), MAX_PICTURE_NOTE) if action == "redraw" else None
+
+
+def uploaded_picture(picture: dict) -> dict:
+    """The owner's own image as it's stored with the question, after making sure it is one."""
+    alt = _text(picture.get("alt"), MAX_ALT)
+    if not alt:
+        raise EditError("Describe the picture in a sentence. Students who use a screen reader hear it, and the answer check reads it.")
+    m = _DATA_URL.fullmatch("".join(str(picture.get("image") or "").split()))
+    if not m:
+        raise EditError("Upload a PNG, JPEG or WebP picture.")
+    try:
+        raw = base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        raise EditError("That picture didn't upload properly. Try again.")
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise EditError("That picture is too large. Use one under 400 KB.")
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            fmt, (width, height) = img.format, img.size
+            img.verify()
+    except Exception:
+        raise EditError("That file isn't a picture the app can show. Try a PNG or JPEG.")
+    if fmt != _FORMATS[m.group(1)] or not (0 < width <= MAX_IMAGE_SIDE and 0 < height <= MAX_IMAGE_SIDE):
+        raise EditError("That file isn't a picture the app can show. Try a PNG or JPEG.")
+    return {"kind": "image", "alt": alt, "src": f"data:image/{m.group(1)};base64,{m.group(2)}", "width": width, "height": height}
+
+
 def apply_edit(old: dict, data: dict) -> dict:
     """The question's fields after the edit, cleaned and checked for shape (not yet for correctness)."""
     prompt = _text(data.get("prompt"), MAX_PROMPT)
@@ -153,6 +216,13 @@ def apply_edit(old: dict, data: dict) -> dict:
             tolerance=_tolerance(answer, float(old.get("tolerance") or 0)),
             acceptedAnswers=_accepted(data.get("acceptedAnswers"), answer),
         )
+
+    # A redrawn picture takes a Claude call, so main.py makes it once the rest of the edit is known to be fine.
+    action, picture = picture_request(data)
+    if action == "remove":
+        new["figure"] = None
+    elif action == "upload":
+        new["figure"] = uploaded_picture(picture)
     return new
 
 
@@ -177,12 +247,46 @@ def new_question(data: dict, math: bool, choices_only: bool = False) -> dict:
 
 
 def needs_check(old: dict, new: dict) -> bool:
-    return any(old.get(k) != new.get(k) for k in CHECKED_FIELDS)
+    return any(k in new and old.get(k) != new[k] for k in CHECKED_FIELDS)
+
+
+def _drawn(drawn) -> tuple[dict | None, str]:
+    """Claude's drawing as the stored picture, or why it can't be used."""
+    from figures import diagram_doc, figure_doc
+    from validator import check_diagram, check_figure
+
+    model = Figure if drawn.kind == "figure" else Diagram
+    try:
+        picture = model.model_validate(json.loads(drawn.picture))
+    except (ValueError, TypeError) as e:
+        return None, f"the {drawn.kind} is not valid {model.__name__} JSON: {str(e)[:300]}"
+    problem = check_figure(picture) if drawn.kind == "figure" else check_diagram(picture)
+    if problem:
+        return None, problem
+    return (figure_doc(picture) if drawn.kind == "figure" else diagram_doc(picture)), ""
+
+
+def redraw(doc: dict, note: str, client) -> dict:
+    """A new graph or diagram for the edited question `doc`, drawn by Claude and checked like a generated one.
+    It gets one more try when the first drawing is unusable."""
+    import generator
+
+    stored = doc.get("figure") or {}
+    figure, diagram = figure_from_doc(stored) if stored.get("kind") in ("plane", "geometry") else (None, None)
+    current = (figure or diagram).model_dump_json() if figure or diagram else ""
+    if stored.get("kind") == "image" and stored.get("alt"):
+        note = f"{note} (The author's own picture, which this replaces, showed: {stored['alt']})".strip()
+    problem = ""
+    for _ in range(2):
+        picture, problem = _drawn(generator.draw_picture(client, doc, note, current, problem))
+        if picture:
+            return picture
+    raise EditError(f"The new picture couldn't be drawn ({problem}). Say what to draw and try again.")
 
 
 def figure_from_doc(doc: dict | None) -> tuple[Figure | None, Diagram | None]:
     """The stored picture (figures.figure_doc / diagram_doc) back in the shape the validator checks."""
-    if not doc:
+    if not doc or doc.get("kind") == "image":  # no program can read an uploaded image
         return None, None
     if doc.get("kind") == "geometry":
         return None, Diagram(
@@ -209,6 +313,12 @@ def picture_text(doc: dict | None) -> str:
     """What Claude needs to know about the question's picture to restate it: names, graphs and coordinates."""
     if not doc:
         return ""
+    if doc.get("kind") == "image":
+        return (
+            f"The question shows a picture its author uploaded, described as: {doc.get('alt', '')} "
+            "Only that description of it is known: if the question can't be answered from its words and the "
+            "description, it is not checkable."
+        )
     if doc.get("kind") == "geometry":
         pts = ", ".join(f"{p['name']}({p['x']:g}, {p['y']:g})" for p in doc.get("points", []))
         marks = "; ".join(f"{i['type']} {''.join(i.get('of', []))}" + (f" labeled {i['text']}" if i.get("text") else "") for i in doc.get("items", []))
@@ -261,6 +371,9 @@ def verify(doc: dict, subject: str, level: str, client) -> Verdict:
     math = subjects.is_math(subject)
     if not math and doc["type"] == "choice":
         q = as_question(doc, Check(kind="none", expression="", variable="", domain="real"))
+        image = doc.get("figure") or {}
+        if image.get("kind") == "image":
+            q = q.model_copy(update={"prompt": f"{q.prompt} (The question shows a picture: {image.get('alt', '')})"})
         problem = generator.review_choice(client, q, subject, level)
         if problem:
             return Verdict(False, problem)

@@ -59,7 +59,16 @@ export interface GeometryFigure {
   items: DiagramItem[];
 }
 
-export type Figure = PlaneFigure | GeometryFigure;
+/** A picture the deck owner uploaded, stored with the question as a data URL. */
+export interface ImageFigure {
+  kind: "image";
+  alt: string;
+  src: string;
+  width: number;
+  height: number;
+}
+
+export type Figure = PlaneFigure | GeometryFigure | ImageFigure;
 
 export interface Question {
   id: string;
@@ -76,7 +85,7 @@ export interface Question {
   difficulty: Exclude<Difficulty, "Mixed">;
   steps: SolutionStep[];
   verified: boolean;
-  /** A graph or diagram to show with the question; absent for text-only questions. */
+  /** A graph, diagram or uploaded picture to show with the question; absent or null for text-only questions. */
   figure?: Figure | null;
   /** The answer is a point (x, y), so its two values are graded in order. */
   pair?: boolean;

@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { addQuestion, editQuestion } from "../lib/db";
+import { addQuestion, editQuestion, type PictureEdit } from "../lib/db";
+import { shrinkPicture, type ShrunkPicture } from "../lib/pictures";
 import { isMath } from "../lib/subjects";
 import type { Question, SolutionStep } from "../lib/types";
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
+const NOUNS = { plane: "graph", geometry: "diagram", image: "picture" } as const;
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 6;
 
@@ -41,14 +43,43 @@ export default function EditQuestion({ deckId, subject, question: existing, choi
   const [steps, setSteps] = useState<SolutionStep[]>(question.steps.length ? question.steps : [{ description: "", expression: "" }]);
   const [concept, setConcept] = useState(question.concept);
   const [difficulty, setDifficulty] = useState(question.difficulty);
+  const figure = question.figure ?? null;
+  const noun = figure ? NOUNS[figure.kind] : "";
+  const [picture, setPicture] = useState<PictureEdit["action"]>("keep");
+  const [note, setNote] = useState("");
+  const [upload, setUpload] = useState<ShrunkPicture | null>(null);
+  const [alt, setAlt] = useState(figure?.kind === "image" ? figure.alt : "");
+  const [preparing, setPreparing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const id = (name: string) => `edit-${question.id}-${name}`;
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setPreparing(true);
+    setError("");
+    try {
+      setUpload(await shrinkPicture(file));
+    } catch (err) {
+      setUpload(null);
+      setError((err as Error).message);
+    }
+    setPreparing(false);
+  }
+
+  function pictureEdit(): PictureEdit | undefined {
+    if (picture === "redraw") return { action: "redraw", note };
+    if (picture === "remove") return { action: "remove" };
+    if (picture === "upload") return { action: "upload", image: upload?.src ?? "", alt };
+    return undefined;
+  }
 
   const setStep = (i: number, patch: Partial<SolutionStep>) => setSteps(steps.map((s, k) => (k === i ? { ...s, ...patch } : s)));
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (picture === "upload" && !upload) return setError("Choose the picture to upload.");
+    if (picture === "upload" && !alt.trim()) return setError("Describe the picture in a sentence.");
     setBusy(true);
     setError("");
     try {
@@ -60,6 +91,7 @@ export default function EditQuestion({ deckId, subject, question: existing, choi
         concept,
         difficulty,
         ...(choice ? { choices, answerChoice: choices[answerChoice] ?? "" } : { answer, acceptedAnswers: accepted.filter((a) => a.trim()) }),
+        picture: pictureEdit(),
       };
       if (adding) onSaved(await addQuestion({ ...fields, type: kind }));
       else onSaved({ ...question, ...(await editQuestion({ ...fields, questionId: question.id })), verified: true });
@@ -88,7 +120,63 @@ export default function EditQuestion({ deckId, subject, question: existing, choi
         </label>
         <input id={id("math")} type="text" className="mono" value={math} onChange={(e) => setMath(e.target.value)} disabled={busy} placeholder="e.g. x² − 5x + 6 = 0" />
       </div>
-      {question.figure && <p className="muted">The {question.figure.kind === "geometry" ? "diagram" : "graph"} stays as it is, and the answer is checked against it.</p>}
+      <fieldset className="edit-picture" disabled={busy}>
+        <legend>Picture</legend>
+        <label className="row edit-choice">
+          <input type="radio" name={id("picture")} checked={picture === "keep"} onChange={() => setPicture("keep")} />
+          {figure ? `Keep the ${noun} as it is` : "No picture"}
+        </label>
+        {picture === "keep" && figure && (
+          <p className="muted hint">
+            {figure.kind === "image" ? "The answer is checked against your description of the picture." : `The answer is checked against the ${noun} as drawn.`}
+          </p>
+        )}
+        {isMath(subject) && (
+          <label className="row edit-choice">
+            <input type="radio" name={id("picture")} checked={picture === "redraw"} onChange={() => setPicture("redraw")} />
+            {figure && figure.kind !== "image" ? `Redraw the ${noun} to match my edits` : "Draw a graph or diagram for me"}
+          </label>
+        )}
+        {picture === "redraw" && (
+          <div className="edit-sub">
+            <label htmlFor={id("note")}>
+              What to draw or change <span className="muted">(optional)</span>
+            </label>
+            <input id={id("note")} type="text" maxLength={400} value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Make AB 7 cm and mark the right angle at C" />
+            <p className="muted hint">A new picture is drawn from the edited question when you save, and the answer is checked against it.</p>
+          </div>
+        )}
+        <label className="row edit-choice">
+          <input type="radio" name={id("picture")} checked={picture === "upload"} onChange={() => setPicture("upload")} />
+          {figure?.kind === "image" ? "Upload a different picture" : "Upload my own picture"}
+        </label>
+        {picture === "upload" && (
+          <div className="edit-sub stack">
+            <div>
+              <label htmlFor={id("file")}>Picture file</label>
+              <input id={id("file")} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => pick(e.target.files?.[0])} disabled={preparing} />
+              {preparing && <p className="muted hint"><span className="spinner" /> Preparing the picture…</p>}
+            </div>
+            {upload && <img className="edit-preview" src={upload.src} alt="" />}
+            <div>
+              <label htmlFor={id("alt")}>Describe the picture</label>
+              <input id={id("alt")} type="text" maxLength={300} value={alt} onChange={(e) => setAlt(e.target.value)}
+                placeholder="e.g. Right triangle ABC with AB = 6, BC = 8 and a right angle at B" />
+              <p className="muted hint">
+                Give every number the question needs, but not the answer. Screen readers read this out, and the answer check
+                uses it, since it can't see pictures.
+              </p>
+            </div>
+          </div>
+        )}
+        {figure && (
+          <label className="row edit-choice">
+            <input type="radio" name={id("picture")} checked={picture === "remove"} onChange={() => setPicture("remove")} />
+            Remove the {noun}
+          </label>
+        )}
+      </fieldset>
 
       {choice ? (
         <fieldset disabled={busy}>
@@ -186,7 +274,7 @@ export default function EditQuestion({ deckId, subject, question: existing, choi
       {error && <p className="error" role="alert">{error}</p>}
       <div className="row" style={{ gap: 8 }}>
         <button type="submit" className="btn btn-primary btn-small" disabled={busy}>
-          {busy ? <><span className="spinner" /> Checking the answer…</> : adding ? "Check and add" : "Check and save"}
+          {busy ? <><span className="spinner" /> {picture === "redraw" ? "Drawing and checking…" : "Checking the answer…"}</> : adding ? "Check and add" : "Check and save"}
         </button>
         <button type="button" className="btn btn-small" disabled={busy} onClick={onCancel}>
           Cancel

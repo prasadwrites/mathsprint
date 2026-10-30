@@ -2878,10 +2878,11 @@ def respond_promotion(req: https_fn.CallableRequest) -> dict:
     return run(db.transaction())
 
 
-@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=120)
+@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=300)
 def edit_question(req: https_fn.CallableRequest) -> dict:
-    """Saves the owner's edit to one question, after checking its answer. People the deck is shared with see the edit;
-    tests, challenges, public links and posts already made from the deck keep their own copy of the questions."""
+    """Saves the owner's edit to one question, after checking its answer. The edit can redraw, upload or remove the
+    question's picture (see editing.py). People the deck is shared with see the edit; tests, challenges, public links
+    and posts already made from the deck keep their own copy of the questions."""
     import editing  # slow to load (SymPy, anthropic); see generate_deck
 
     uid = _require_user(req)
@@ -2900,13 +2901,19 @@ def edit_question(req: https_fn.CallableRequest) -> dict:
         new = editing.apply_edit(old, data)
     except editing.EditError as e:
         raise _invalid(str(e))
-    saved = {**old, **new}
-    if editing.needs_check(old, new):
+    d = deck.to_dict()
+    note = editing.redraw_note(data)
+    if note is not None and not subjects.is_math(subjects.of(d)):
+        raise _invalid("Graphs and diagrams can be drawn only in math decks. Upload your own picture instead.")
+    if note is not None or editing.needs_check(old, new):
         from generator import GenerationError
 
-        d = deck.to_dict()
         try:
-            verdict = editing.verify(saved, subjects.of(d), d.get("level", ""), None)
+            if note is not None:
+                new["figure"] = editing.redraw({**old, **new}, note, None)
+            verdict = editing.verify({**old, **new}, subjects.of(d), d.get("level", ""), None)
+        except editing.EditError as e:
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
         except GenerationError as e:
             message = f"{e} ({e.detail})" if accounts.is_admin(req.auth.token) and e.detail else str(e)
             raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAVAILABLE, message)
@@ -2921,7 +2928,7 @@ def edit_question(req: https_fn.CallableRequest) -> dict:
     return {"question": {k: v for k, v in new.items() if k != "check"}, "checked": "check" in new}
 
 
-@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=120)
+@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=300)
 def add_question(req: https_fn.CallableRequest) -> dict:
     """Adds the owner's own question to the end of their deck, after checking its answer the way edits are checked.
     Like edits, it doesn't reach tests, challenges, public links or posts already made from the deck."""
@@ -2943,8 +2950,15 @@ def add_question(req: https_fn.CallableRequest) -> dict:
         new = editing.new_question(data, subjects.is_math(subject), bool(d.get("choicesOnly")))
     except editing.EditError as e:
         raise _invalid(str(e))
+    note = editing.redraw_note(data)
+    if note is not None and not subjects.is_math(subject):
+        raise _invalid("Graphs and diagrams can be drawn only in math decks. Upload your own picture instead.")
     try:
+        if note is not None:
+            new["figure"] = editing.redraw(new, note, None)
         verdict = editing.verify(new, subject, d.get("level", ""), None)
+    except editing.EditError as e:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, str(e))
     except GenerationError as e:
         message = f"{e} ({e.detail})" if accounts.is_admin(req.auth.token) and e.detail else str(e)
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAVAILABLE, message)

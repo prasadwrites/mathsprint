@@ -119,10 +119,22 @@ export interface QuestionEdit {
   acceptedAnswers?: string[];
   choices?: string[];
   answerChoice?: string;
+  /** What to do with the question's picture; left out, it stays as it is. */
+  picture?: PictureEdit;
 }
 
+/** redraw: Claude draws a new graph or diagram for the edited question (math decks), following `note` if given.
+ * upload: the owner's own picture (`image`, a data URL from shrinkPicture) with a one-line description (`alt`).
+ * remove: the question becomes text only. */
+export type PictureEdit =
+  | { action: "keep" }
+  | { action: "redraw"; note: string }
+  | { action: "upload"; image: string; alt: string }
+  | { action: "remove" };
+
 export async function editQuestion(edit: QuestionEdit) {
-  const call = httpsCallable<QuestionEdit, { question: Partial<Question>; checked: boolean }>(functions, "edit_question", { timeout: 120_000 });
+  // A redrawn picture takes a second Claude call before the answer check.
+  const call = httpsCallable<QuestionEdit, { question: Partial<Question>; checked: boolean }>(functions, "edit_question", { timeout: 300_000 });
   return (await call(edit)).data.question;
 }
 
@@ -130,7 +142,7 @@ export async function editQuestion(edit: QuestionEdit) {
 export type NewQuestion = Omit<QuestionEdit, "questionId"> & { type: Question["type"] };
 
 export async function addQuestion(q: NewQuestion) {
-  const call = httpsCallable<NewQuestion, { question: Question }>(functions, "add_question", { timeout: 120_000 });
+  const call = httpsCallable<NewQuestion, { question: Question }>(functions, "add_question", { timeout: 300_000 });
   return (await call(q)).data.question;
 }
 

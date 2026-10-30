@@ -129,6 +129,7 @@ textarea { min-height: 72px; resize: vertical; }
 .figure { margin: 0; width: 100%; }
 .figure svg { display: block; width: 100%; height: auto; font-family: var(--f-mono); }
 .figure.small { margin-top: 8px; }
+.figure-image img { display: block; width: 100%; height: auto; border-radius: 8px; background: #fff; }
 .fig-plot { fill: var(--surface); stroke: var(--line); }
 .fig-grid line { stroke: var(--line); stroke-width: 1; }
 .fig-axis line { stroke: var(--muted); stroke-width: 1.6; }
@@ -438,6 +439,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .add-question h3 { margin: 0; }
 .add-question .edit-question { margin-top: 8px; }
 .edit-option input[type=radio] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.edit-question .edit-picture { margin-top: 4px; }
+.edit-choice { flex-wrap: nowrap; gap: 8px; font-weight: 500; cursor: pointer; }
+.edit-choice input[type=radio] { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--accent); }
+.edit-sub { margin: 0 0 6px 26px; }
+.edit-sub input[type=file] { display: block; max-width: 100%; font: inherit; }
+.edit-preview { display: block; max-width: min(280px, 100%); max-height: 220px; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
 .edit-step { display: grid; grid-template-columns: 24px 1fr 1fr auto; gap: 8px; align-items: center; }
 .edit-step .n { font-family: var(--f-mono); color: var(--muted); }
 .edit-meta > div { flex: 1 1 180px; }
