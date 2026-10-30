@@ -405,6 +405,13 @@ export async function deleteDeck(deckId: string) {
   return (await httpsCallable<{ deckId: string }, { ok: boolean; sessions: number }>(functions, "delete_deck", { timeout: 120_000 })({ deckId })).data;
 }
 
+export const MAX_TITLE = 80;
+
+/** Renames one of your own decks. Copies already made from it (tests, challenges, links) keep the old name. */
+export async function renameDeck(deckId: string, title: string) {
+  return updateDoc(doc(db, "decks", deckId), { title: title.trim().slice(0, MAX_TITLE) });
+}
+
 /** Shares one of your decks with the registered user who has this email. */
 export async function shareDeck(deckId: string, email: string) {
   return (await httpsCallable<{ deckId: string; email: string }, { added: boolean; shares: DeckShare[] }>(functions, "share_deck")({ deckId, email })).data;

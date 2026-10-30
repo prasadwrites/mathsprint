@@ -25,8 +25,12 @@ service cloud.firestore {
       allow create: if owns(request.resource.data) && request.resource.data.source == "sample"
         && !("sharedWith" in request.resource.data);
       // Only the sharing functions change who a deck is shared with.
+      // A new title (renaming) must be 1 to 80 characters.
       allow update: if owns(resource.data)
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["ownerId", "source", "sharedWith", "sharedBy"]);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["ownerId", "source", "sharedWith", "sharedBy"])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["title"])
+          || (request.resource.data.title is string && request.resource.data.title.matches(".*[^ ].*")
+            && request.resource.data.title.size() <= 80));
 
       match /questions/{questionId} {
         function deckPath() { return /databases/$(database)/documents/decks/$(deckId); }

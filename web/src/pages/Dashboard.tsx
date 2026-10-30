@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import DeleteDeck from "../components/DeleteDeck";
+import RenameDeck from "../components/RenameDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import PromotionOffer from "../components/PromotionOffer";
 import DailyReel from "../components/DailyReel";
@@ -266,6 +267,7 @@ export default function Dashboard() {
                 const b = best(d.id);
                 const mine = d.ownerId === user.uid;
                 const drop = () => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null);
+                const rename = (title: string) => setDecks((all) => all?.map((x) => (x.id === d.id ? { ...x, title } : x)) ?? null);
                 return (
                   <article key={d.id} className="panel deck-card">
                     <div>
@@ -295,7 +297,14 @@ export default function Dashboard() {
                       <Link className="btn" to={`/decks/${d.id}`}>
                         Review
                       </Link>
-                      {mine ? <DeleteDeck deck={d} onDeleted={drop} /> : <RemoveSharedDeck deck={d} onRemoved={drop} />}
+                      {mine ? (
+                        <>
+                          <RenameDeck deck={d} onRenamed={rename} />
+                          <DeleteDeck deck={d} onDeleted={drop} />
+                        </>
+                      ) : (
+                        <RemoveSharedDeck deck={d} onRemoved={drop} />
+                      )}
                     </div>
                   </article>
                 );
