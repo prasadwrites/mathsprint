@@ -115,6 +115,8 @@ export interface QuestionEdit {
   difficulty: Question["difficulty"];
   /** Numeric questions: the answer as students should see it, e.g. "x = 2, 3". */
   answer?: string;
+  /** Numeric questions: other ways of writing the answer that also count as right. */
+  acceptedAnswers?: string[];
   choices?: string[];
   answerChoice?: string;
 }

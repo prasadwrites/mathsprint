@@ -1,7 +1,7 @@
 """A deck owner edits one of their questions; the edit is saved only if its answer checks out.
 
 What the owner can change: the question's wording and formula, a choice question's options and correct option, a
-numeric question's answer, the solution steps, the concept and the difficulty. The type, and any graph or diagram,
+numeric question's answer and other ways of writing it that also count as right (acceptedAnswers), the solution steps, the concept and the difficulty. The type, and any graph or diagram,
 stay as they are.
 
 How an edited answer is checked, by subject:
@@ -11,7 +11,8 @@ How an edited answer is checked, by subject:
 - Multiple choice outside math (Biology, History...): no program can solve those, so Claude answers the edited
   question without the key (generator.review_choice), as it does for every generated question, and must pick the
   owner's option.
-An edit that changes only the steps, the concept or the difficulty is saved without a new check.
+An edit that changes only the steps, the concept, the difficulty or the also-accepted answers is saved without a new
+check: those other answers are the owner's call ("ten", "10 meters"), and the grader matches them as typed.
 
 Plain Python apart from the Claude calls, which take a client so tests can stand in for it; main.py does the
 Firestore reads and writes.
@@ -22,6 +23,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from groups import same_answer_text
 from schema import Check, Diagram, DiagramItem, Figure, FigureItem, GeneratedQuestion, GeoPoint, Point, SolutionStep
 from validator import check_question, parse_number
 
@@ -29,6 +31,7 @@ MAX_PROMPT = 1000
 MAX_MATH = 300
 MAX_CHOICE = 200
 MAX_ANSWER = 120
+MAX_ACCEPTED = 10
 MAX_STEPS = 12
 MAX_STEP_TEXT = 400
 MAX_CONCEPT = 80
@@ -64,6 +67,21 @@ def _values(text: str, pair: bool) -> list[float]:
         raise EditError("This answer is a point. Write it as (x, y).")
     if not out:
         raise EditError("Give the correct answer.")
+    return out
+
+
+def _accepted(value: object, answer: str) -> list[str]:
+    """The owner's also-accepted answers, trimmed, without blanks, repeats or the answer itself."""
+    seen = {same_answer_text(answer)}
+    out = []
+    for a in value if isinstance(value, list) else []:
+        a = _text(a, MAX_ANSWER)
+        key = same_answer_text(a)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(a)
+    if len(out) > MAX_ACCEPTED:
+        raise EditError(f"List at most {MAX_ACCEPTED} other accepted answers.")
     return out
 
 
@@ -128,6 +146,7 @@ def apply_edit(old: dict, data: dict) -> dict:
             answerDisplay=answer,
             answerValues=_values(answer, bool(old.get("pair"))),
             tolerance=_tolerance(answer, float(old.get("tolerance") or 0)),
+            acceptedAnswers=_accepted(data.get("acceptedAnswers"), answer),
         )
     return new
 

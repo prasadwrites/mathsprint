@@ -50,6 +50,13 @@ def test_grading_matches_the_app():
     assert not groups.is_correct(numeric, None)
 
 
+def test_also_accepted_answers_count_as_typed():
+    q = {"type": "numeric", "answerValues": [10.0], "tolerance": 0, "acceptedAnswers": ["ten", "Ten meters"]}
+    assert all(groups.is_correct(q, a) for a in ("10", "10 m", "10 meters", "TEN", "ten meters.", "tenmeters"))
+    assert not groups.is_correct(q, "eleven") and not groups.is_correct(q, "12")
+    assert not groups.is_correct({**q, "type": "choice", "answerChoice": "10"}, "ten")
+
+
 def test_grade_and_overall():
     qs = [{"type": "choice", "answerChoice": "A"}, {"type": "numeric", "answerValues": [4], "tolerance": 0}]
     answers = groups.clean_answers({"0": "A", "1": "5", "7": "x", "bad": "y"}, len(qs))

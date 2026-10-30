@@ -88,6 +88,16 @@ def test_steps_only_edit_needs_no_check():
     assert editing.needs_check(old, edit(old, math="x² − 7x + 12 = 0"))
 
 
+def test_also_accepted_answers_are_cleaned_and_need_no_check():
+    old = numeric(answerValues=[10.0], answerDisplay="10")
+    new = edit(old, acceptedAnswers=["  ten ", "Ten", "", "10", "ten meters", 7])
+    assert new["acceptedAnswers"] == ["ten", "ten meters", "7"]
+    assert not editing.needs_check(old, new)
+    with pytest.raises(editing.EditError):
+        edit(old, acceptedAnswers=[f"a{i}" for i in range(11)])
+    assert "acceptedAnswers" not in edit(choice(), acceptedAnswers=["forty-two"])
+
+
 def test_correct_edit_passes_and_keeps_the_new_check():
     old = numeric()
     new = {**old, **edit(old, math="x² − 7x + 12 = 0", answer="3, 4")}

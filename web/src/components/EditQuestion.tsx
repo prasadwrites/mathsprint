@@ -21,6 +21,7 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
   const [choices, setChoices] = useState(question.choices);
   const [answerChoice, setAnswerChoice] = useState(choices.indexOf(question.answerChoice));
   const [answer, setAnswer] = useState(question.answerDisplay);
+  const [accepted, setAccepted] = useState<string[]>(question.acceptedAnswers ?? []);
   const [steps, setSteps] = useState<SolutionStep[]>(question.steps.length ? question.steps : [{ description: "", expression: "" }]);
   const [concept, setConcept] = useState(question.concept);
   const [difficulty, setDifficulty] = useState(question.difficulty);
@@ -43,7 +44,7 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
         steps,
         concept,
         difficulty,
-        ...(choice ? { choices, answerChoice: choices[answerChoice] ?? "" } : { answer }),
+        ...(choice ? { choices, answerChoice: choices[answerChoice] ?? "" } : { answer, acceptedAnswers: accepted.filter((a) => a.trim()) }),
       });
       onSaved({ ...question, ...edited, verified: true });
     } catch (err) {
@@ -85,6 +86,29 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
             {question.pair ? "Write the point as (x, y). " : "Separate more than one answer with commas. "}
             Fractions like 1/2, roots like 6√3 and π are fine. Students see it written this way.
           </p>
+          <fieldset className="edit-accepted" disabled={busy}>
+            <legend>
+              Also accept <span className="muted">(optional)</span>
+            </legend>
+            <p className="muted hint">
+              Other ways a student might write the right answer, like "ten" or "half". Answers with the same numbers, such as "10 m" or
+              "10 meters" for 10, already count. Capitals, spaces and a final period don't matter.
+            </p>
+            {accepted.map((a, i) => (
+              <div className="row edit-option" key={i}>
+                <input type="text" value={a} maxLength={120} onChange={(e) => setAccepted(accepted.map((x, k) => (k === i ? e.target.value : x)))}
+                  aria-label={`Also accept answer ${i + 1}`} placeholder="e.g. ten" />
+                <button type="button" className="btn-link danger" onClick={() => setAccepted(accepted.filter((_, k) => k !== i))} aria-label={`Remove accepted answer ${i + 1}`}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            {accepted.length < 10 && (
+              <button type="button" className="btn-link" onClick={() => setAccepted([...accepted, ""])}>
+                + Add an answer to accept
+              </button>
+            )}
+          </fieldset>
         </div>
       )}
 
@@ -133,7 +157,7 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
       </div>
       <p className="muted hint">
         {engine
-          ? "If you change the question or its answer, the math engine works it out again and saves it only if your answer is correct."
+          ? "If you change the question or its answer, the math engine works it out again and saves it only if your answer is correct. Answers you also accept are saved as you write them."
           : "If you change the question or its options, an independent check answers it again without your key and saves it only if it picks your option."}
       </p>
     </form>
