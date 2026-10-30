@@ -56,6 +56,10 @@ open_question_post, check_post_answer - No sign-in: anyone answers the posted qu
 save_post_deck        - A visitor who signs up (or is signed in) saves the post's whole deck to their account.
 question_post_page    - Serves /q/TOKEN with the question in its link preview, and /q/TOKEN/card.png, the question card.
 site_stats            - No sign-in: /api/stats, how many AI decks have been built and answers checked, for the tutors page.
+daily_reel            - Scheduled, 5 AM Eastern: Claude writes a short, fun Instagram Reel for tutors about one everyday
+                        headache MathSprint takes care of, and it's animated with music into an MP4 (reels.py, reel_video.py).
+admin_make_reel, admin_list_reels - Admin only: another Reel today (on the next theme), and the latest Reels with captions.
+reel_file             - Serves /reel/TOKEN.mp4, a Reel's video, to play on the admin's home page or download (?download=1).
 """
 
 from __future__ import annotations
@@ -69,9 +73,11 @@ import re
 import time
 import urllib.error
 import urllib.request
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from firebase_admin import auth, firestore, initialize_app
-from firebase_functions import https_fn, options
+from firebase_functions import https_fn, options, scheduler_fn
 from firebase_functions.params import IntParam, StringParam
 
 import accounts
@@ -3027,3 +3033,134 @@ def site_stats(req: https_fn.Request) -> https_fn.Response:
         log.exception("site_stats failed")
     return https_fn.Response(json.dumps({"decks": decks, "answers": answers}), mimetype="application/json",
                              headers={"Cache-Control": "public, max-age=600, s-maxage=3600"})
+
+
+# The daily Instagram Reel for tutors (reels.py writes it, reel_video.py animates it). Admin only, except the video link,
+# which works for anyone who has its unguessable address, like a question post's card.
+REEL_TIMEZONE = "America/New_York"
+
+
+def _reels(db):
+    return db.collection("dailyReels")
+
+
+def _reel_day() -> str:
+    return datetime.now(ZoneInfo(REEL_TIMEZONE)).date().isoformat()
+
+
+def _reel_row(doc) -> dict:
+    import reels
+
+    r = doc.to_dict()
+    script = r.get("script") or {}
+    ready = r.get("status") == "ready"
+    return {
+        "token": doc.id,
+        "day": r.get("day", ""),
+        "theme": r.get("theme", ""),
+        "kind": r.get("kind", ""),
+        "status": r.get("status", ""),
+        "error": r.get("error", ""),
+        "hook": script.get("hook", ""),
+        "caption": reels.full_caption(script) if ready else "",
+        "bytes": r.get("bytes", 0),
+        "seconds": r.get("seconds", 0),
+        "createdAt": _ms(r.get("createdAt")),
+    }
+
+
+def _make_reel(db, kind: str) -> dict:
+    """Writes, animates and saves one Reel for today. The video is kept in parts under the Reel (see reels.CHUNK_BYTES)."""
+    import reel_video
+    import reels
+
+    today = date.fromisoformat(_reel_day())
+    made_today = _count(_reels(db).where("day", "==", today.isoformat()))
+    theme = reels.theme_for(today, made_today)
+    recent = _reels(db).order_by("createdAt", direction=firestore.Query.DESCENDING).limit(14).stream()
+    hooks = [(d.to_dict().get("script") or {}).get("hook", "") for d in recent]
+    ref = _reels(db).document(reels.new_token())
+    ref.set({"day": today.isoformat(), "theme": theme["key"], "kind": kind, "status": "making", "createdAt": firestore.SERVER_TIMESTAMP})
+    try:
+        script = reels.write_script(theme, hooks)
+        video = reel_video.render(script, reels.palette_for(today, made_today, len(reel_video.PALETTES)))
+        parts = reels.chunks(video)
+        for i, part in enumerate(parts):  # one write each: a batch of them could pass Firestore's request size limit
+            ref.collection("parts").document(f"{i:03d}").set({"data": part})
+        ref.update({"status": "ready", "script": script, "bytes": len(video), "parts": len(parts), "seconds": reel_video.DURATION})
+    except Exception as e:
+        log.exception("couldn't make the %s Reel", kind)
+        ref.update({"status": "failed", "error": str(e)[:300]})
+        raise
+    finally:
+        _record_spend(db)
+    _prune_reels(db)
+    return _reel_row(ref.get())
+
+
+def _prune_reels(db) -> None:
+    import reels
+
+    old = _reels(db).order_by("createdAt", direction=firestore.Query.DESCENDING).offset(reels.KEEP_REELS).stream()
+    for doc in old:
+        db.recursive_delete(doc.reference)
+
+
+@scheduler_fn.on_schedule(schedule="0 5 * * *", timezone=scheduler_fn.Timezone(REEL_TIMEZONE), secrets=["ANTHROPIC_API_KEY"],
+                          timeout_sec=540, memory=options.MemoryOption.GB_2, cpu=2)
+def daily_reel(event: scheduler_fn.ScheduledEvent) -> None:
+    """5 AM Eastern every day: today's Reel, ready on the admin's home page."""
+    db = firestore.client()
+    today = _reels(db).where("day", "==", _reel_day()).stream()
+    if any(d.get("kind") == "daily" and d.get("status") == "ready" for d in today):
+        return  # a retry after the Reel was already made
+    _make_reel(db, "daily")
+
+
+@https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=540, memory=options.MemoryOption.GB_2, cpu=2)
+def admin_make_reel(req: https_fn.CallableRequest) -> dict:
+    """Admin only: another Reel today, on the next theme."""
+    from generator import GenerationError
+
+    _require_admin(req)
+    try:
+        return _make_reel(firestore.client(), "extra")
+    except GenerationError as e:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.FAILED_PRECONDITION, f"{e} ({e.detail})" if e.detail else str(e))
+    except Exception as e:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INTERNAL, f"The Reel couldn't be made. Try again. ({type(e).__name__}: {e})")
+
+
+@https_fn.on_call()
+def admin_list_reels(req: https_fn.CallableRequest) -> dict:
+    """Admin only: the latest Reels, newest first."""
+    _require_admin(req)
+    docs = _reels(firestore.client()).order_by("createdAt", direction=firestore.Query.DESCENDING).limit(14).stream()
+    return {"reels": [_reel_row(d) for d in docs], "today": _reel_day()}
+
+
+@https_fn.on_request(memory=options.MemoryOption.MB_512, timeout_sec=60)
+def reel_file(req: https_fn.Request) -> https_fn.Response:
+    """/reel/TOKEN.mp4: a Reel's video, with range requests (Safari and iPhones need them). ?download=1 saves it."""
+    import reels
+
+    parts = [p for p in req.path.split("/") if p]
+    rest = parts[parts.index("reel") + 1:] if "reel" in parts else []  # the emulator's URL has the function's name first
+    token = _clean(rest[0], 80).removesuffix(".mp4") if rest else ""
+    ref = _reels(firestore.client()).document(token) if token else None
+    snap = ref.get() if ref is not None else None
+    if snap is None or not snap.exists or snap.get("status") != "ready":
+        return https_fn.Response("Not found", status=404)
+    data = b"".join(p.get("data") for p in ref.collection("parts").stream())  # parts come back in name order
+    headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=86400"}
+    if req.args.get("download"):
+        headers["Content-Disposition"] = f'attachment; filename="mathsprint-reel-{snap.get("day")}-{snap.get("theme")}.mp4"'
+    try:
+        span = reels.byte_range(req.headers.get("Range"), len(data))
+    except ValueError:
+        return https_fn.Response(status=416, headers={"Content-Range": f"bytes */{len(data)}"})
+    if span is None:
+        return https_fn.Response(data, mimetype="video/mp4", headers=headers)
+    first, last = span
+    headers["Content-Range"] = f"bytes {first}-{last}/{len(data)}"
+    return https_fn.Response(data[first:last + 1], status=206, mimetype="video/mp4", headers=headers)

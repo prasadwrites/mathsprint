@@ -442,3 +442,15 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 }
 .build:focus { outline: none; }
 .build:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The admin's daily Instagram Reel on the home page. */
+.reel-body { display: grid; grid-template-columns: minmax(180px, 300px) 1fr; gap: 20px; align-items: start; }
+.reel-video { width: 100%; aspect-ratio: 9 / 16; border-radius: 14px; background: #000; display: block; }
+.reel-side textarea { min-height: 180px; font-size: 14px; }
+.reel-list { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.reel-list .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-align: left; cursor: pointer; text-decoration: underline; }
+.reel-list .link[aria-current="true"] { font-weight: 700; text-decoration: none; color: var(--ink); }
+@media (max-width: 640px) {
+  .reel-body { grid-template-columns: 1fr; }
+  .reel-video { max-width: 320px; margin: 0 auto; }
+}

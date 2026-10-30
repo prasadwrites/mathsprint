@@ -657,6 +657,25 @@ export interface QuestionPost {
   shareText: string;
 }
 
+/** A daily Instagram Reel for tutors: a 24-second video and its caption, made by the server (admin only). */
+export interface DailyReel {
+  token: string;
+  /** The day it was made for, YYYY-MM-DD in Eastern time. */
+  day: string;
+  /** The tutor headache it's about, such as "grading". */
+  theme: string;
+  /** "daily" from the 5 AM job, "extra" when the admin made another. */
+  kind: "daily" | "extra";
+  status: "making" | "ready" | "failed";
+  error: string;
+  hook: string;
+  /** Ready to paste into Instagram, hashtags included. */
+  caption: string;
+  bytes: number;
+  seconds: number;
+  createdAt: number | null;
+}
+
 /** A question post as a visitor opens it: the posted question first, then the rest of the deck. */
 export interface OpenQuestionPost {
   title: string;
