@@ -90,20 +90,30 @@ export default function Results() {
   const { sessionId = "" } = useParams();
   const [s, setS] = useState<PracticeSession | null>(null);
   const [deck, setDeck] = useState<Deck | null>(null);
-  const [questions, setQuestions] = useState<Question[]>([]);
+  // Each question with its place in the session (k), which the answers and timings are kept by. Questions deleted from
+  // the deck since are left out.
+  const [questions, setQuestions] = useState<{ q: Question; k: number }[]>([]);
 
   useEffect(() => {
     getSession(sessionId).then(async (sess) => {
       if (!sess) return;
       const [all, d] = await Promise.all([getQuestions(sess.deckId), getDeck(sess.deckId)]);
       const byId = new Map(all.map((q) => [q.id, q]));
-      setQuestions(sess.questionIds.map((id) => byId.get(id)!).filter(Boolean));
+      setQuestions(sess.questionIds.flatMap((id, k) => (byId.has(id) ? [{ q: byId.get(id)!, k }] : [])));
       setDeck(d);
       setS(sess);
     });
   }, [sessionId]);
 
-  if (!s || !questions.length) {
+  if (s && !questions.length) {
+    return (
+      <>
+        <TopBar back={{ to: "/", label: "Home" }} />
+        <main className="page"><p>The questions from this session have been deleted from the deck.</p></main>
+      </>
+    );
+  }
+  if (!s) {
     return (
       <>
         <TopBar back={{ to: "/", label: "Home" }} />
@@ -115,10 +125,10 @@ export default function Results() {
   const N = questions.length;
   const timed = s.timeLimitSec > 0;
   const used = s.usedSec ?? s.timeLimitSec;
-  const items = questions.map((q, i) => {
-    const reached = opened(s, i);
-    const time = secondsOn(s, i, used * 1000);
-    return { q, i, answer: s.answers[i] ?? "", ok: !!s.results?.[i], reached, time };
+  const items = questions.map(({ q, k }, i) => {
+    const reached = opened(s, k);
+    const time = secondsOn(s, k, used * 1000);
+    return { q, i, answer: s.answers[k] ?? "", ok: !!s.results?.[k], reached, time };
   });
   const answered = items.filter((x) => x.answer).length;
   const correct = items.filter((x) => x.ok).length;

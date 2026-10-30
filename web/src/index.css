@@ -432,6 +432,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .edit-question .edit-accepted { margin-top: 14px; }
 .edit-accepted .hint { margin: 0 0 4px; }
 .edit-option { flex-wrap: nowrap; gap: 8px; }
+.edit-question .edit-kind { flex-direction: row; flex-wrap: wrap; gap: 8px 20px; }
+.edit-kind label { display: flex; align-items: center; gap: 6px; font-weight: 400; margin: 0; }
+.edit-kind input[type=radio] { width: 18px; height: 18px; accent-color: var(--accent); }
+.add-question { margin-top: 16px; }
+.add-question h3 { margin: 0; }
+.add-question .edit-question { margin-top: 8px; }
 .edit-option input[type=radio] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
 .edit-question .edit-picture { margin-top: 4px; }
 .edit-choice { flex-wrap: nowrap; gap: 8px; font-weight: 500; cursor: pointer; }

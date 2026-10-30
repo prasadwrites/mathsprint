@@ -12,7 +12,7 @@ import PublicTestLinks from "../components/PublicTestLinks";
 import QuestionPosts from "../components/QuestionPosts";
 import { useIsAdmin, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
-import { getDeck, getQuestions } from "../lib/db";
+import { deleteQuestion, getDeck, getQuestions } from "../lib/db";
 import { subjectOf } from "../lib/subjects";
 import { formatClock } from "../lib/pace";
 import type { Deck, Question } from "../lib/types";
@@ -33,6 +33,9 @@ export default function DeckReview() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [postPick, setPostPick] = useState<{ id: string } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  // The question waiting for "Delete it?" to be confirmed, and the new question being written.
+  const [deleting, setDeleting] = useState<{ id: string; busy?: boolean; error?: string } | null>(null);
+  const [adding, setAdding] = useState(false);
   // Questions show as one line each; these are the ones opened to full size.
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpen((o) => {
@@ -144,7 +147,7 @@ export default function DeckReview() {
             )}
           </div>
           <p className="muted small" style={{ margin: "4px 0 0" }}>
-            Tap a question to see it in full. Answers stay hidden until after you practice{mine ? ", or until you edit a question" : ""}.
+            Tap a question to see it in full. Answers stay hidden until after you practice{mine ? ", or until you edit a question. You can also delete questions or add your own" : ""}.
           </p>
           <ul className="qlist" style={{ marginTop: 12 }}>
             {questions.map((q, i) => {
@@ -184,7 +187,43 @@ export default function DeckReview() {
                         Edit
                       </button>
                     )}
+                    {full && mine && editing !== q.id && questions.length > 1 && deleting?.id !== q.id && (
+                      <button type="button" className="btn-link danger" onClick={() => setDeleting({ id: q.id })} aria-label={`Delete question ${i + 1}`}>
+                        Delete
+                      </button>
+                    )}
                   </span>
+                  {deleting?.id === q.id && (
+                    <div className="confirm-delete" role="alertdialog" aria-label={`Delete question ${i + 1}`}>
+                      <p>
+                        <b>Delete question {i + 1}?</b> It's removed from this deck for good. Tests, challenges and links already made
+                        from the deck keep it.
+                      </p>
+                      <div className="row" style={{ gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-small btn-danger-solid"
+                          disabled={deleting.busy}
+                          onClick={async () => {
+                            setDeleting({ id: q.id, busy: true });
+                            try {
+                              await deleteQuestion(deck.id, q.id);
+                              setQuestions((all) => all.filter((x) => x.id !== q.id));
+                              setDeleting(null);
+                            } catch (e) {
+                              setDeleting({ id: q.id, error: (e as Error).message || "The question wasn't deleted. Try again." });
+                            }
+                          }}
+                        >
+                          {deleting.busy ? "Deleting…" : "Delete question"}
+                        </button>
+                        <button type="button" className="btn btn-small" disabled={deleting.busy} onClick={() => setDeleting(null)}>
+                          Keep it
+                        </button>
+                      </div>
+                      {deleting.error && <p className="error" role="alert">{deleting.error}</p>}
+                    </div>
+                  )}
                   {editing === q.id && (
                     <EditQuestion
                       deckId={deck.id}
@@ -201,6 +240,26 @@ export default function DeckReview() {
               );
             })}
           </ul>
+          {mine && (adding ? (
+            <div className="add-question">
+              <h3>New question {questions.length + 1}</h3>
+              <EditQuestion
+                deckId={deck.id}
+                subject={subjectOf(deck)}
+                choicesOnly={deck.choicesOnly}
+                onCancel={() => setAdding(false)}
+                onSaved={(added) => {
+                  setQuestions((all) => [...all, added]);
+                  setOpen((o) => new Set(o).add(added.id));
+                  setAdding(false);
+                }}
+              />
+            </div>
+          ) : questions.length < 200 && (
+            <button type="button" className="btn btn-small" style={{ marginTop: 12 }} onClick={() => setAdding(true)}>
+              + Add a question
+            </button>
+          ))}
         </div>
       </main>
     </>

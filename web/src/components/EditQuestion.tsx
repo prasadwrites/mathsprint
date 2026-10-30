@@ -1,27 +1,43 @@
 import { useState } from "react";
-import { editQuestion, type PictureEdit } from "../lib/db";
+import { addQuestion, editQuestion, type PictureEdit } from "../lib/db";
 import { shrinkPicture, type ShrunkPicture } from "../lib/pictures";
 import { isMath } from "../lib/subjects";
 import type { Question, SolutionStep } from "../lib/types";
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
 const NOUNS = { plane: "graph", geometry: "diagram", image: "picture" } as const;
+const MIN_OPTIONS = 2;
+const MAX_OPTIONS = 6;
 
-/** The owner's editor for one question. The server checks the answer before it saves, and says why when it won't. */
-export default function EditQuestion({ deckId, subject, question, onSaved, onCancel }: {
+/** A new question's starting point: no picture, four empty options if it becomes multiple choice. */
+function blank(choicesOnly: boolean): Question {
+  return {
+    id: "new", order: 0, prompt: "", math: "", type: choicesOnly ? "choice" : "numeric", choices: ["", "", "", ""],
+    answerValues: [], answerChoice: "", answerDisplay: "", tolerance: 0, concept: "", difficulty: "Medium", steps: [], verified: false,
+  };
+}
+
+/** The owner's editor for one question, or for a new one when `question` is left out. The server checks the answer
+ * before it saves, and says why when it won't. */
+export default function EditQuestion({ deckId, subject, question: existing, choicesOnly = false, onSaved, onCancel }: {
   deckId: string;
   subject: string;
-  question: Question;
+  question?: Question;
+  /** A multiple choice only deck: a new question can only be multiple choice. */
+  choicesOnly?: boolean;
   onSaved: (q: Question) => void;
   onCancel: () => void;
 }) {
-  const choice = question.type === "choice";
+  const adding = !existing;
+  const [question] = useState(() => existing ?? blank(choicesOnly));
+  const [kind, setKind] = useState(question.type);
+  const choice = kind === "choice";
   // Multiple choice outside math is checked by Claude answering it again without the key; everything else by SymPy.
   const engine = isMath(subject) || !choice;
   const [prompt, setPrompt] = useState(question.prompt);
   const [math, setMath] = useState(question.math);
   const [choices, setChoices] = useState(question.choices);
-  const [answerChoice, setAnswerChoice] = useState(choices.indexOf(question.answerChoice));
+  const [answerChoice, setAnswerChoice] = useState(adding ? -1 : choices.indexOf(question.answerChoice));
   const [answer, setAnswer] = useState(question.answerDisplay);
   const [accepted, setAccepted] = useState<string[]>(question.acceptedAnswers ?? []);
   const [steps, setSteps] = useState<SolutionStep[]>(question.steps.length ? question.steps : [{ description: "", expression: "" }]);
@@ -67,9 +83,8 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
     setBusy(true);
     setError("");
     try {
-      const edited = await editQuestion({
+      const fields = {
         deckId,
-        questionId: question.id,
         prompt,
         math,
         steps,
@@ -77,8 +92,9 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
         difficulty,
         ...(choice ? { choices, answerChoice: choices[answerChoice] ?? "" } : { answer, acceptedAnswers: accepted.filter((a) => a.trim()) }),
         picture: pictureEdit(),
-      });
-      onSaved({ ...question, ...edited, verified: true });
+      };
+      if (adding) onSaved(await addQuestion({ ...fields, type: kind }));
+      else onSaved({ ...question, ...(await editQuestion({ ...fields, questionId: question.id })), verified: true });
     } catch (err) {
       setError((err as Error).message || "The question wasn't saved. Try again.");
       setBusy(false);
@@ -86,7 +102,14 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
   }
 
   return (
-    <form className="edit-question stack" onSubmit={save} aria-label="Edit question">
+    <form className="edit-question stack" onSubmit={save} aria-label={adding ? "New question" : "Edit question"}>
+      {adding && !choicesOnly && (
+        <fieldset className="row edit-kind" disabled={busy}>
+          <legend>Answer type</legend>
+          <label><input type="radio" name={id("kind")} checked={!choice} onChange={() => setKind("numeric")} /> Typed answer</label>
+          <label><input type="radio" name={id("kind")} checked={choice} onChange={() => setKind("choice")} /> Multiple choice</label>
+        </fieldset>
+      )}
       <div>
         <label htmlFor={id("prompt")}>Question</label>
         <textarea id={id("prompt")} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={busy} />
@@ -162,8 +185,21 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
             <div className="row edit-option" key={i}>
               <input type="radio" name={id("correct")} checked={answerChoice === i} onChange={() => setAnswerChoice(i)} aria-label={`Option ${i + 1} is correct`} />
               <input type="text" value={c} onChange={(e) => setChoices(choices.map((x, k) => (k === i ? e.target.value : x)))} aria-label={`Option ${i + 1}`} />
+              {adding && choices.length > MIN_OPTIONS && (
+                <button type="button" className="btn-link danger" aria-label={`Remove option ${i + 1}`} onClick={() => {
+                  setChoices(choices.filter((_, k) => k !== i));
+                  setAnswerChoice(answerChoice === i ? -1 : answerChoice > i ? answerChoice - 1 : answerChoice);
+                }}>
+                  Remove
+                </button>
+              )}
             </div>
           ))}
+          {adding && choices.length < MAX_OPTIONS && (
+            <button type="button" className="btn-link" onClick={() => setChoices([...choices, ""])}>
+              + Add an option
+            </button>
+          )}
         </fieldset>
       ) : (
         <div>
@@ -171,6 +207,7 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
           <input id={id("answer")} type="text" value={answer} onChange={(e) => setAnswer(e.target.value)} disabled={busy}
             placeholder={question.pair ? "e.g. (2, 5)" : "e.g. x = 2, 3"} />
           <p className="muted hint">
+            {adding && !isMath(subject) && "Typed answers must be numbers; use multiple choice for answers in words. "}
             {question.pair ? "Write the point as (x, y). " : "Separate more than one answer with commas. "}
             Fractions like 1/2, roots like 6√3 and π are fine. Students see it written this way.
           </p>
@@ -237,14 +274,18 @@ export default function EditQuestion({ deckId, subject, question, onSaved, onCan
       {error && <p className="error" role="alert">{error}</p>}
       <div className="row" style={{ gap: 8 }}>
         <button type="submit" className="btn btn-primary btn-small" disabled={busy}>
-          {busy ? <><span className="spinner" /> {picture === "redraw" ? "Drawing and checking…" : "Checking the answer…"}</> : "Check and save"}
+          {busy ? <><span className="spinner" /> {picture === "redraw" ? "Drawing and checking…" : "Checking the answer…"}</> : adding ? "Check and add" : "Check and save"}
         </button>
         <button type="button" className="btn btn-small" disabled={busy} onClick={onCancel}>
           Cancel
         </button>
       </div>
       <p className="muted hint">
-        {engine
+        {adding
+          ? engine
+            ? `The math engine works the question out on its own and adds it only if your ${choice ? "option" : "answer"} is correct.${choice ? "" : " Answers you also accept are saved as you write them."}`
+            : "An independent check answers the question without your key and adds it only if it picks your option."
+          : engine
           ? "If you change the question or its answer, the math engine works it out again and saves it only if your answer is correct. Answers you also accept are saved as you write them."
           : "If you change the question or its options, an independent check answers it again without your key and saves it only if it picks your option."}
       </p>

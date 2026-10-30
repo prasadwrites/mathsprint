@@ -17,6 +17,15 @@ function answerPrefix(q: Question) {
   return vars.size === 1 ? `${[...vars][0]} =` : "";
 }
 
+/** Stands in for a question deleted from the deck after the session started: multiple choice with no options, so it
+ * has nothing to answer and never counts as right. */
+function removedQuestion(id: string): Question {
+  return {
+    id, order: 0, prompt: "This question was deleted from the deck. Go on to the next one.", math: "", type: "choice", choices: [],
+    answerValues: [], answerChoice: "", answerDisplay: "", tolerance: 0, concept: "", difficulty: "Medium", steps: [], verified: false,
+  };
+}
+
 export default function Practice() {
   const { sessionId = "" } = useParams();
   const navigate = useNavigate();
@@ -42,7 +51,8 @@ export default function Practice() {
       }
       const all = await getQuestions(s.deckId);
       const byId = new Map(all.map((q) => [q.id, q]));
-      setQuestions(s.questionIds.map((id) => byId.get(id)!).filter(Boolean));
+      // A question deleted from the deck since the session started keeps its place, so answers stay with their questions.
+      setQuestions(s.questionIds.map((id) => byId.get(id) ?? removedQuestion(id)));
       setSession(s);
     })();
   }, [sessionId, navigate]);
