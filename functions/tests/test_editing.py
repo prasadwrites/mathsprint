@@ -170,3 +170,101 @@ def test_diagram_question_is_checked_against_the_picture():
     assert editing.verify(new, "Math", "", FakeClient(written("dist(A, B)", kind="evaluate", variable=""))).ok
     wrong = {**old, **edit(old, prompt="Find AB.", answer="5")}
     assert not editing.verify(wrong, "Math", "", FakeClient(written("dist(A, B)", kind="evaluate", variable=""))).ok
+
+
+def png_url(size=(40, 30), fmt="PNG", mime="png"):
+    import base64
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", size, (200, 30, 30)).save(buf, fmt)
+    return f"data:image/{mime};base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def test_uploaded_picture_is_stored_with_its_size_and_needs_a_check():
+    old = numeric(prompt="Find the area of the shaded square.", math="", answerValues=[9.0], answerDisplay="9")
+    new = edit(old, picture={"action": "upload", "image": png_url(), "alt": "A square with side 3 cm, shaded."})
+    assert new["figure"] == {"kind": "image", "alt": "A square with side 3 cm, shaded.", "src": png_url(), "width": 40, "height": 30}
+    assert editing.needs_check(old, new)
+
+
+def test_uploaded_picture_must_be_a_described_image():
+    old = numeric()
+    with pytest.raises(editing.EditError, match="Describe the picture"):
+        edit(old, picture={"action": "upload", "image": png_url(), "alt": "  "})
+    for image in ("", "data:image/svg+xml;base64,PHN2Zz4=", "data:image/png;base64,bm90IGFuIGltYWdl", png_url(fmt="JPEG")):
+        with pytest.raises(editing.EditError):
+            edit(old, picture={"action": "upload", "image": image, "alt": "A square."})
+    with pytest.raises(editing.EditError, match="too large"):
+        edit(old, picture={"action": "upload", "image": "data:image/png;base64," + "A" * 600_000, "alt": "A square."})
+
+
+def test_uploaded_picture_is_checked_by_its_description():
+    old = numeric(prompt="What is the area of the square shown?", math="", answerValues=[9.0], answerDisplay="9")
+    new = {**old, **edit(old, picture={"action": "upload", "image": png_url(), "alt": "A square with side 3."})}
+    client = FakeClient(written("3**2", kind="evaluate", variable=""))
+    assert editing.verify(new, "Math", "", client).ok
+    assert "A square with side 3." in client.asked[0] and "base64" not in client.asked[0]
+
+
+def test_uploaded_picture_in_another_subject_is_described_to_the_reviewer():
+    old = choice(choices=["Nucleus", "Mitochondrion", "Ribosome", "Golgi body"], answerChoice="Nucleus", answerValues=[], answerDisplay="Nucleus")
+    new = {**old, **edit(old, prompt="Which organelle is labeled A?", picture={"action": "upload", "image": png_url(), "alt": "An animal cell; A points to the nucleus."})}
+    client = FakeClient(Review(answers=[ReviewedAnswer(number=1, choice="Nucleus", problem="")]))
+    assert editing.verify(new, "Biology", "High school", client).ok
+    assert "A points to the nucleus" in client.asked[0]
+
+
+def test_removing_the_picture_needs_a_check_and_keeping_it_does_not():
+    fig = Figure(kind="plane", alt="A parabola.", x_min=-5, x_max=5, y_min=-5, y_max=5, x_grid=1, y_grid=1,
+                 items=[FigureItem(type="function", expr="x**2 - 4", points=[], label="f", side="", dashed=False)])
+    old = numeric(figure=figure_doc(fig))
+    removed = edit(old, picture={"action": "remove"})
+    assert removed["figure"] is None and editing.needs_check(old, removed)
+    kept = edit(old, picture={"action": "keep"})
+    assert "figure" not in kept and not editing.needs_check(old, kept)
+    assert editing.redraw_note({"picture": {"action": "keep"}}) is None
+    assert editing.redraw_note({"picture": {"action": "redraw", "note": "  Make AB 7.  "}}) == "Make AB 7."
+    assert editing.redraw_note({"picture": {"action": "redraw"}}) == ""
+
+
+def drawn_triangle(b="4"):
+    import json
+
+    from generator import DrawnPicture
+
+    return DrawnPicture(kind="diagram", picture=json.dumps({
+        "alt": "A right triangle ABC.",
+        "points": [{"name": "A", "x": "0", "y": "0", "show": True}, {"name": "B", "x": b, "y": "0", "show": True}, {"name": "C", "x": "0", "y": "3", "show": True}],
+        "items": [{"type": "polygon", "of": ["A", "B", "C"], "text": "", "count": 0, "dashed": False, "shaded": False},
+                  {"type": "length_label", "of": ["A", "B"], "text": b, "count": 0, "dashed": False, "shaded": False},
+                  {"type": "length_label", "of": ["B", "C"], "text": "x", "count": 0, "dashed": False, "shaded": False}],
+    }))
+
+
+def test_redraw_returns_a_checked_diagram_and_the_answer_is_checked_against_it():
+    old = numeric(prompt="Find BC.", math="", answerValues=[5.0], answerDisplay="5")
+    new = {**old, **edit(old, prompt="Find BC when AB is 4 and AC is 3.")}
+    client = FakeClient(drawn_triangle(), written("dist(B, C)", kind="evaluate", variable=""))
+    new["figure"] = editing.redraw(new, "Right angle at A.", client)
+    assert new["figure"]["kind"] == "geometry" and [p["name"] for p in new["figure"]["points"]] == ["A", "B", "C"]
+    assert "Right angle at A." in client.asked[0] and "5" not in client.asked[0].split("Question:")[1].split("\n")[0]
+    assert editing.verify(new, "Math", "", client).ok
+
+
+def test_redraw_gets_a_second_try_and_sends_the_current_picture():
+    fig = Figure(kind="plane", alt="A parabola.", x_min=-5, x_max=5, y_min=-5, y_max=5, x_grid=1, y_grid=1,
+                 items=[FigureItem(type="function", expr="x**2 - 4", points=[], label="f", side="", dashed=False)])
+    old = numeric(prompt="What is f(1)?", math="", answerValues=[-3.0], answerDisplay="-3", figure=figure_doc(fig))
+    from generator import DrawnPicture
+
+    client = FakeClient(DrawnPicture(kind="figure", picture="{not json"), drawn_triangle())
+    picture = editing.redraw(old, "", client)
+    assert picture["kind"] == "geometry"
+    assert '"x**2 - 4"' in client.asked[0] and "rejected because" in client.asked[1]
+
+    bad = FakeClient(DrawnPicture(kind="figure", picture="{}"), DrawnPicture(kind="figure", picture="{}"))
+    with pytest.raises(editing.EditError, match="couldn't be drawn"):
+        editing.redraw(old, "", bad)

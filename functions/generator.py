@@ -15,7 +15,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import List
+from typing import List, Literal
 
 import anthropic
 from pydantic import BaseModel, Field
@@ -34,7 +34,7 @@ PARALLEL_BATCHES = 5
 
 log = logging.getLogger(__name__)
 
-SYSTEM = """You write math practice questions for high school and college students in the US.
+SYSTEM_HEAD = """You write math practice questions for high school and college students in the US.
 
 Every question needs a `check`: the same problem restated in SymPy syntax so a
 program can verify your answer. Use ** for powers and * for multiplication.
@@ -51,7 +51,10 @@ working after that step.
 
 Write `math` with readable Unicode (x², √, −, ·), not SymPy syntax.
 
-Figures: when a question is about a graph (reading slope, intercepts, a vertex,
+"""
+
+# How to draw graphs and diagrams; also used to redraw an edited question's picture (draw_picture).
+PICTURE_RULES = """Figures: when a question is about a graph (reading slope, intercepts, a vertex,
 zeros, where graphs cross, which region is shaded, transformations), give it a
 `figure`: a coordinate plane the app draws for you, written as a JSON object in
 the Figure format below. Otherwise `figure` is ''.
@@ -82,7 +85,9 @@ both a figure and a diagram; text-only questions have neither.
 - Mark right angles with 'right_angle', equal sides with 'ticks' of the same
   count. Keep shapes in sensible proportions and points apart.
 
-Answers: when the exact answer has a root or π, write answer_display in exact
+"""
+
+SYSTEM = SYSTEM_HEAD + PICTURE_RULES + """Answers: when the exact answer has a root or π, write answer_display in exact
 form (6√3, 16π) and set `tolerance` to 0.01, so students may type the exact form
 or a decimal. When the answer is a point (a midpoint, a vertex, an
 intersection), set `pair` to true, answer_values to [x, y], and use a check of
@@ -701,3 +706,54 @@ def review_choice(client: anthropic.Anthropic | None, question: GeneratedQuestio
     if not reason:
         return ""
     return f"{reason[0].upper()}{reason[1:].rstrip('.')}. Check the answer and the options."
+
+
+class DrawnPicture(BaseModel):
+    kind: Literal["figure", "diagram"] = Field(description="'figure' for a graph on a coordinate plane, 'diagram' for a geometry diagram.")
+    picture: str = Field(description="The picture as one JSON object: in the Figure format for a figure, the Diagram format for a diagram.")
+
+
+DRAW_SYSTEM = """You draw the picture for one math practice question that its author has just edited, for students
+in the US. The app draws it from a JSON object you write: a graph on a coordinate plane (a figure) or a geometry
+diagram. Draw exactly what the question describes, following the rules below, and follow the author's instructions
+when there are any. When you are shown the current picture, change only what the edit or the instructions need.
+
+You are not told the answer. A program works the answer out from the question and your picture, so every number
+you label must match the drawing, and the value the student must find is never labeled or marked (label it 'x' or
+'?'). Where the rules mention the `check`, they mean that program: name graphs and points so it can use them.
+
+""" + PICTURE_RULES + "\n" + picture_formats()
+
+
+def draw_picture(client: anthropic.Anthropic | None, question: dict, note: str = "", current: str = "", problem: str = "") -> DrawnPicture:
+    """Claude draws a new graph or diagram for an edited question (see editing.redraw). `current` is the picture it
+    has now, in the Figure or Diagram JSON format; `problem` says why the last attempt was rejected."""
+    client = client or anthropic.Anthropic()
+    lines = [f"Question: {question['prompt']}"]
+    if question.get("math"):
+        lines.append(f"Formula shown: {question['math']}")
+    if question["type"] == "choice":
+        lines.append("Multiple choice. Options: " + " | ".join(question.get("choices", [])))
+    if current:
+        lines.append(f"Current picture: {current}")
+    if note:
+        lines.append(f"The author's instructions for the picture: {note}")
+    if problem:
+        lines.append(f"Your last picture was rejected because {problem}. Draw it again without that problem.")
+    try:
+        response = client.beta.messages.parse(
+            model=MODEL,
+            max_tokens=8000,
+            system=DRAW_SYSTEM,
+            messages=[{"role": "user", "content": "\n".join(lines)}],
+            output_format=DrawnPicture,
+            output_config={"effort": "medium"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIError as e:
+        raise api_error(e) from e
+    METER.add(response)
+    if response.stop_reason == "refusal" or response.parsed_output is None:
+        raise GenerationError("Claude couldn't draw a picture for this question. Try describing what to draw.")
+    return response.parsed_output

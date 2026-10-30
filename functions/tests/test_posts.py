@@ -1,3 +1,4 @@
+import base64
 import io
 import sys
 from pathlib import Path
@@ -72,8 +73,17 @@ def test_texts():
     assert posts.share_text(post).startswith("Quick SAT Algebra challenge: What is the maximum")
 
 
+def _uploaded(size):
+    buf = io.BytesIO()
+    Image.new("RGBA", size, (30, 90, 200, 128)).save(buf, "PNG")
+    return {"kind": "image", "alt": "A blue box.", "src": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode(), "width": size[0], "height": size[1]}
+
+
+UPLOADED = _uploaded((900, 300))
+
+
 def test_figures_draw():
-    for fig in (PLANE, GEOMETRY, {"kind": "geometry", "points": [], "items": []}, {"kind": "plane", "items": []}):
+    for fig in (PLANE, GEOMETRY, {"kind": "geometry", "points": [], "items": []}, {"kind": "plane", "items": []}, UPLOADED, _uploaded((20, 60))):
         img = figure_image.render(fig, 400, 300)
         assert img.mode == "RGB" and img.width <= 400 and img.height <= 300
 
@@ -81,7 +91,7 @@ def test_figures_draw():
 def test_question_cards_render_at_both_sizes():
     long = {**Q, "prompt": "A rectangular garden is 3 meters longer than it is wide. " * 6}
     choice = {**Q, "type": "choice", "choices": ["8", "15", "16", "24"], "math": ""}
-    for q in (Q, long, choice, {**Q, "figure": PLANE}, {**Q, "figure": GEOMETRY}, {**choice, "figure": GEOMETRY}):
+    for q in (Q, long, choice, {**Q, "figure": PLANE}, {**Q, "figure": GEOMETRY}, {**choice, "figure": GEOMETRY}, {**Q, "figure": UPLOADED}):
         for size, dims in cards.SIZES.items():
             img = Image.open(io.BytesIO(cards.render_question({"deckTitle": "SAT Algebra", "question": posts.public_question(q, 0)}, size, "mathsprint.org")))
             assert img.format == "PNG" and img.size == dims

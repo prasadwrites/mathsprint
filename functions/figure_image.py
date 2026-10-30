@@ -1,4 +1,5 @@
-"""Draws a question's graph or geometry diagram as a picture, for the question post card.
+"""Draws a question's graph or geometry diagram as a picture, for the question post card. A picture the deck owner
+uploaded instead (kind 'image') is scaled to fit the same space.
 
 The same drawing as the app's Figure.tsx and Diagram.tsx, in the same 400-unit space, so the card matches what the
 visitor sees when they open the link. Drawn three times larger than asked and scaled down, which smooths the lines.
@@ -6,6 +7,8 @@ visitor sees when they open the link. Drawn three times larger than asked and sc
 
 from __future__ import annotations
 
+import base64
+import io
 import math
 import os
 from functools import lru_cache
@@ -332,8 +335,22 @@ def _geometry(fig: dict, k: float, t: float) -> Image.Image:
 def render(fig: dict, max_w: int, max_h: int, min_label: int = 14) -> Image.Image:
     """The figure as an RGB picture on white, as large as fits in max_w by max_h. Labels are at least min_label
     pixels tall, so they stay readable on a small picture."""
+    if fig.get("kind") == "image":
+        return _uploaded(fig, max_w, max_h)
     geometry = fig.get("kind") == "geometry"
     H = geometry_height(fig) if geometry else plane_height(fig)
     k = min(max_w / W, max_h / H)
     big = (_geometry if geometry else _plane)(fig, k * SS, max(1.0, min_label / (15 * k)))
     return big.resize((max(1, round(W * k)), max(1, round(H * k))), Image.LANCZOS)
+
+
+def _uploaded(fig: dict, max_w: int, max_h: int) -> Image.Image:
+    """The owner's image (a data URL, checked when it was saved) on white, as large as fits."""
+    raw = base64.b64decode(fig["src"].split(",", 1)[1])
+    with Image.open(io.BytesIO(raw)) as src:
+        img = src.convert("RGBA")
+    k = min(max_w / img.width, max_h / img.height)
+    img = img.resize((max(1, round(img.width * k)), max(1, round(img.height * k))), Image.LANCZOS)
+    out = Image.new("RGB", img.size, WHITE)
+    out.paste(img, mask=img)
+    return out

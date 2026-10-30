@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { Figure as FigureSpec, FigureItem, PlaneFigure } from "../lib/types";
+import type { Figure as FigureSpec, FigureItem, ImageFigure, PlaneFigure } from "../lib/types";
 import Diagram from "./Diagram";
 
 const W = 400;
@@ -16,9 +16,22 @@ function ticks(min: number, max: number, step: number) {
 
 const fmt = (n: number) => (n < 0 ? `−${Math.abs(n)}` : `${n}`);
 
-/** Draws a question's graph or geometry diagram. The server has already checked everything in it. */
+/** Draws a question's graph or geometry diagram, or shows the picture its owner uploaded. The server has already
+ * checked everything in it. */
 export default function Figure({ figure, small = false }: { figure: FigureSpec; small?: boolean }) {
+  if (figure.kind === "image") return <Uploaded figure={figure} small={small} />;
   return figure.kind === "geometry" ? <Diagram diagram={figure} small={small} /> : <Plane figure={figure} small={small} />;
+}
+
+/** The owner's own picture, no taller than a drawn one. */
+function Uploaded({ figure, small }: { figure: ImageFigure; small: boolean }) {
+  const maxH = small ? 220 : 360;
+  const maxW = Math.min(small ? 280 : 560, Math.round((maxH * figure.width) / figure.height));
+  return (
+    <figure className={`figure figure-image${small ? " small" : ""}`} style={{ maxWidth: maxW }}>
+      <img src={figure.src} alt={figure.alt} width={figure.width} height={figure.height} />
+    </figure>
+  );
 }
 
 /** A coordinate plane with graphs, which the server has already sampled. */
