@@ -60,4 +60,10 @@ describe("isCorrect", () => {
     expect(isCorrect(q, "−16")).toBe(true);
     expect(isCorrect(q, "16")).toBe(false);
   });
+  it("counts the owner's also-accepted answers, ignoring case, spaces and a final period", () => {
+    const q = { type: "numeric" as const, answerValues: [10], answerChoice: "", tolerance: 0, acceptedAnswers: ["ten", "Ten meters"] };
+    for (const a of ["10", "10 m", "10 meters", "TEN", "ten meters.", "tenmeters"]) expect(isCorrect(q, a)).toBe(true);
+    expect(isCorrect(q, "eleven")).toBe(false);
+    expect(isCorrect(q, "12")).toBe(false);
+  });
 });

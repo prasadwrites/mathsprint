@@ -17,9 +17,16 @@ export function parseNumbers(input: string): number[] {
   return out;
 }
 
-export function isCorrect(q: Pick<Question, "type" | "answerValues" | "answerChoice" | "tolerance" | "pair">, answer: string | undefined): boolean {
+/** An answer as typed, for matching the owner's "also accept" answers: case, spaces and a final period don't matter. */
+export function sameAnswerText(answer: string): string {
+  return answer.toLowerCase().replace(/[−–]/g, "-").replace(/\s+/g, "").replace(/\.+$/, "");
+}
+
+export function isCorrect(q: Pick<Question, "type" | "answerValues" | "answerChoice" | "tolerance" | "pair" | "acceptedAnswers">, answer: string | undefined): boolean {
   if (!answer) return false;
   if (q.type === "choice") return answer === q.answerChoice;
+  const typed = sameAnswerText(answer);
+  if (typed && q.acceptedAnswers?.some((a) => sameAnswerText(a) === typed)) return true;
   const tol = Math.max(q.tolerance ?? 0, 1e-6);
   if (q.pair) {
     // A point: both coordinates, in order.

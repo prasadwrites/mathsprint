@@ -128,11 +128,19 @@ def parse_numbers(text: str) -> list[float]:
     return out
 
 
+def same_answer_text(answer: str) -> str:
+    """An answer as typed, for matching the owner's "also accept" answers: case, spaces and a final period don't matter."""
+    return re.sub(r"\.+$", "", re.sub(r"\s+", "", re.sub("[−–]", "-", answer.lower())))
+
+
 def is_correct(q: dict, answer: object) -> bool:
     if not isinstance(answer, str) or not answer:
         return False
     if q.get("type") == "choice":
         return answer == q.get("answerChoice")
+    typed = same_answer_text(answer)
+    if typed and any(isinstance(a, str) and same_answer_text(a) == typed for a in q.get("acceptedAnswers") or []):
+        return True
     tol = max(float(q.get("tolerance") or 0), 1e-6)
     expected = q.get("answerValues") or []
     if q.get("pair"):

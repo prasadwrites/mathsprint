@@ -428,6 +428,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .edit-question fieldset { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .edit-question legend { font-weight: 700; padding: 0; margin-bottom: 6px; }
 .edit-question .hint { font-size: 14px; margin: 6px 0 0; }
+.edit-question .edit-accepted { margin-top: 14px; }
+.edit-accepted .hint { margin: 0 0 4px; }
 .edit-option { flex-wrap: nowrap; gap: 8px; }
 .edit-option input[type=radio] { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
 .edit-step { display: grid; grid-template-columns: 24px 1fr 1fr auto; gap: 8px; align-items: center; }

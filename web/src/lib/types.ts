@@ -80,6 +80,8 @@ export interface Question {
   figure?: Figure | null;
   /** The answer is a point (x, y), so its two values are graded in order. */
   pair?: boolean;
+  /** Typed-answer questions: other ways of writing the answer the owner counts as right, such as "ten" (see grading.ts). */
+  acceptedAnswers?: string[];
 }
 
 export interface Deck {
