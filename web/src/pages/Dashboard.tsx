@@ -5,6 +5,7 @@ import TopBar, { Chip, Icon } from "../components/TopBar";
 import DeleteDeck from "../components/DeleteDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import PromotionOffer from "../components/PromotionOffer";
+import DailyReel from "../components/DailyReel";
 import { addSampleDeck, listChallenges, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
 import { formatClock } from "../lib/pace";
@@ -192,6 +193,7 @@ export default function Dashboard() {
             <span>Read it →</span>
           </Link>
         )}
+        {account?.isAdmin && <DailyReel />}
         <section className="stack">
           <h1 style={{ fontSize: "clamp(30px, 5vw, 40px)" }}>What do you want to practice?</h1>
           <form

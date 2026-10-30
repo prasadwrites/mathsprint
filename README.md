@@ -98,6 +98,12 @@ When the payment completes, Square calls `square_webhook` (Hosting sends `https:
 
 Prices are in cents in `SQUARE_PRO_PRICE_CENTS` and `SQUARE_PROMAX_PRICE_CENTS` (the first deploy asks for them and saves them in `functions/.env.<project>`). Set `SQUARE_ENVIRONMENT=sandbox` there, with sandbox keys, to test with Square's test cards.
 
+### Daily Instagram Reel
+
+Every morning at 5 AM Eastern, `daily_reel` makes a 24-second Instagram Reel for tutors and the admin's home page shows it with its caption, a **Download video** button, **Copy caption** and **Make another** (`admin_make_reel`, the next theme, about a minute). Each Reel is about one tutor headache (late-night grading, a worksheet for every student, chasing homework, and so on; `THEMES` in `functions/reels.py`, one per day in rotation). Claude writes the on-screen words and the caption using only the MathSprint features listed for that theme, so a Reel never claims something the app doesn't do, and never includes prices, statistics or testimonials. `functions/reel_video.py` animates it with Pillow (a tutor stress meter climbs to meltdown, then MathSprint brings it back to calm) with a synthesized soundtrack (`reel_music.py`) and encodes a 1080x1920 MP4 with the ffmpeg that ships in the `imageio-ffmpeg` package. Colors rotate daily too.
+
+Each Reel costs about $0.04 to $0.08 of Claude (counted in the credit estimate below) plus a minute or less of function time. Reels are kept in `dailyReels/{token}`, with the video in 900 KB parts under `parts/` (Firestore documents stop at 1 MiB); only the functions read them, and the newest 30 are kept. `reel_file` serves `/reel/TOKEN.mp4` with range requests (iPhones need them) and `?download=1`. The schedule needs Cloud Scheduler, which `firebase deploy --only functions` turns on for the project.
+
 ### Claude credit
 
 The admin's profile menu shows about how much Anthropic API credit is left. The API has no endpoint for a prepaid balance, so this is an estimate: the admin types in the balance from the Anthropic console (Settings > Billing), every Claude call made by `generate_deck` and `explain_step` adds its cost from the response's token counts (`functions/credit.py`, at list prices), and the menu shows the balance minus what was spent since. Spending outside this app with the same key or account isn't counted, so re-enter the balance after topping up, or now and then to correct drift. Stored in `settings/claudeCredit`, which only the functions read and write.

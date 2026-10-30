@@ -119,6 +119,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // The daily Instagram Reels and their videos (in parts). Only the Cloud Functions read or write these.
+    match /dailyReels/{token}/{document=**} {
+      allow read, write: if false;
+    }
+
     // Problem reports and plan promotions. Read and written only through functions.
     match /reports/{reportId} {
       allow read, write: if false;

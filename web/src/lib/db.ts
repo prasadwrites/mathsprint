@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, ClaudeCredit, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -274,6 +274,16 @@ export async function listQuestionPosts(deckId?: string) {
 
 export async function deleteQuestionPost(token: string) {
   await httpsCallable(functions, "delete_question_post", { timeout: 120_000 })({ token });
+}
+
+/** Admin only: the latest daily Instagram Reels, newest first, and today's date in Eastern time. */
+export async function listReels() {
+  return (await httpsCallable<void, { reels: DailyReel[]; today: string }>(functions, "admin_list_reels")()).data;
+}
+
+/** Admin only: another Reel today, on the next theme. Claude writes it and the server animates it, about a minute. */
+export async function makeReel() {
+  return (await httpsCallable<void, DailyReel>(functions, "admin_make_reel", { timeout: 540_000 })()).data;
 }
 
 /** No sign-in. `count: false` opens it without counting a view, for a reload. */
