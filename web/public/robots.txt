@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /t/
+Disallow: /class/
+
+Sitemap: https://mathsprint.org/sitemap.xml

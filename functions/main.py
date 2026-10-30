@@ -55,6 +55,7 @@ create_question_post, list_question_posts, delete_question_post - Admin only: a 
 open_question_post, check_post_answer - No sign-in: anyone answers the posted question, then more from the same deck.
 save_post_deck        - A visitor who signs up (or is signed in) saves the post's whole deck to their account.
 question_post_page    - Serves /q/TOKEN with the question in its link preview, and /q/TOKEN/card.png, the question card.
+site_stats            - No sign-in: /api/stats, how many AI decks have been built and answers checked, for the tutors page.
 """
 
 from __future__ import annotations
@@ -3010,3 +3011,19 @@ def unshare_deck(req: https_fn.CallableRequest) -> dict:
     writer.close()
     deck.reference.update({"sharedWith": firestore.ArrayRemove([recipient])})
     return {"ok": True, "shares": _deck_shares(deck) if uid == deck.get("ownerId") else []}
+
+
+@https_fn.on_request(timeout_sec=30)
+def site_stats(req: https_fn.Request) -> https_fn.Response:
+    """/api/stats: {decks, answers}, the AI decks built and the questions in them (every one checked before it was saved).
+    Shared copies aren't counted again. Cached for an hour, so a busy landing page costs a few reads an hour."""
+    decks = answers = 0
+    try:
+        query = firestore.client().collection("decks").where("source", "==", "ai")
+        result = query.count(alias="decks").sum("questionCount", alias="answers").get()[0]
+        by = {r.alias: r.value for r in result}
+        decks, answers = int(by.get("decks") or 0), int(by.get("answers") or 0)
+    except Exception:  # the page just doesn't show a count
+        log.exception("site_stats failed")
+    return https_fn.Response(json.dumps({"decks": decks, "answers": answers}), mimetype="application/json",
+                             headers={"Cache-Control": "public, max-age=600, s-maxage=3600"})
