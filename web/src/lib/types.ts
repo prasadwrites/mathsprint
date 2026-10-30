@@ -95,7 +95,7 @@ export interface Deck {
   difficulty: Difficulty;
   topics: string[];
   questionCount: number;
-  source: "ai" | "sample";
+  source: "ai" | "sample" | "copy";
   createdAt: Date | null;
   /** Uids of the registered users the owner shared this deck with. */
   sharedWith?: string[];

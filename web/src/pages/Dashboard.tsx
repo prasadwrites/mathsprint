@@ -4,6 +4,7 @@ import { useAccount, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import DeleteDeck from "../components/DeleteDeck";
 import RenameDeck from "../components/RenameDeck";
+import DuplicateDeck, { CopyNamePrompt } from "../components/DuplicateDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import PromotionOffer from "../components/PromotionOffer";
 import DailyReel from "../components/DailyReel";
@@ -120,6 +121,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { hash } = useLocation();
   const [decks, setDecks] = useState<Deck[] | null>(null);
+  // A copy just made with Duplicate, which asks whether to change its name.
+  const [copied, setCopied] = useState<string | null>(null);
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [topic, setTopic] = useState("");
   const [adding, setAdding] = useState(false);
@@ -268,8 +271,14 @@ export default function Dashboard() {
                 const mine = d.ownerId === user.uid;
                 const drop = () => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null);
                 const rename = (title: string) => setDecks((all) => all?.map((x) => (x.id === d.id ? { ...x, title } : x)) ?? null);
+                // The copy goes first, as the newest of your decks.
+                const duplicated = ({ deckId, title }: { deckId: string; title: string }) => {
+                  setDecks((all) => [{ ...d, id: deckId, title, source: "copy", sharedWith: [], sharedBy: undefined, createdAt: new Date() }, ...(all ?? [])]);
+                  setCopied(deckId);
+                  requestAnimationFrame(() => document.getElementById(`deck-${deckId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+                };
                 return (
-                  <article key={d.id} className="panel deck-card">
+                  <article key={d.id} id={`deck-${d.id}`} className="panel deck-card">
                     <div>
                       <h3>{d.title}</h3>
                       <div className="meta">
@@ -299,13 +308,15 @@ export default function Dashboard() {
                       </Link>
                       {mine ? (
                         <>
-                          <RenameDeck deck={d} onRenamed={rename} />
+                          {copied !== d.id && <RenameDeck deck={d} onRenamed={rename} />}
+                          <DuplicateDeck deck={d} onDuplicated={duplicated} />
                           <DeleteDeck deck={d} onDeleted={drop} />
                         </>
                       ) : (
                         <RemoveSharedDeck deck={d} onRemoved={drop} />
                       )}
                     </div>
+                    {copied === d.id && <CopyNamePrompt deck={d} onRenamed={rename} onDone={() => setCopied(null)} />}
                   </article>
                 );
               })}

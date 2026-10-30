@@ -414,6 +414,11 @@ export async function renameDeck(deckId: string, title: string) {
   return updateDoc(doc(db, "decks", deckId), { title: title.trim().slice(0, MAX_TITLE) });
 }
 
+/** Copies one of your decks and its questions as a new deck named "<name> (copy)". Copies don't count toward the plan. */
+export async function duplicateDeck(deckId: string) {
+  return (await httpsCallable<{ deckId: string }, { deckId: string; title: string }>(functions, "duplicate_deck", { timeout: 120_000 })({ deckId })).data;
+}
+
 /** Shares one of your decks with the registered user who has this email. */
 export async function shareDeck(deckId: string, email: string) {
   return (await httpsCallable<{ deckId: string; email: string }, { added: boolean; shares: DeckShare[] }>(functions, "share_deck")({ deckId, email })).data;

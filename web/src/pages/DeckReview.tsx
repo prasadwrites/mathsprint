@@ -4,6 +4,7 @@ import Figure from "../components/Figure";
 import EditQuestion from "../components/EditQuestion";
 import DeleteDeck from "../components/DeleteDeck";
 import RenameDeck from "../components/RenameDeck";
+import DuplicateDeck, { CopyNamePrompt } from "../components/DuplicateDeck";
 import AssignTest from "../components/AssignTest";
 import ShareDeck from "../components/ShareDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
@@ -24,7 +25,7 @@ const LEVELS = [
 
 export default function DeckReview() {
   const { deckId = "" } = useParams();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const user = useUser();
   const admin = useIsAdmin();
@@ -42,6 +43,7 @@ export default function DeckReview() {
   });
 
   useEffect(() => {
+    setDeck(undefined);
     getDeck(deckId).then(setDeck);
     getQuestions(deckId).then(setQuestions);
   }, [deckId]);
@@ -52,6 +54,8 @@ export default function DeckReview() {
 
   const mine = deck.ownerId === user.uid;
   const dropped = Number(params.get("dropped") || 0);
+  // Just made with Duplicate: ask whether to change the copy's name.
+  const copied = mine && params.has("copied");
   const verified = questions.length > 0 && questions.every((q) => q.verified);
   const typed = questions.filter((q) => q.type !== "choice").length;
   const spread = LEVELS.map(([l, c]) => ({ l, c, n: questions.filter((q) => q.difficulty === l).length }));
@@ -92,13 +96,15 @@ export default function DeckReview() {
             </Link>
             {mine ? (
               <>
-                <RenameDeck deck={deck} onRenamed={(title) => setDeck({ ...deck, title })} />
+                {!copied && <RenameDeck deck={deck} onRenamed={(title) => setDeck({ ...deck, title })} />}
+                <DuplicateDeck deck={deck} onDuplicated={(c) => navigate(`/decks/${c.deckId}?copied=1`)} />
                 <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
               </>
             ) : (
               <RemoveSharedDeck deck={deck} onRemoved={() => navigate("/#decks", { replace: true })} />
             )}
           </div>
+          {copied && <CopyNamePrompt deck={deck} onRenamed={(title) => setDeck({ ...deck, title })} onDone={() => setParams({}, { replace: true })} />}
         </div>
 
         <div className="tiles">
