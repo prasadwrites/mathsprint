@@ -84,6 +84,7 @@ import accounts
 import cards
 import challenges
 import choices
+import copies
 import credit
 import engagement
 import groups
@@ -2931,6 +2932,29 @@ def delete_deck(req: https_fn.CallableRequest) -> dict:
     writer.close()
     db.recursive_delete(deck.reference)  # with its questions and share records
     return {"ok": True, "sessions": sum(1 for s in sessions if s.get("ownerId") == uid)}
+
+
+@https_fn.on_call(timeout_sec=120)
+def duplicate_deck(req: https_fn.CallableRequest) -> dict:
+    """Copies one of the caller's decks, with its questions, as a new deck of theirs named "<name> (copy)". No Claude
+    call, so it doesn't count toward the plan's decks. Practice history and sharing stay with the original."""
+    uid = _require_user(req)
+    db = firestore.client()
+    if _load_account(db, req).get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    deck = _owned(db, "decks", (req.data or {}).get("deckId"), uid, "That deck no longer exists.")
+    fields = copies.copy_fields(deck.to_dict(), deck.id, uid)
+    questions = list(deck.reference.collection("questions").stream())
+    ref = db.collection("decks").document()
+    writes = [(ref.collection("questions").document(q.id), q.to_dict()) for q in questions]
+    # The deck goes in the last batch, so it never shows up without its questions (a deck has well under 400).
+    writes.append((ref, {**fields, "questionCount": len(questions), "createdAt": firestore.SERVER_TIMESTAMP}))
+    for start in range(0, len(writes), 400):
+        batch = db.batch()
+        for doc_ref, data in writes[start:start + 400]:
+            batch.set(doc_ref, data)
+        batch.commit()
+    return {"deckId": ref.id, "title": fields["title"]}
 
 
 # Sharing a deck with another registered user. The deck's sharedWith list holds their uids, which the Firestore rules

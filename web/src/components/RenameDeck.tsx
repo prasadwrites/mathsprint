@@ -2,9 +2,20 @@ import { useState } from "react";
 import { MAX_TITLE, renameDeck } from "../lib/db";
 import type { Deck } from "../lib/types";
 
-/** A Rename button that opens a box for the deck's new name. Only for the deck's owner. */
-export default function RenameDeck({ deck, onRenamed, small }: { deck: Pick<Deck, "id" | "title">; onRenamed: (title: string) => void; small?: boolean }) {
-  const [title, setTitle] = useState<string | null>(null);
+/** A Rename button that opens a box for the deck's new name. Only for the deck's owner. With `startOpen` the box is open
+ * from the start, and `onClose` runs when it's saved or cancelled. */
+export default function RenameDeck({ deck, onRenamed, small, startOpen, onClose }: {
+  deck: Pick<Deck, "id" | "title">;
+  onRenamed: (title: string) => void;
+  small?: boolean;
+  startOpen?: boolean;
+  onClose?: () => void;
+}) {
+  const [title, setOpenTitle] = useState<string | null>(startOpen ? deck.title : null);
+  const setTitle = (t: string | null) => {
+    setOpenTitle(t);
+    if (t === null) onClose?.();
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,6 +55,7 @@ export default function RenameDeck({ deck, onRenamed, small }: { deck: Pick<Deck
         autoFocus
         maxLength={MAX_TITLE}
         value={title}
+        onFocus={(e) => startOpen && e.target.select()}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => e.key === "Escape" && !busy && setTitle(null)}
       />

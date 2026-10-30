@@ -182,7 +182,7 @@ def build_all(
     # Their own decks and practice.
     for deck_id, d in decks.items():
         owner = d.get("ownerId")
-        if owner in rows and d.get("source") != "sample" and not d.get("fromPost"):
+        if owner in rows and d.get("source") not in ("sample", "copy") and not d.get("fromPost"):
             rows[owner]["decksKept"] += 1
             deck_of(owner, deck_id)
     practiced: dict[str, set] = {uid: set() for uid in rows}
