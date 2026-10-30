@@ -170,3 +170,46 @@ def test_diagram_question_is_checked_against_the_picture():
     assert editing.verify(new, "Math", "", FakeClient(written("dist(A, B)", kind="evaluate", variable=""))).ok
     wrong = {**old, **edit(old, prompt="Find AB.", answer="5")}
     assert not editing.verify(wrong, "Math", "", FakeClient(written("dist(A, B)", kind="evaluate", variable=""))).ok
+
+
+def new(**kw):
+    data = {"type": "numeric", "prompt": "Solve for x:", "math": "2x + 1 = 7", "answer": "3", "concept": "Linear equations",
+            "difficulty": "Easy", "steps": STEPS}
+    data.update(kw)
+    return data
+
+
+def test_new_typed_question_is_shaped_like_a_generated_one():
+    q = editing.new_question(new(acceptedAnswers=["three", "3"]), math=True)
+    assert q["type"] == "numeric" and q["answerValues"] == [3.0] and q["answerDisplay"] == "3"
+    assert q["acceptedAnswers"] == ["three"] and q["choices"] == [] and q["tolerance"] == 0
+    assert "figure" not in q
+
+
+def test_new_choice_question_keeps_numbers_in_math_only():
+    data = new(type="choice", prompt="What is 6 × 7?", math="", choices=["42", "48", "36"], answerChoice="42")
+    assert editing.new_question(data, math=True)["answerValues"] == [42.0]
+    assert editing.new_question(data, math=False)["answerValues"] == []
+
+
+def test_new_question_shape_errors():
+    for data, flags, message in [
+        (new(type="essay"), {}, "typed answer or multiple choice"),
+        (new(), {"choices_only": True}, "multiple choice only"),
+        (new(type="choice", choices=["1"], answerChoice="1"), {}, "2 to 6 options"),
+        (new(type="choice", choices=["1", "2", "3", "4", "5", "6", "7"], answerChoice="1"), {}, "2 to 6 options"),
+        (new(type="choice", choices=["1", "2"], answerChoice="3"), {}, "Pick the correct option"),
+        (new(concept=""), {}, "concept"),
+        (new(answer=""), {}, "Give the correct answer"),
+        (new(prompt=" "), {}, "can't be empty"),
+    ]:
+        with pytest.raises(editing.EditError, match=message):
+            editing.new_question(data, math=True, **flags)
+
+
+def test_new_question_is_checked_like_an_edit():
+    q = editing.new_question(new(answer="4"), math=True)
+    verdict = editing.verify(q, "Math", "", FakeClient(written("2*x + 1 = 7")))
+    assert not verdict.ok and "worked this out as 3, not 4" in verdict.message
+    q = editing.new_question(new(), math=True)
+    assert editing.verify(q, "Math", "", FakeClient(written("2*x + 1 = 7"))).ok

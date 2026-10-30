@@ -101,6 +101,8 @@ export interface Deck {
   sharedWith?: string[];
   /** The owner's name, shown to the people it's shared with. */
   sharedBy?: string;
+  /** Built as multiple choice only, so questions added to it are multiple choice too. */
+  choicesOnly?: boolean;
 }
 
 /** Someone a deck is shared with, as its owner sees them. */
