@@ -471,3 +471,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
   .reel-body { grid-template-columns: 1fr; }
   .reel-video { max-width: 320px; margin: 0 auto; }
 }
+
+/* Why Google sign-in didn't finish (often a school account blocking outside apps). */
+.signin-note { padding: 12px 16px; border-radius: 12px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); color: var(--ink); }
+.signin-note p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; }
+.signin-note-error { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
