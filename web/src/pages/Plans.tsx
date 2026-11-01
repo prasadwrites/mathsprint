@@ -72,7 +72,7 @@ export default function Plans() {
         <div className="stack" style={{ gap: 8 }}>
           <h1>Compare plans</h1>
           <p className="muted">
-            Every plan gets timed practice with AI-built decks and checked answers. Bigger plans give you more and bigger decks, plus tools for teachers and tutors. Pro costs less than one tutoring hour a month.
+            MathSprint is a timed math practice app with AI-built decks and checked answers, and every plan gets both. Bigger plans give you more and bigger decks, plus tools for teachers and tutors. Pro costs less than one tutoring hour a month.
           </p>
         </div>
 

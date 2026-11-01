@@ -56,3 +56,8 @@ footer .wrap { max-width: 1120px; display: flex; justify-content: space-between;
 footer nav { display: flex; flex-wrap: wrap; gap: 2px 14px; }
 footer nav a { padding: 6px 0; }
 footer a { color: var(--muted); }
+/* Breadcrumbs and the related-pages block */
+.crumbs { font-size: 14px; color: var(--muted); margin-bottom: 14px; }
+.crumbs a { color: var(--muted); }
+.related { margin-top: 56px; padding-top: 8px; border-top: 1px solid var(--line); }
+.related h2 { margin-top: 24px; }

@@ -21,6 +21,52 @@
 <meta property="og:url" content="https://mathsprint.org/privacy" />
 <meta property="og:title" content="MathSprint privacy statement" />
 <meta property="og:description" content="What we keep, what we don't, and how to delete your data." />
+<!-- Structured data for search engines and AI assistants. Organization sameAs lists only profiles we own. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://mathsprint.org/#org",
+      "name": "MathSprint",
+      "url": "https://mathsprint.org",
+      "logo": "https://mathsprint.org/logo.png",
+      "email": "team@mathsprint.org",
+      "sameAs": [
+        "https://www.youtube.com/@mathsprint_go"
+      ]
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://mathsprint.org/privacy",
+      "url": "https://mathsprint.org/privacy",
+      "name": "MathSprint privacy statement",
+      "description": "What we keep, what we don't, and how to delete your data.",
+      "publisher": {
+        "@id": "https://mathsprint.org/#org"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "MathSprint",
+          "item": "https://mathsprint.org/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Privacy",
+          "item": "https://mathsprint.org/privacy"
+        }
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <header class="top">
@@ -36,6 +82,7 @@
 </header>
 <main>
   <div class="wrap">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="/">MathSprint</a> <span aria-hidden="true">›</span> <span aria-current="page">Privacy</span></nav>
     <span class="eyebrow">Privacy</span>
     <h1>What we keep, what we don't, and why.</h1>
     <p class="lede">The short version: we keep what MathSprint needs to work, we never sell it, and we never email your students.</p>
@@ -73,6 +120,11 @@
 
     <h2>Questions</h2>
     <p>Write to <a href="mailto:team@mathsprint.org">team@mathsprint.org</a>. If this statement changes, we'll update the date at the top.</p>
+
+    <section class="related">
+      <h2>More from MathSprint</h2>
+      <ul><li><a href="/about">About MathSprint</a>: who we are, and how a math engine checks every answer.</li><li><a href="/plans">Plans and pricing</a>: Free for 5 decks, Pro at $5 a month, and Pro Max at $10 a month.</li><li><a href="/tutors">MathSprint for tutors</a>: assign a deck as a test and see each student's time on every question.</li><li><a href="/parents">MathSprint for parents</a>: a practice test on what's coming up, and the topics that still need work.</li></ul>
+    </section>
   </div>
 </main>
 <footer>

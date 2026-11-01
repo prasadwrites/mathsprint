@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MathSprint for Tutors: timed practice decks in about a minute</title>
+<title>MathSprint for tutors: timed math practice decks</title>
 <meta name="description" content="Type a topic or upload a worksheet, and MathSprint builds a timed practice deck with worked solutions. Every answer is checked by a math engine. Free to start." />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="MathSprint" />
@@ -47,6 +47,13 @@
           "priceSpecification": { "@type": "UnitPriceSpecification", "price": "5", "priceCurrency": "USD", "unitText": "month" } },
         { "@type": "Offer", "name": "Pro Max", "price": "10", "priceCurrency": "USD", "description": "100 decks, up to 200 questions each, everything in Pro", "url": "https://mathsprint.org/plans",
           "priceSpecification": { "@type": "UnitPriceSpecification", "price": "10", "priceCurrency": "USD", "unitText": "month" } }
+      ]
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "MathSprint", "item": "https://mathsprint.org/" },
+        { "@type": "ListItem", "position": 2, "name": "For tutors", "item": "https://mathsprint.org/tutors" }
       ]
     },
     {
@@ -341,6 +348,13 @@ footer a { color: var(--muted); }
   .float, .demo .answer .caret { animation: none; }
   .times .bar { transition: none; width: var(--w); }
 }
+/* Breadcrumbs and the related-pages block */
+.crumbs { font-size: 14px; color: var(--muted); margin-bottom: 14px; }
+.crumbs a { color: var(--muted); }
+.related { padding: 0 0 72px; }
+.related h2 { font-size: 26px; font-weight: 800; margin-bottom: 14px; }
+.related ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--muted); }
+.related a { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -361,6 +375,7 @@ footer a { color: var(--muted); }
 <div class="hero">
   <div class="wrap">
     <div>
+      <nav class="crumbs" aria-label="Breadcrumb"><a href="/">MathSprint</a> <span aria-hidden="true">›</span> <span aria-current="page">For tutors</span></nav>
       <span class="eyebrow">For SAT, ACT and math tutors, and teachers</span>
       <h1>Your next practice set, <em>built and checked</em> in about a minute.</h1>
       <p class="lede">Type a topic and level, or upload a worksheet. MathSprint writes a timed practice deck with worked solutions, and a math engine checks every answer before your students see it.</p>
@@ -405,7 +420,7 @@ footer a { color: var(--muted); }
       <!-- Video IDs: data-desktop is the regular YouTube video, data-mobile the Short. Change them here. -->
       <div class="card vcard reveal">
         <button type="button" class="vplay" data-desktop="fxvrUCLrzcg" data-mobile="6F12WCMocwg" data-desktop-url="https://www.youtube.com/watch?v=fxvrUCLrzcg" data-mobile-url="https://youtube.com/shorts/6F12WCMocwg" data-title="Create a test deck on any subject">
-          <img alt="Video: building a checked practice deck from a typed topic" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
+          <img alt="Video: building a checked practice deck from a typed topic" width="480" height="360" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
           <span class="len">▶ Watch: deck creation</span>
         </button>
         <div class="txt">
@@ -416,7 +431,7 @@ footer a { color: var(--muted); }
       </div>
       <div class="card vcard reveal">
         <button type="button" class="vplay" data-desktop="GmwPQjpQ5qI" data-mobile="SATt7eBtxtI" data-desktop-url="https://www.youtube.com/watch?v=GmwPQjpQ5qI" data-mobile-url="https://www.youtube.com/shorts/SATt7eBtxtI" data-title="Run a group test">
-          <img alt="Video: assigning a deck to a group as a test and watching the scores come in" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
+          <img alt="Video: assigning a deck to a group as a test and watching the scores come in" width="480" height="360" loading="lazy" /><span class="pbtn" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
           <span class="len">▶ Watch: group tests</span>
         </button>
         <div class="txt">
@@ -495,9 +510,9 @@ footer a { color: var(--muted); }
       <h2>What tutors say after their first decks.</h2>
     </div>
     <div class="stories">
-      <figure class="card story reveal"><blockquote>QUOTE: one specific outcome, in the tutor's words.</blockquote><figcaption class="who"><img src="" alt="" /><span><b>FIRST NAME</b><small>ROLE, e.g. SAT tutor, 12 students</small></span></figcaption></figure>
-      <figure class="card story reveal"><blockquote>QUOTE</blockquote><figcaption class="who"><img src="" alt="" /><span><b>FIRST NAME</b><small>ROLE</small></span></figcaption></figure>
-      <figure class="card story reveal"><blockquote>QUOTE</blockquote><figcaption class="who"><img src="" alt="" /><span><b>FIRST NAME</b><small>ROLE</small></span></figcaption></figure>
+      <figure class="card story reveal"><blockquote>QUOTE: one specific outcome, in the tutor's words.</blockquote><figcaption class="who"><!-- PHOTO: <img src="/team/FIRST-NAME.webp" alt="FIRST NAME, ROLE" width="44" height="44" /> --><span><b>FIRST NAME</b><small>ROLE, e.g. SAT tutor, 12 students</small></span></figcaption></figure>
+      <figure class="card story reveal"><blockquote>QUOTE</blockquote><figcaption class="who"><!-- PHOTO: <img src="/team/FIRST-NAME.webp" alt="FIRST NAME, ROLE" width="44" height="44" /> --><span><b>FIRST NAME</b><small>ROLE</small></span></figcaption></figure>
+      <figure class="card story reveal"><blockquote>QUOTE</blockquote><figcaption class="who"><!-- PHOTO: <img src="/team/FIRST-NAME.webp" alt="FIRST NAME, ROLE" width="44" height="44" /> --><span><b>FIRST NAME</b><small>ROLE</small></span></figcaption></figure>
     </div>
   </div>
 </section>
@@ -675,6 +690,12 @@ footer a { color: var(--muted); }
     </div>
   </div>
 </div>
+<section class="related" aria-labelledby="related-h">
+  <div class="wrap">
+    <h2 id="related-h">More from MathSprint</h2>
+    <ul><li><a href="/parents">MathSprint for parents</a>: a practice test on what's coming up, and the topics that still need work.</li><li><a href="/vs/worksheets">MathSprint vs hand-written worksheets</a>: when paper still wins, and when a checked deck saves prep time.</li><li><a href="/plans">Plans and pricing</a>: Free for 5 decks, Pro at $5 a month, and Pro Max at $10 a month.</li><li><a href="/about">About MathSprint</a>: who we are, and how a math engine checks every answer.</li></ul>
+  </div>
+</section>
 </main>
 
 <footer>
@@ -712,8 +733,10 @@ footer a { color: var(--muted); }
   document.querySelectorAll(".vplay").forEach(function (btn) {
     var id = phone ? btn.dataset.mobile : btn.dataset.desktop;
     var img = btn.querySelector("img");
-    img.onerror = function () { img.remove(); };
-    img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+    // WebP thumbnail first, then the JPEG, and no picture at all if neither loads.
+    var thumbs = ["https://i.ytimg.com/vi_webp/" + id + "/hqdefault.webp", "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"];
+    img.onerror = function () { if (thumbs.length) img.src = thumbs.shift(); else img.remove(); };
+    img.src = thumbs.shift();
     btn.setAttribute("aria-label", "Play video: " + btn.dataset.title);
     // The exact links Prasad gave; the embed above needs just the video ID inside them.
     btn.closest(".vcard").querySelector(".yt").href = phone ? btn.dataset.mobileUrl : btn.dataset.desktopUrl;
