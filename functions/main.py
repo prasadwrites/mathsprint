@@ -1974,11 +1974,18 @@ _index_cache: dict = {"html": "", "at": 0.0}
 
 
 def _index_html() -> str:
-    """The app's built index.html, from Hosting (its asset names change on every deploy), kept for five minutes."""
+    """The app's built shell, from Hosting (its asset names change on every deploy), kept for five minutes.
+
+    app.html is the bare shell; index.html is the home page, with its own canonical link and content, so it's only a
+    fallback for a Hosting deploy that predates app.html."""
     if _index_cache["html"] and time.time() - _index_cache["at"] < 300:
         return _index_cache["html"]
-    with urllib.request.urlopen(f"https://{_SITE}/index.html", timeout=5) as r:  # noqa: S310 - our own site
-        page = r.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(f"https://{_SITE}/app.html", timeout=5) as r:  # noqa: S310 - our own site
+            page = r.read().decode("utf-8")
+    except urllib.error.URLError:
+        with urllib.request.urlopen(f"https://{_SITE}/index.html", timeout=5) as r:  # noqa: S310 - our own site
+            page = r.read().decode("utf-8")
     _index_cache.update(html=page, at=time.time())
     return page
 
