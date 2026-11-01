@@ -5,6 +5,8 @@ import TimedQuestions from "../components/TimedQuestions";
 import { Brand } from "../components/TopBar";
 import { openClassTest, submitClassTest } from "../lib/db";
 import { auth } from "../lib/firebase";
+import { googleSignInProblem, type GoogleSignInProblem } from "../lib/googleSignIn";
+import GoogleSignInNote from "../components/GoogleSignInNote";
 import type { OpenClassTest } from "../lib/types";
 import { Result } from "./TakeTest";
 
@@ -18,6 +20,7 @@ export default function ClassTest() {
   const [test, setTest] = useState<OpenClassTest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [googleProblem, setGoogleProblem] = useState<GoogleSignInProblem | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -47,6 +50,7 @@ export default function ClassTest() {
 
   const google = async () => {
     setError("");
+    setGoogleProblem(null);
     const provider = new GoogleAuthProvider();
     // Always ask which account, since school computers are shared; a domain hint puts school accounts first.
     provider.setCustomParameters({ prompt: "select_account", ...(test?.domain ? { hd: test.domain } : {}) });
@@ -54,10 +58,7 @@ export default function ClassTest() {
       if (auth.currentUser) await signOut(auth);
       await signInWithPopup(auth, provider);
     } catch (e) {
-      const code = (e as { code?: string }).code ?? "";
-      if (!code.includes("popup-closed") && !code.includes("cancelled-popup")) {
-        setError(code.includes("user-disabled") ? "This account has been suspended." : "Google sign-in didn't work. Try again in a moment.");
-      }
+      setGoogleProblem(googleSignInProblem((e as { code?: string }).code ?? "", "class"));
     }
   };
 
@@ -110,6 +111,11 @@ export default function ClassTest() {
                   <button className="btn btn-primary btn-big" type="button" onClick={google}>
                     {!user ? "Continue with Google" : test.domain ? `Switch to your @${test.domain} account` : "Switch to a Google account"}
                   </button>
+                  {!googleProblem && (
+                    <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                      If Google says "Access blocked", your school hasn't approved MathSprint yet. That's a school setting, so let your teacher know.
+                    </p>
+                  )}
                 </>
               ) : (
                 <>
@@ -131,6 +137,7 @@ export default function ClassTest() {
                   </button>
                 </>
               )}
+              {googleProblem && <GoogleSignInNote problem={googleProblem} />}
               {error && <p className="error">{error}</p>}
             </div>
           </>
