@@ -2,12 +2,15 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useActivityHeartbeat } from "./lib/activity";
-import { claimChallenge, claimPublicTest, getAccount, savePostDeck } from "./lib/db";
+import { claimChallenge, claimPublicTest, getAccount, redeemOfferCode, savePostDeck } from "./lib/db";
 import { clearClaim, pendingClaim } from "./lib/challenge";
 import { clearPublicClaim, pendingPublicClaim } from "./lib/publicTest";
 import { clearPostSave, pendingPostSave } from "./lib/questionPost";
 import { clearInvite, pendingInvite } from "./lib/invite";
 import { clearRef, pendingRef } from "./lib/signupRef";
+import { clearTerms, pendingTerms } from "./lib/terms";
+import { clearOfferCode, pendingOfferCode } from "./lib/offerCode";
+import { TermsGate } from "./components/Terms";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
 import Accounts from "./pages/Accounts";
@@ -30,6 +33,7 @@ import ClassTest from "./pages/ClassTest";
 import TestResults from "./pages/TestResults";
 import MemberResult from "./pages/MemberResult";
 import Invite from "./pages/Invite";
+import Join, { type JoinResult } from "./pages/Join";
 import Upgrade from "./pages/Upgrade";
 
 const UserContext = createContext<User | null>(null);
@@ -85,10 +89,21 @@ function SignedInApp() {
   useActivityHeartbeat(!!user);
 
   const refresh = useCallback(() => {
-    getAccount(pendingInvite()?.token, pendingRef() ?? undefined)
+    getAccount(pendingInvite()?.token, pendingRef() ?? undefined, pendingTerms() ?? undefined)
       .then(async (a) => {
         clearInvite(); // the server has seen it; it only counts for a brand new account anyway
         clearRef(); // same: only a brand new account is tagged
+        clearTerms(); // recorded on the account
+        // An offer code entered on the /join form: redeem it now, then show how it went on /join.
+        const code = pendingOfferCode();
+        clearOfferCode();
+        let joined: JoinResult | null = null;
+        if (code) {
+          joined = await redeemOfferCode(code)
+            .then((redeemed) => ({ code, redeemed }))
+            .catch((e) => ({ code, error: (e as Error).message || "That offer code couldn't be redeemed." }));
+          if ("redeemed" in joined) a = await getAccount().catch(() => a);
+        }
         // A challenge played before signing in: save it to this account before the home page lists challenges.
         const claim = pendingClaim();
         if (claim) await claimChallenge(claim.token, claim.attempt).catch(() => {});
@@ -102,6 +117,7 @@ function SignedInApp() {
         clearPostSave();
         const kept = post && (await savePostDeck(post.token).catch(() => null));
         setAccount(a);
+        if (joined) return navigate.current("/join", { state: joined });
         // Already on that leaderboard from an earlier try: the link shows them that result, not this one.
         if (pub && (placed?.saved || placed?.already)) navigate.current(`/p/${pub.token}`);
         else if (kept) navigate.current(`/decks/${kept.deckId}`);
@@ -121,6 +137,7 @@ function SignedInApp() {
     );
   }
   if (!user) return <Login />;
+  if (account && account.termsAccepted === false) return <TermsGate onAccepted={refresh} />;
 
   return (
     <UserContext.Provider value={user}>
@@ -136,6 +153,7 @@ function SignedInApp() {
         <Route path="/admin/engagement" element={<AdminOnly><Engagement /></AdminOnly>} />
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="/invite" element={<Invite />} />
+        <Route path="/join" element={<Join />} />
         <Route path="/groups" element={<Groups />} />
         <Route path="/report" element={<Report />} />
         <Route path="/tests/:testId" element={<TestResults />} />

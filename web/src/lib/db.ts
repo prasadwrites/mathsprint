@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, ProblemReport, PromotionOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -155,10 +155,37 @@ export async function explainStep(args: { deckId: string; questionId: string; st
   return (await call(args)).data.explanation;
 }
 
-/** `invite` is the token from an invite link, so a brand new account credits the friend who invited it. */
-export async function getAccount(invite?: string, ref?: string) {
-  const data = { ...(invite ? { invite } : {}), ...(ref ? { ref } : {}) };
-  return (await httpsCallable<{ invite?: string; ref?: string }, AccountSummary>(functions, "get_account")(data)).data;
+/** `invite` is the token from an invite link, so a brand new account credits the friend who invited it. `terms` is the
+ * Terms of Use version the person agreed to on the sign-up form. */
+export async function getAccount(invite?: string, ref?: string, terms?: string) {
+  const data = { ...(invite ? { invite } : {}), ...(ref ? { ref } : {}), ...(terms ? { terms } : {}) };
+  return (await httpsCallable<{ invite?: string; ref?: string; terms?: string }, AccountSummary>(functions, "get_account")(data)).data;
+}
+
+export async function acceptTerms(version: string) {
+  await httpsCallable<{ version: string }, { ok: boolean }>(functions, "accept_terms")({ version });
+}
+
+/** No sign-in needed: whether an offer code can be redeemed. Throws with the reason (such as "expired on …") if not. */
+export async function checkOfferCode(code: string) {
+  return (await httpsCallable<{ code: string }, PublicOfferCode>(functions, "check_offer_code")({ code })).data;
+}
+
+export async function redeemOfferCode(code: string) {
+  return (await httpsCallable<{ code: string }, RedeemedOffer>(functions, "redeem_offer_code")({ code })).data;
+}
+
+export async function adminCreateOfferCode(args: { plan: PlanId; months: number; redeemBy: string; maxUses: number | null; code: string; note: string }) {
+  return (await httpsCallable<typeof args, OfferCode>(functions, "admin_create_offer_code")(args)).data;
+}
+
+export async function adminListOfferCodes() {
+  return (await httpsCallable<void, { codes: OfferCode[] }>(functions, "admin_list_offer_codes")()).data.codes;
+}
+
+/** Turns a code off or on, or deletes it if nobody has redeemed it. */
+export async function adminSetOfferCode(args: { code: string; active?: boolean; delete?: boolean }) {
+  return (await httpsCallable<typeof args, OfferCode | { deleted: true }>(functions, "admin_set_offer_code")(args)).data;
 }
 
 export async function createInvite(email: string) {

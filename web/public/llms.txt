@@ -9,4 +9,5 @@ Plans (monthly, USD): Free $0 (5 decks, up to 20 questions each, no card needed)
 - [Plans and pricing](https://mathsprint.org/plans): every plan compared
 - [About us](https://mathsprint.org/about): how decks are made and checked
 - [Privacy](https://mathsprint.org/privacy): what we store and what we never do
+- [Terms of Use](https://mathsprint.org/terms): the terms for using MathSprint
 - [MathSprint vs hand-written worksheets](https://mathsprint.org/vs/worksheets)

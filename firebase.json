@@ -31,6 +31,7 @@
       { "source": "/plans", "destination": "/plans.html" },
       { "source": "/about", "destination": "/about.html" },
       { "source": "/privacy", "destination": "/privacy.html" },
+      { "source": "/terms", "destination": "/terms.html" },
       { "source": "/vs/worksheets", "destination": "/vs/worksheets.html" },
       { "source": "/api/stats", "function": { "functionId": "site_stats", "region": "us-central1" } },
       { "source": "/t/**", "destination": "/app.html" },
@@ -45,6 +46,7 @@
       { "source": "/admin/**", "destination": "/app.html" },
       { "source": "/upgrade", "destination": "/app.html" },
       { "source": "/invite", "destination": "/app.html" },
+      { "source": "/join", "destination": "/app.html" },
       { "source": "/groups", "destination": "/app.html" },
       { "source": "/report", "destination": "/app.html" },
       { "source": "/tests/**", "destination": "/app.html" }

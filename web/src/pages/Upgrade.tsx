@@ -178,7 +178,10 @@ export default function Upgrade() {
       <main className="page narrow">
         <div className="row spread">
           <h1>Upgrade your plan</h1>
-          <Link to="/plans">Compare plans</Link>
+          <span className="row" style={{ gap: 16 }}>
+            <Link to="/join">Have an offer code?</Link>
+            <Link to="/plans">Compare plans</Link>
+          </span>
         </div>
         {account?.promo && (
           <p className="notice" role="status">

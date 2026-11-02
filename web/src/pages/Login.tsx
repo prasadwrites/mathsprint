@@ -1,6 +1,6 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { pendingInvite } from "../lib/invite";
 import { pendingPublicClaim } from "../lib/publicTest";
 import { pendingRef } from "../lib/signupRef";
@@ -8,6 +8,14 @@ import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
 import { googleSignInProblem, type GoogleSignInProblem } from "../lib/googleSignIn";
 import GoogleSignInNote from "../components/GoogleSignInNote";
+import { TermsCheckbox } from "../components/Terms";
+import { checkOfferCode } from "../lib/db";
+import { cleanCode, codeFromUrl, holdOfferCode } from "../lib/offerCode";
+import { agreeTermsOnSignup } from "../lib/terms";
+import type { PublicOfferCode } from "../lib/types";
+
+const longDate = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+const monthsLabel = (n: number) => `${n} ${n === 1 ? "month" : "months"}`;
 
 /** Who sent this visitor, from the ?ref= tag a landing page puts on its sign-up links (like "tutors-oct-email"). */
 function audience(ref: string | null) {
@@ -19,15 +27,45 @@ function audience(ref: string | null) {
 export default function Login() {
   const invite = pendingInvite();
   const board = pendingPublicClaim();
+  // /join?code=CODE: the sign-up link sent with an offer code.
+  const join = useLocation().pathname.replace(/\/+$/, "") === "/join";
   const [email, setEmail] = useState(invite?.email ?? "");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">(invite || board || pendingRef() ? "signup" : "signin");
+  const [code, setCode] = useState(join ? codeFromUrl() : "");
+  const [offer, setOffer] = useState<PublicOfferCode | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const [mode, setMode] = useState<"signin" | "signup">(join || invite || board || pendingRef() ? "signup" : "signin");
   const [error, setError] = useState("");
+  // Where to show the error: next to the Google button when that's what was pressed.
+  const [errorAtGoogle, setErrorAtGoogle] = useState(false);
   const [googleProblem, setGoogleProblem] = useState<GoogleSignInProblem | null>(null);
+
+  /** Before an account is made: the terms box must be ticked, and an offer code must still be good (an expired code
+   * says so here, not after the account exists). Returns false and shows why if not. */
+  const ready = async (signingUp: boolean) => {
+    if (signingUp && !agreed) {
+      setError("Tick the box to agree to the Terms of Use first.");
+      return false;
+    }
+    if (signingUp) agreeTermsOnSignup();
+    const c = cleanCode(code);
+    if (!join || !c) return true;
+    try {
+      setOffer(await checkOfferCode(c));
+    } catch (e) {
+      setOffer(null);
+      setError((e as Error).message || "That offer code couldn't be checked. Try again.");
+      return false;
+    }
+    holdOfferCode(c); // redeemed as soon as the account is signed in
+    return true;
+  };
 
   const google = async () => {
     setError("");
+    setErrorAtGoogle(true);
     setGoogleProblem(null);
+    if (!(await ready(mode === "signup"))) return;
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (e) {
@@ -37,7 +75,9 @@ export default function Login() {
 
   const run = async (fn: () => Promise<unknown>) => {
     setError("");
+    setErrorAtGoogle(false);
     setGoogleProblem(null);
+    if (!(await ready(mode === "signup"))) return;
     try {
       await fn();
     } catch (e) {
@@ -60,7 +100,15 @@ export default function Login() {
     <div className="wrap" style={{ maxWidth: 440 }}>
       <div className="stack" style={{ paddingTop: "10vh" }}>
         <Brand />
-        {mode === "signup" ? (
+        {join ? (
+          <>
+            <h1>Join MathSprint with your offer code.</h1>
+            <p className="muted">
+              Create your account with your email and a password, and enter the offer code from your email. Already have an account? Sign in and the code is
+              added to it.
+            </p>
+          </>
+        ) : mode === "signup" ? (
           <>
             {/* Every "Start free" button on the landing pages lands here, so this repeats their promise. */}
             <h1>Build your first deck free, no card needed.</h1>
@@ -88,9 +136,34 @@ export default function Login() {
             <b>Sign up to claim your spot on the {board.title} leaderboard.</b> Already have an account? Sign in and it goes on the board too.
           </p>
         )}
+        {join && (
+          <div className="panel">
+            <label htmlFor="offer-code">Offer code</label>
+            <input
+              id="offer-code"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              placeholder="Such as MS-7KQP-X3DM"
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                setOffer(null);
+              }}
+            />
+            {offer && (
+              <p className="small muted" style={{ margin: "6px 0 0" }}>
+                {offer.planLabel} free for {monthsLabel(offer.months)} from the day you join. Redeem by {longDate(offer.redeemBy)}.
+              </p>
+            )}
+          </div>
+        )}
+        {mode === "signup" && <TermsCheckbox checked={agreed} onChange={setAgreed} />}
         <button className="btn-primary btn-big" onClick={google}>
           Continue with Google
         </button>
+        {error && errorAtGoogle && <p className="error" style={{ margin: 0 }}>{error}</p>}
         {googleProblem ? (
           <GoogleSignInNote problem={googleProblem} />
         ) : (
@@ -127,11 +200,11 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          <button type="submit">{mode === "signin" ? "Sign in with email" : "Create account"}</button>
+          <button type="submit">{mode === "signin" ? "Sign in with email" : join ? "Create account and redeem" : "Create account"}</button>
           <button type="button" className="btn-link" onClick={() => setMode(mode === "signin" ? "signup" : "signin")}>
             {mode === "signin" ? "New here? Create an account" : "Have an account? Sign in"}
           </button>
-          {error && <p className="error">{error}</p>}
+          {error && !errorAtGoogle && <p className="error">{error}</p>}
         </form>
       </div>
     </div>
