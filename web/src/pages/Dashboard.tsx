@@ -7,6 +7,7 @@ import RenameDeck from "../components/RenameDeck";
 import DuplicateDeck, { CopyNamePrompt } from "../components/DuplicateDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import PromotionOffer from "../components/PromotionOffer";
+import SharedOfferCard from "../components/SharedOfferCard";
 import DailyReel from "../components/DailyReel";
 import { addSampleDeck, listChallenges, listDecks, listSessions } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
@@ -191,6 +192,7 @@ export default function Dashboard() {
           </Link>
         )}
         {account?.offer && <PromotionOffer offer={account.offer} onDone={refresh} />}
+        {account?.sharedOffers?.map((o) => <SharedOfferCard key={o.id} offer={o} onDone={refresh} />)}
         {unread > 0 && (
           <Link className="notice" to="/upgrade">
             <b>You have a reply about your upgrade request.</b>

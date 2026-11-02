@@ -11,6 +11,7 @@ Plain Python, so it can be tested without Firebase; main.py does the Firestore r
 
 from __future__ import annotations
 
+import hashlib
 import re
 import secrets
 import time
@@ -167,3 +168,62 @@ def public_offer(code: str, offer: dict) -> dict:
 
 def terms_accepted(account: dict) -> bool:
     return account.get("termsVersion") == TERMS_VERSION
+
+
+# Sending a code to people. The admin picks accounts or types email addresses; each person sees the code on their home
+# page the next time they sign in (or once they sign up with that email), with buttons to pass it on to friends.
+# Stored in offerSends/{send_id}, one per code and email, so sending the same code to someone again just shows it again.
+
+MAX_SEND = 500
+_EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+
+
+def parse_emails(value: object) -> tuple[list[str], list[str]]:
+    """The addresses in a list or in pasted text (commas, semicolons, spaces or new lines between them).
+
+    Returns (good, bad): good is lower case, with repeats removed, in the order given; bad is what didn't look like an
+    email address. Raises AccessDenied if there's nobody to send to, or too many at once.
+    """
+    parts = value if isinstance(value, list) else re.split(r"[\s,;]+", str(value or ""))
+    good: list[str] = []
+    bad: list[str] = []
+    for part in parts:
+        p = str(part or "").strip().strip("<>").lower()
+        if not p:
+            continue
+        if not _EMAIL.match(p) or len(p) > 254:
+            bad.append(str(part).strip()[:80])
+        elif p not in good:
+            good.append(p)
+    if not good:
+        raise AccessDenied("Add at least one email address or pick some accounts.")
+    if len(good) > MAX_SEND:
+        raise AccessDenied(f"Send to at most {MAX_SEND} people at a time.")
+    return good, bad
+
+
+def send_id(code: str, email: str) -> str:
+    """The same id every time for this code and email, so a second send replaces the first."""
+    return f"{code}_{hashlib.sha256(email.lower().encode()).hexdigest()[:20]}"
+
+
+def share_text(offer: dict) -> str:
+    """What the person's friends get: the offer in one or two sentences. The link goes after it."""
+    plan = PLANS[offer["plan"]].label
+    months = int(offer["months"])
+    term = f"{months} {'month' if months == 1 else 'months'}"
+    return (
+        f"Get MathSprint {plan} free for {term}, timed math practice that shows you where you lose points. "
+        f"Sign up with offer code {offer['code']} by {day_label(int(offer['redeemBy']))}:"
+    )
+
+
+def redeem_hint(offer: dict, account: dict, already_used: bool, now_ms: int | None = None) -> str:
+    """Empty if this account can redeem the code now, or a short reason it can't, for the home-page card."""
+    if already_used:
+        return "You've already used this code. Pass it on to your friends."
+    try:
+        check_redeem(offer, account, False, False, now_ms)
+    except AccessDenied as e:
+        return str(e)
+    return ""

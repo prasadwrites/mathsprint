@@ -139,6 +139,10 @@ service cloud.firestore {
     match /offerCodes/{code}/{document=**} {
       allow read, write: if false;
     }
+    // Codes the admin sent to people (offerSends/{code_emailhash}), shown on their home page. Functions only.
+    match /offerSends/{sendId} {
+      allow read, write: if false;
+    }
 
     // The subjects decks can be made in (settings/subjects, { names: [...] }). Everyone signed in reads the list;
     // only the admin changes it. generate_deck reads it too, and treats a missing list as its starter set.

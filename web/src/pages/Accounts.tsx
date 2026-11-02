@@ -13,6 +13,7 @@ import {
   adminOfferPromotion,
   adminReplyReport,
   adminReplyUpgrade,
+  adminSendOfferCode,
   adminSetOfferCode,
   adminUpdateAccount,
   listReports,
@@ -20,7 +21,7 @@ import {
   type AccountUpdate,
 } from "../lib/db";
 import { offerLink } from "../lib/offerCode";
-import { PLANS, type AdminAccount, type OfferCode, type PlanId, type PlanLimits, type ProblemReport, type UpgradeRequest } from "../lib/types";
+import { PLANS, type AdminAccount, type OfferCode, type SentOffer, type PlanId, type PlanLimits, type ProblemReport, type UpgradeRequest } from "../lib/types";
 import { listSubjects } from "../lib/subjects";
 import { ReportStatus } from "./Report";
 import { Conversation, ReplyBox, when } from "./Upgrade";
@@ -596,8 +597,118 @@ const isoDay = (days: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+/** Sends a code to people: they see it on their home page with share buttons. Accounts can be added by plan. */
+function SendOffer({ code, accounts, onSent }: { code: OfferCode; accounts: AdminAccount[] | null; onSent: () => void }) {
+  const [emails, setEmails] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState<SentOffer | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const add = (pick: (a: AdminAccount) => boolean) => {
+    const have = new Set(emails.split(/[\s,;]+/).filter(Boolean).map((e) => e.toLowerCase()));
+    const more = (accounts ?? []).filter((a) => !a.isAdmin && a.status !== "suspended" && a.email && pick(a) && !have.has(a.email.toLowerCase())).map((a) => a.email);
+    setEmails((t) => [t.trim(), ...more].filter(Boolean).join("\n"));
+  };
+  const count = emails.split(/[\s,;]+/).filter((e) => e.includes("@")).length;
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      setDone(await adminSendOfferCode({ code: code.code, emails, note: note.trim() }));
+      onSent();
+    } catch (err) {
+      setError((err as Error).message || "It wasn't sent. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const term = `${code.months} ${code.months === 1 ? "month" : "months"}`;
+  const subject = `MathSprint ${code.planLabel} free for ${term}`;
+  const body =
+    `Hi,\n\nWe'd like to give you MathSprint ${code.planLabel} free for ${term}. Sign up with offer code ${code.code} by ${shortDate(code.redeemBy)}:\n` +
+    `${offerLink(code.code)}\n\n${note.trim() ? note.trim() + "\n\n" : ""}Once you're in, you'll find the code on your home page with buttons to share it with friends.\n\nThe MathSprint team\nteam@mathsprint.org`;
+
+  if (done) {
+    const mailto = `mailto:team@mathsprint.org?bcc=${encodeURIComponent(done.withoutAccount.join(","))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return (
+      <div className="send-box stack" style={{ gap: 6 }} role="status">
+        <b>Sent {code.code} to {done.sent} {done.sent === 1 ? "person" : "people"}.</b>
+        {done.withAccount.length > 0 && (
+          <span className="small">
+            {done.withAccount.length} {done.withAccount.length === 1 ? "has an account and sees" : "have accounts and see"} it on their home page next time they sign in.
+          </span>
+        )}
+        {done.withoutAccount.length > 0 && (
+          <>
+            <span className="small">
+              {done.withoutAccount.length} {done.withoutAccount.length === 1 ? "doesn't" : "don't"} have an account yet: {done.withoutAccount.join(", ")}. They see it once they sign up with that email. MathSprint
+              doesn't send email itself, so email them the link:
+            </span>
+            <span className="row" style={{ gap: 8 }}>
+              <a className="btn btn-small" href={mailto}>
+                Write the email
+              </a>
+              <button
+                type="button"
+                className="btn-small"
+                onClick={() =>
+                  navigator.clipboard?.writeText(`${subject}\n\n${body}`).then(
+                    () => setCopied(true),
+                    () => window.prompt("Copy this:", body),
+                  )
+                }
+              >
+                {copied ? "Copied" : "Copy email text"}
+              </button>
+            </span>
+          </>
+        )}
+        {done.invalid.length > 0 && <span className="small error">Skipped, not email addresses: {done.invalid.join(", ")}</span>}
+        <button type="button" className="btn-link" style={{ fontSize: 13, alignSelf: "flex-start" }} onClick={() => { setDone(null); setEmails(""); setCopied(false); }}>
+          Send to more people
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="send-box stack" style={{ gap: 8 }} onSubmit={send}>
+      <label htmlFor={`send-${code.code}`} style={{ margin: 0 }}>
+        Send {code.code} to
+      </label>
+      <textarea id={`send-${code.code}`} placeholder="Email addresses, one per line or separated by commas" value={emails} onChange={(e) => setEmails(e.target.value)} />
+      <span className="row small" style={{ gap: 8 }}>
+        <span className="muted">Add accounts:</span>
+        <button type="button" className="btn-small" onClick={() => add((a) => a.plan === "free")} disabled={!accounts}>
+          All on Free
+        </button>
+        <button type="button" className="btn-small" onClick={() => add((a) => a.plan === "pro")} disabled={!accounts}>
+          All on Pro
+        </button>
+        <button type="button" className="btn-small" onClick={() => add(() => true)} disabled={!accounts}>
+          Everyone
+        </button>
+      </span>
+      <input type="text" aria-label="Message to show with the code" placeholder="Message to show with the code (optional), such as: Thanks for trying MathSprint!" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
+      <span className="small muted">
+        Each person sees the code on their home page when they sign in, with buttons to share it with friends by WhatsApp, text, Messenger, Telegram or email.
+        People without an account see it after they sign up with that email.
+      </span>
+      {error && <span className="error">{error}</span>}
+      <button type="submit" className="btn-primary" style={{ alignSelf: "flex-start" }} disabled={busy || count === 0}>
+        {busy ? "Sending…" : `Send to ${count} ${count === 1 ? "person" : "people"}`}
+      </button>
+    </form>
+  );
+}
+
 /** Offer codes to email out with the /join link: a plan for some months, redeemable until a set day. */
-function OfferCodes() {
+function OfferCodes({ accounts }: { accounts: AdminAccount[] | null }) {
   const [codes, setCodes] = useState<OfferCode[] | null>(null);
   const [plan, setPlan] = useState<PlanId>("pro");
   const [months, setMonths] = useState("3");
@@ -609,6 +720,8 @@ function OfferCodes() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
   const [showUsed, setShowUsed] = useState<string | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
+  const [showSent, setShowSent] = useState<string | null>(null);
 
   const load = useCallback(() => {
     adminListOfferCodes()
@@ -727,6 +840,16 @@ function OfferCodes() {
                 {c.note && ` · ${c.note}`}
               </span>
               <span className="row small" style={{ gap: 12 }}>
+                {c.status === "active" && (
+                  <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => setSending(sending === c.code ? null : c.code)}>
+                    {sending === c.code ? "Close" : "Send to people"}
+                  </button>
+                )}
+                {(c.sends?.length ?? 0) > 0 && (
+                  <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => setShowSent(showSent === c.code ? null : c.code)}>
+                    {showSent === c.code ? "Hide who it was sent to" : `Sent to ${c.sends!.length} (${c.sends!.filter((x) => x.seen).length} seen)`}
+                  </button>
+                )}
                 {c.uses > 0 && (
                   <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => setShowUsed(showUsed === c.code ? null : c.code)}>
                     {showUsed === c.code ? "Hide who used it" : "Who used it"}
@@ -749,6 +872,16 @@ function OfferCodes() {
                   </button>
                 )}
               </span>
+              {sending === c.code && <SendOffer code={c} accounts={accounts} onSent={load} />}
+              {showSent === c.code && (
+                <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+                  {(c.sends ?? []).map((r, i) => (
+                    <li key={i} style={{ border: "none", padding: "2px 0" }}>
+                      {r.email} · sent {r.at ? shortDate(r.at) : "?"} · {r.hidden ? "seen and hidden" : r.seen ? "seen" : "not signed in since"}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {showUsed === c.code && (
                 <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
                   {(c.redemptions ?? []).map((r, i) => (
@@ -860,7 +993,7 @@ export default function Accounts() {
           }}
         />
         <Reports onChange={refresh} />
-        <OfferCodes />
+        <OfferCodes accounts={accounts} />
         <Subjects />
 
         {plans && (

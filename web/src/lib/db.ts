@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, SentOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -186,6 +186,15 @@ export async function adminListOfferCodes() {
 /** Turns a code off or on, or deletes it if nobody has redeemed it. */
 export async function adminSetOfferCode(args: { code: string; active?: boolean; delete?: boolean }) {
   return (await httpsCallable<typeof args, OfferCode | { deleted: true }>(functions, "admin_set_offer_code")(args)).data;
+}
+
+/** Sends a code to people by email address; each sees it on their home page when they sign in (or sign up). */
+export async function adminSendOfferCode(args: { code: string; emails: string; note: string }) {
+  return (await httpsCallable<typeof args, SentOffer>(functions, "admin_send_offer_code")(args)).data;
+}
+
+export async function dismissOfferSend(id: string) {
+  await httpsCallable<{ id: string }, { ok: boolean }>(functions, "dismiss_offer_send")({ id });
 }
 
 export async function createInvite(email: string) {
