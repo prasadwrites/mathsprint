@@ -32,3 +32,6 @@ export function clearOfferCode() {
     // nothing to clear
   }
 }
+
+/** Nov 30, 2026, in US Eastern time, the zone offer codes end in. */
+export const shortDate = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });

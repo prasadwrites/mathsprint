@@ -110,3 +110,31 @@ def test_terms_version():
     assert not offers.terms_accepted(acct())
     assert offers.terms_accepted(acct(termsVersion=offers.TERMS_VERSION))
     assert not offers.terms_accepted(acct(termsVersion="2020-01-01"))
+
+
+def test_parse_emails_splits_pasted_text_and_drops_repeats():
+    good, bad = offers.parse_emails("A@x.com, b@y.org\nnot-an-email; a@X.com  <c@z.io>")
+    assert good == ["a@x.com", "b@y.org", "c@z.io"]
+    assert bad == ["not-an-email"]
+    assert offers.parse_emails(["d@e.co"]) == (["d@e.co"], [])
+    with pytest.raises(AccessDenied):
+        offers.parse_emails("nobody")
+    with pytest.raises(AccessDenied):
+        offers.parse_emails([f"p{i}@x.com" for i in range(offers.MAX_SEND + 1)])
+
+
+def test_send_id_is_stable_per_code_and_email():
+    assert offers.send_id("FALL-2026", "A@x.com") == offers.send_id("FALL-2026", "a@x.com")
+    assert offers.send_id("FALL-2026", "a@x.com") != offers.send_id("FALL-2026", "b@x.com")
+    assert offers.send_id("FALL-2026", "a@x.com").startswith("FALL-2026_")
+
+
+def test_share_text_names_plan_term_code_and_last_day():
+    text = offers.share_text(offers.public_offer("FALL-2026", offer(months=1)))
+    assert "Pro free for 1 month" in text and "FALL-2026" in text and "Nov 30, 2026" in text
+
+
+def test_redeem_hint_explains_why_not():
+    assert offers.redeem_hint(offer(), acct(), False, NOW) == ""
+    assert "already used" in offers.redeem_hint(offer(), acct(), True, NOW)
+    assert "already on Pro" in offers.redeem_hint(offer(), acct(plan="pro"), False, NOW)

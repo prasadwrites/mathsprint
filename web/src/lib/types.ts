@@ -180,6 +180,8 @@ export interface AccountSummary {
   termsAccepted?: boolean;
   /** A promotion the admin offered that the user hasn't answered yet. */
   offer: PromotionOffer | null;
+  /** Offer codes the admin sent this person, to use and to pass on to friends. */
+  sharedOffers?: SharedOffer[];
   /** Admin: reports waiting for a reply. Users: replies they haven't read. */
   reports?: { open?: number; unread?: number };
   status: "active" | "suspended";
@@ -266,6 +268,8 @@ export interface OfferCode {
   status: "active" | "expired" | "used_up" | "disabled";
   createdAt: number | null;
   redemptions?: { email: string; at: number | null; endsAt: number | null }[];
+  /** Who the admin sent it to; seen once they've signed in since, hidden if they closed the card. */
+  sends?: { email: string; at: number | null; seen: boolean; hidden: boolean }[];
 }
 
 /** What anyone can see about a code before signing up. */
@@ -275,6 +279,27 @@ export interface PublicOfferCode {
   planLabel: string;
   months: number;
   redeemBy: number;
+}
+
+/** An offer code the admin sent this person, shown on their home page with share buttons. */
+export interface SharedOffer extends PublicOfferCode {
+  id: string;
+  note: string;
+  sentAt: number | null;
+  link: string;
+  /** The message for friends; the link goes after it. */
+  shareText: string;
+  /** This account already used it. */
+  redeemed: boolean;
+  /** Empty when this account can use it now, or why it can't. */
+  redeemHint: string;
+}
+
+export interface SentOffer {
+  sent: number;
+  withAccount: string[];
+  withoutAccount: string[];
+  invalid: string[];
 }
 
 export interface RedeemedOffer {

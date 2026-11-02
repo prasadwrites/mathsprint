@@ -44,6 +44,8 @@ admin_create_offer_code, admin_list_offer_codes, admin_set_offer_code - Admin on
                         months, with a last day to redeem and an optional number of uses, to send with the /join link.
 check_offer_code      - No sign-in: whether a code can be redeemed (or why not, such as expired), for the /join page.
 redeem_offer_code     - A signed-in user redeems a code: its plan for its months from today, then their own plan is back.
+admin_send_offer_code - Admin only: send a code to accounts/emails; it shows on their home page with share buttons.
+dismiss_offer_send    - The person hides a code the admin sent them.
 accept_terms          - The signed-in user agrees to the current Terms of Use (version and time are kept on the account).
 create_challenge      - A student turns a finished practice session into a link that challenges a friend to beat their score.
 open_challenge, submit_challenge - No sign-in: a friend plays the same questions, graded here, and sees both results.
@@ -505,6 +507,7 @@ def get_account(req: https_fn.CallableRequest) -> dict:
         "upgrade": upgrade,
         "reports": report_counts,
         "offer": _offer_row(offer) if offer and not admin else None,
+        "sharedOffers": [] if admin else _shared_offers(db, req, account),
         **({"credit": _credit_summary(db)} if admin else {}),
     }
 
@@ -2971,6 +2974,14 @@ def admin_list_offer_codes(req: https_fn.CallableRequest) -> dict:
             ({"email": d.get("email") or "", "at": _ms(d.get("redeemedAt")), "endsAt": d.get("endsAt")} for d in reds),
             key=lambda x: -(x["at"] or 0),
         )
+    sends: dict[str, list] = {}
+    for d in db.collection("offerSends").stream():
+        r = d.to_dict()
+        sends.setdefault(r.get("code"), []).append(
+            {"email": r.get("email", ""), "at": _ms(r.get("sentAt")), "seen": bool(r.get("seenAt")), "hidden": bool(r.get("dismissed"))}
+        )
+    for row in rows:
+        row["sends"] = sorted(sends.get(row["code"], []), key=lambda x: -(x["at"] or 0))
     return {"codes": rows}
 
 
@@ -2988,6 +2999,8 @@ def admin_set_offer_code(req: https_fn.CallableRequest) -> dict:
     if data.get("delete"):
         if int(snap.get("uses") or 0) > 0:
             raise _invalid("Someone has redeemed this code, so it can only be turned off, not deleted.")
+        for d in db.collection("offerSends").where("code", "==", code).stream():
+            d.reference.delete()
         ref.delete()
         return {"deleted": True}
     ref.update({"disabled": not bool(data.get("active")), "updatedAt": firestore.SERVER_TIMESTAMP})
@@ -3042,6 +3055,97 @@ def redeem_offer_code(req: https_fn.CallableRequest) -> dict:
         return run(db.transaction())
     except AccessDenied as e:
         raise _invalid(str(e))
+
+
+@https_fn.on_call()
+def admin_send_offer_code(req: https_fn.CallableRequest) -> dict:
+    """Sends an active code to accounts and email addresses. Each person sees it on their home page when they next sign in
+    (people without an account see it once they sign up with that email), with buttons to share it with friends.
+    No email is sent from here; the admin's page offers a ready-made email for people who don't have an account yet."""
+    _require_admin(req)
+    data = req.data or {}
+    code = offers.clean_code(data.get("code"))
+    db = firestore.client()
+    snap = db.collection("offerCodes").document(code).get() if code else None
+    if not snap or not snap.exists:
+        raise _not_found("That code doesn't exist.")
+    try:
+        offers.check_offer(snap.to_dict(), _now_ms())
+        emails, bad = offers.parse_emails(data.get("emails"))
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    note = _clean(data.get("note"), 300)
+    with_account, without = [], []
+    for i in range(0, len(emails), 100):
+        found = auth.get_users([auth.EmailIdentifier(e) for e in emails[i:i + 100]]).users
+        known = {(u.email or "").lower() for u in found}
+        for e in emails[i:i + 100]:
+            (with_account if e in known else without).append(e)
+    batch, n = db.batch(), 0
+    for e in emails:
+        batch.set(db.collection("offerSends").document(offers.send_id(code, e)), {
+            "code": code,
+            "email": e,
+            "note": note,
+            "hasAccount": e in with_account,
+            "sentAt": firestore.SERVER_TIMESTAMP,
+            "seenAt": None,
+            "dismissed": False,
+        })
+        n += 1
+        if n == 400:
+            batch.commit()
+            batch, n = db.batch(), 0
+    if n:
+        batch.commit()
+    return {"sent": len(emails), "withAccount": with_account, "withoutAccount": without, "invalid": bad}
+
+
+def _shared_offers(db, req, account: dict) -> list[dict]:
+    """Codes the admin sent to this person's email that still work, newest first; marks them seen."""
+    email = ((req.auth.token or {}).get("email") or "").lower()
+    if not email:
+        return []
+    now = _now_ms()
+    out = []
+    for d in db.collection("offerSends").where("email", "==", email).stream():
+        s = d.to_dict()
+        if s.get("dismissed"):
+            continue
+        code_ref = db.collection("offerCodes").document(s.get("code", "-"))
+        snap = code_ref.get()
+        offer = snap.to_dict() if snap.exists else None
+        if not offer or offers.offer_status(offer, now) != "active":
+            continue
+        if not s.get("seenAt"):
+            d.reference.update({"seenAt": firestore.SERVER_TIMESTAMP})
+        public = offers.public_offer(snap.id, offer)
+        used = code_ref.collection("redemptions").document(req.auth.uid).get().exists
+        out.append({
+            **public,
+            "id": d.id,
+            "note": s.get("note", ""),
+            "sentAt": _ms(s.get("sentAt")),
+            "link": f"https://mathsprint.org/join?code={snap.id}",
+            "shareText": offers.share_text(public),
+            "redeemed": used,
+            "redeemHint": offers.redeem_hint(offer, account, used, now),
+        })
+    return sorted(out, key=lambda r: -(r["sentAt"] or 0))
+
+
+@https_fn.on_call()
+def dismiss_offer_send(req: https_fn.CallableRequest) -> dict:
+    """Hides a code the admin sent from this person's home page."""
+    _require_user(req)
+    db = firestore.client()
+    ref = db.collection("offerSends").document(_clean((req.data or {}).get("id"), 128) or "-")
+    snap = ref.get()
+    email = ((req.auth.token or {}).get("email") or "").lower()
+    if not snap.exists or not email or snap.get("email") != email:
+        raise _not_found("That offer is no longer here.")
+    ref.update({"dismissed": True, "dismissedAt": firestore.SERVER_TIMESTAMP})
+    return {"ok": True}
 
 
 @https_fn.on_call()
