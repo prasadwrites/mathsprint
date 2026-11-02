@@ -173,7 +173,7 @@ def test_promotion_never_lowers_a_plan():
 def test_summary_shows_promotion_and_base_plan():
     s = accounts.summary({"plan": "free", "promo": {"plan": "pro", "endsAt": 9_999_999_999_999}}, False)
     assert s["plan"] == "pro" and s["basePlan"] == "free" and s["maxDecks"] == 50
-    assert s["promo"] == {"plan": "pro", "planLabel": "Pro", "endsAt": 9_999_999_999_999}
+    assert s["promo"] == {"plan": "pro", "planLabel": "Pro", "endsAt": 9_999_999_999_999, "offerCode": None}
     assert accounts.summary({"plan": "free"}, False)["promo"] is None
 
 

@@ -101,7 +101,12 @@ def summary(account: dict, admin: bool) -> dict:
         "plan": plan_id(account),
         "basePlan": base_plan_id(account),
         "planLabel": plan.label,
-        "promo": {"plan": promo["plan"], "planLabel": PLANS[promo["plan"]].label, "endsAt": int(promo["endsAt"])} if promo else None,
+        "promo": {
+            "plan": promo["plan"],
+            "planLabel": PLANS[promo["plan"]].label,
+            "endsAt": int(promo["endsAt"]),
+            "offerCode": promo.get("offerCode") or None,
+        } if promo else None,
         "status": account.get("status", "active"),
         "decksCreated": int(account.get("decksCreated", 0)),
         "maxDecks": max_decks(account),

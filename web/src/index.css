@@ -476,3 +476,10 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .signin-note { padding: 12px 16px; border-radius: 12px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); color: var(--ink); }
 .signin-note p { margin: 4px 0 0; font-size: 14px; line-height: 1.45; }
 .signin-note-error { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+
+/* The Terms of Use box on the sign-up form and the one-time terms page. */
+.terms-check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.45; cursor: pointer; font-weight: 400; margin: 0; }
+.terms-check input { width: 18px; height: 18px; flex: none; margin-top: 2px; accent-color: var(--accent); }
+.offer-codes .code { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 700; letter-spacing: 0.02em; }
+.offer-codes li { padding: 12px 0; border-top: 1px solid var(--line); }
+.offer-codes li:first-child { border-top: none; }

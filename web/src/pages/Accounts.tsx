@@ -4,19 +4,23 @@ import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip } from "../components/TopBar";
 import { useAccount } from "../App";
 import {
+  adminCreateOfferCode,
   adminDeleteAccount,
   adminDeleteUpgrade,
   adminEndPromotion,
   adminListAccounts,
+  adminListOfferCodes,
   adminOfferPromotion,
   adminReplyReport,
   adminReplyUpgrade,
+  adminSetOfferCode,
   adminUpdateAccount,
   listReports,
   listUpgradeRequests,
   type AccountUpdate,
 } from "../lib/db";
-import { PLANS, type AdminAccount, type PlanId, type PlanLimits, type ProblemReport, type UpgradeRequest } from "../lib/types";
+import { offerLink } from "../lib/offerCode";
+import { PLANS, type AdminAccount, type OfferCode, type PlanId, type PlanLimits, type ProblemReport, type UpgradeRequest } from "../lib/types";
 import { listSubjects } from "../lib/subjects";
 import { ReportStatus } from "./Report";
 import { Conversation, ReplyBox, when } from "./Upgrade";
@@ -68,7 +72,7 @@ function Promotion({ a, plans, onChanged }: { a: AdminAccount; plans: Record<Pla
       <span className="small">
         {a.promo && (
           <>
-            <Chip tone="good">Promotion</Chip> {a.promo.planLabel} until {shortDate(a.promo.endsAt)}, then {plans[a.basePlan]?.label}.{" "}
+            <Chip tone="good">{a.promo.offerCode ? `Code ${a.promo.offerCode}` : "Promotion"}</Chip> {a.promo.planLabel} until {shortDate(a.promo.endsAt)}, then {plans[a.basePlan]?.label}.{" "}
           </>
         )}
         {a.offer && (
@@ -579,6 +583,190 @@ function Reports({ onChange }: { onChange: () => void }) {
   );
 }
 
+const CODE_STATUS: Record<OfferCode["status"], { label: string; tone: "good" | "warn" | "bad" }> = {
+  active: { label: "Active", tone: "good" },
+  expired: { label: "Expired", tone: "bad" },
+  used_up: { label: "All used", tone: "warn" },
+  disabled: { label: "Turned off", tone: "warn" },
+};
+
+/** Today plus `days`, as YYYY-MM-DD in the admin's time zone, for the date picker. */
+const isoDay = (days: number) => {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** Offer codes to email out with the /join link: a plan for some months, redeemable until a set day. */
+function OfferCodes() {
+  const [codes, setCodes] = useState<OfferCode[] | null>(null);
+  const [plan, setPlan] = useState<PlanId>("pro");
+  const [months, setMonths] = useState("3");
+  const [redeemBy, setRedeemBy] = useState(isoDay(30));
+  const [maxUses, setMaxUses] = useState("");
+  const [custom, setCustom] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
+  const [showUsed, setShowUsed] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    adminListOfferCodes()
+      .then(setCodes)
+      .catch((e) => setError((e as Error).message || "Offer codes couldn't be loaded."));
+  }, []);
+  useEffect(load, [load]);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const made = await adminCreateOfferCode({
+        plan,
+        months: Number(months),
+        redeemBy,
+        maxUses: maxUses.trim() ? Number(maxUses) : null,
+        code: custom.trim(),
+        note: note.trim(),
+      });
+      setCodes((list) => [made, ...(list ?? [])]);
+      setCustom("");
+      setNote("");
+    } catch (err) {
+      setError((err as Error).message || "The code wasn't made. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const set = async (code: string, args: { active?: boolean; delete?: boolean }) => {
+    setError("");
+    try {
+      await adminSetOfferCode({ code, ...args });
+      load();
+    } catch (err) {
+      setError((err as Error).message || "That didn't work. Try again.");
+    }
+  };
+
+  const copy = async (text: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(what);
+      setTimeout(() => setCopied(""), 2000);
+    } catch {
+      window.prompt("Copy this:", text);
+    }
+  };
+
+  return (
+    <section className="panel stack offer-codes" id="offer-codes">
+      <h2>Offer codes</h2>
+      <p className="muted small" style={{ margin: 0 }}>
+        Email a code with its sign-up link. New people make an account with email, password and the code; people who already have an account can redeem it
+        too. The plan lasts the months you pick from the day it's redeemed, then the account goes back to its own plan (Free, or Pro if they had Pro).
+      </p>
+      <form className="stack" onSubmit={create}>
+        <div className="row" style={{ gap: 8, alignItems: "flex-end" }}>
+          <div>
+            <label htmlFor="oc-plan">Plan</label>
+            <select id="oc-plan" value={plan} onChange={(e) => setPlan(e.target.value as PlanId)} style={{ width: "auto" }}>
+              <option value="pro">Pro</option>
+              <option value="promax">Pro Max</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="oc-months">Months</label>
+            <input id="oc-months" type="number" min={1} max={24} value={months} onChange={(e) => setMonths(e.target.value)} style={{ width: 90 }} />
+          </div>
+          <div>
+            <label htmlFor="oc-until">Redeem by</label>
+            <input id="oc-until" type="date" min={isoDay(0)} value={redeemBy} onChange={(e) => setRedeemBy(e.target.value)} style={{ width: "auto" }} />
+          </div>
+          <div>
+            <label htmlFor="oc-uses">Max uses</label>
+            <input id="oc-uses" type="number" min={1} placeholder="No limit" value={maxUses} onChange={(e) => setMaxUses(e.target.value)} style={{ width: 110 }} />
+          </div>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <input type="text" aria-label="Custom code" placeholder="Custom code (optional), such as FALL-2026" maxLength={24} value={custom} onChange={(e) => setCustom(e.target.value)} style={{ flex: "1 1 220px", width: "auto" }} />
+          <input type="text" aria-label="Note for yourself" placeholder="Note for yourself (optional)" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: "2 1 260px", width: "auto" }} />
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? "Making…" : "Make code"}
+          </button>
+        </div>
+        <span className="small muted">The code works until the end of the "Redeem by" day, US Eastern time. After that it says the code has expired.</span>
+      </form>
+      {error && <p className="error">{error}</p>}
+      {codes === null && !error ? (
+        <span className="spinner" />
+      ) : codes && codes.length === 0 ? (
+        <p className="muted">No offer codes yet.</p>
+      ) : (
+        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {(codes ?? []).map((c) => (
+            <li key={c.code} className="stack" style={{ gap: 6 }}>
+              <div className="row spread" style={{ gap: 8 }}>
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="code">{c.code}</span>
+                  <Chip tone={CODE_STATUS[c.status].tone}>{CODE_STATUS[c.status].label}</Chip>
+                </span>
+                <span className="row" style={{ gap: 8 }}>
+                  <button type="button" className="btn-small" onClick={() => copy(offerLink(c.code), `link-${c.code}`)}>
+                    {copied === `link-${c.code}` ? "Copied" : "Copy sign-up link"}
+                  </button>
+                  <button type="button" className="btn-small" onClick={() => copy(c.code, `code-${c.code}`)}>
+                    {copied === `code-${c.code}` ? "Copied" : "Copy code"}
+                  </button>
+                </span>
+              </div>
+              <span className="small muted">
+                {c.planLabel} for {c.months} {c.months === 1 ? "month" : "months"} · redeem by {shortDate(c.redeemBy)} · {c.uses}
+                {c.maxUses ? ` of ${c.maxUses}` : ""} used
+                {c.note && ` · ${c.note}`}
+              </span>
+              <span className="row small" style={{ gap: 12 }}>
+                {c.uses > 0 && (
+                  <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => setShowUsed(showUsed === c.code ? null : c.code)}>
+                    {showUsed === c.code ? "Hide who used it" : "Who used it"}
+                  </button>
+                )}
+                {c.status === "disabled" ? (
+                  <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => set(c.code, { active: true })}>
+                    Turn back on
+                  </button>
+                ) : (
+                  c.status !== "expired" && (
+                    <button type="button" className="btn-link" style={{ fontSize: 13 }} onClick={() => confirm(`Turn off ${c.code}? People who already redeemed it keep their plan.`) && set(c.code, { active: false })}>
+                      Turn off
+                    </button>
+                  )
+                )}
+                {c.uses === 0 && (
+                  <button type="button" className="btn-link" style={{ fontSize: 13, color: "var(--bad)" }} onClick={() => confirm(`Delete ${c.code}?`) && set(c.code, { delete: true })}>
+                    Delete
+                  </button>
+                )}
+              </span>
+              {showUsed === c.code && (
+                <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+                  {(c.redemptions ?? []).map((r, i) => (
+                    <li key={i} style={{ border: "none", padding: "2px 0" }}>
+                      {r.email || "(no email)"} on {r.at ? shortDate(r.at) : "?"}
+                      {r.endsAt ? `, until ${shortDate(r.endsAt)}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** The subjects decks can be made in. */
 function Subjects() {
   const [subjects, setSubjects] = useState<string[] | null>(null);
@@ -672,6 +860,7 @@ export default function Accounts() {
           }}
         />
         <Reports onChange={refresh} />
+        <OfferCodes />
         <Subjects />
 
         {plans && (

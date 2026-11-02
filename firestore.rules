@@ -135,6 +135,10 @@ service cloud.firestore {
     match /promotions/{promotionId} {
       allow read, write: if false;
     }
+    // Offer codes for the /join link, and who redeemed each one. Read and written only through functions.
+    match /offerCodes/{code}/{document=**} {
+      allow read, write: if false;
+    }
 
     // The subjects decks can be made in (settings/subjects, { names: [...] }). Everyone signed in reads the list;
     // only the admin changes it. generate_deck reads it too, and treats a missing list as its starter set.

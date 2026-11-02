@@ -91,6 +91,14 @@ Signed-in users pick **Report a problem** in the profile menu, which records the
 
 On the Accounts page the admin can **Offer a promotion**: a bigger plan for 1, 2, 3, 6 or 12 months, with an optional note. The user sees the offer on their home page and accepts or declines it. Accepting stores `promo {plan, startedAt, endsAt}` on the account; the term runs in calendar months from that moment. `plan_id()` in `functions/accounts.py` uses the promotion's plan only while it lasts, so the account is back on its own plan the moment the term ends, with nothing scheduled to switch it. Changing someone's plan during a promotion changes the plan they return to. The admin can withdraw an offer or end a promotion early. Offers live in `promotions/{id}`, functions only.
 
+### Offer codes and the /join link
+
+The admin's **Offer codes** panel on `/admin` makes a code for Pro or Pro Max for 1 to 24 months, with a last day to redeem it (the end of that day, US Eastern) and an optional number of uses, plus an optional custom code such as `FALL-2026`. **Copy sign-up link** gives `https://mathsprint.org/join?code=CODE` to email. On `/join`, a new person enters email, password and the code; `check_offer_code` checks it first, so an expired code says "This offer code expired on …" before any account is made. Once signed in, `redeem_offer_code` stores the plan as the account's `promo` (one redemption per account, counted in `offerCodes/{code}/redemptions/{uid}`), so the plan lasts its months from that day and then `accounts.plan_id()` falls back to the account's own plan (Free, or Pro if they had Pro). People with an account can redeem a code on `/join` too (linked from Upgrade). Decks already built stay usable; deck limits follow the plan in force. Turning a code off stops new redemptions only. Logic and tests: `functions/offers.py`.
+
+### Terms of Use
+
+`/terms` (web/public/terms.html) is the Terms of Use. Every sign-up form has a required "I agree" box (including Google sign-up), and anyone signed in who hasn't agreed to the current version (`TERMS_VERSION` in `functions/offers.py` and `web/src/lib/terms.ts`) sees a one-time page to agree before the app opens. The account keeps `termsVersion`, `termsAcceptedAt` and `termsAcceptedVia` (signup or prompt). Raise the version in both files to ask everyone again.
+
 ### Payments
 
 The Upgrade page shows Square's **Pay now** button for Pro and Pro Max. Each press asks `create_checkout` for a Square payment link made for that student and plan (Square API, the seller's main location), and saves the link's order id in `squareCheckouts`. Square brings the student back to `/upgrade?paid=PLAN`, which waits for the plan to switch.

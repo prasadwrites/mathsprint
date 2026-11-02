@@ -40,6 +40,11 @@ report_problem, list_reports, reply_report - A signed-in user reports a problem;
 admin_reply_report    - Admin only: answer a problem report, optionally marking it resolved.
 admin_offer_promotion, admin_end_promotion - Admin only: offer a bigger plan for some months, or end it early.
 respond_promotion     - The user accepts or declines an offer; an accepted plan lasts for its term, then the old plan is back.
+admin_create_offer_code, admin_list_offer_codes, admin_set_offer_code - Admin only: offer codes for Pro or Pro Max for some
+                        months, with a last day to redeem and an optional number of uses, to send with the /join link.
+check_offer_code      - No sign-in: whether a code can be redeemed (or why not, such as expired), for the /join page.
+redeem_offer_code     - A signed-in user redeems a code: its plan for its months from today, then their own plan is back.
+accept_terms          - The signed-in user agrees to the current Terms of Use (version and time are kept on the account).
 create_challenge      - A student turns a finished practice session into a link that challenges a friend to beat their score.
 open_challenge, submit_challenge - No sign-in: a friend plays the same questions, graded here, and sees both results.
 claim_challenge       - A friend who signs up after playing saves their result to their new account.
@@ -91,6 +96,7 @@ import credit
 import engagement
 import groups
 import leaderboards
+import offers
 import payments
 import posts
 import sharing
@@ -141,10 +147,22 @@ def _load_account(db, req: https_fn.CallableRequest) -> dict:
     source = _signup_ref((req.data or {}).get("ref") if isinstance(req.data, dict) else None)
     if source:
         account["signupRef"] = source
+    if _agreed_terms(req):  # ticked "I agree" on the sign-up form
+        account.update(_terms_fields("signup"))
     ref.set({**account, "createdAt": firestore.SERVER_TIMESTAMP})
     # A brand new account: if a friend invited this email, credit them.
     _claim_invite(db, req.auth.uid, token.get("email", ""), (req.data or {}).get("invite") if isinstance(req.data, dict) else None)
     return account
+
+
+def _agreed_terms(req: https_fn.CallableRequest) -> bool:
+    """True when the app says the person ticked "I agree to the Terms of Use" for the current version."""
+    data = req.data if isinstance(req.data, dict) else {}
+    return data.get("terms") == offers.TERMS_VERSION
+
+
+def _terms_fields(how: str) -> dict:
+    return {"termsVersion": offers.TERMS_VERSION, "termsAcceptedAt": firestore.SERVER_TIMESTAMP, "termsAcceptedVia": how}
 
 
 def _signup_ref(value) -> str:
@@ -459,6 +477,10 @@ def get_account(req: https_fn.CallableRequest) -> dict:
     token = req.auth.token or {}
     # Keep the email and name the admin sees in step with the sign-in.
     fresh = {k: v for k, v in {"email": token.get("email"), "displayName": token.get("name")}.items() if v and account.get(k) != v}
+    if _agreed_terms(req) and not offers.terms_accepted(account):
+        # An existing sign-in (such as Google on the sign-up form) that ticked "I agree" on the way in.
+        fresh.update(_terms_fields("signup"))
+        account["termsVersion"] = offers.TERMS_VERSION
     if fresh:
         _account_ref(db, req.auth.uid).set(fresh, merge=True)
     has_code = db.collection("accessCodes").document(req.auth.uid).get().exists
@@ -478,6 +500,7 @@ def get_account(req: https_fn.CallableRequest) -> dict:
     offer = next(iter(_open_offers(db, req.auth.uid)), None)
     return {
         **accounts.summary(account, admin),
+        "termsAccepted": admin or offers.terms_accepted(account),
         "hasOwnCode": has_code,
         "upgrade": upgrade,
         "reports": report_counts,
@@ -2883,6 +2906,153 @@ def respond_promotion(req: https_fn.CallableRequest) -> dict:
         return {"accepted": True, "endsAt": ends}
 
     return run(db.transaction())
+
+
+# Offer codes. The admin makes a code for Pro or Pro Max for some months, with a last day to redeem it, and sends it
+# with the /join link. Redeeming sets the account's promo (see offers.py), so the old plan is back when it ends.
+
+
+def _offer_code_row(doc, now: int) -> dict:
+    r = doc.to_dict()
+    return {
+        "code": doc.id,
+        "plan": r.get("plan"),
+        "planLabel": accounts.PLANS[r["plan"]].label if r.get("plan") in accounts.PLANS else r.get("plan"),
+        "months": int(r.get("months") or 0),
+        "redeemBy": int(r.get("redeemBy") or 0),
+        "redeemByDay": r.get("redeemByDay", ""),
+        "maxUses": int(r.get("maxUses") or 0),
+        "uses": int(r.get("uses") or 0),
+        "note": r.get("note", ""),
+        "status": offers.offer_status(r, now),
+        "createdAt": _ms(r.get("createdAt")),
+    }
+
+
+@https_fn.on_call()
+def admin_create_offer_code(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    data = req.data or {}
+    try:
+        fields = offers.check_new_offer(data, _now_ms())
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    db = firestore.client()
+    wanted = str(data.get("code") or "").strip()
+    if wanted:
+        code = offers.clean_code(wanted)
+        if not code:
+            raise _invalid("A custom code needs 4 to 24 letters, digits or dashes, such as FALL-2026.")
+        ref = db.collection("offerCodes").document(code)
+        if ref.get().exists:
+            raise _invalid("That code is already taken. Pick another one.")
+    else:
+        for _ in range(5):
+            code = offers.new_code()
+            ref = db.collection("offerCodes").document(code)
+            if not ref.get().exists:
+                break
+        else:
+            raise _invalid("Couldn't make a new code. Try again.")
+    ref.set({**fields, "uses": 0, "disabled": False, "createdAt": firestore.SERVER_TIMESTAMP})
+    return _offer_code_row(ref.get(), _now_ms())
+
+
+@https_fn.on_call()
+def admin_list_offer_codes(req: https_fn.CallableRequest) -> dict:
+    _require_admin(req)
+    db = firestore.client()
+    now = _now_ms()
+    rows = [_offer_code_row(d, now) for d in db.collection("offerCodes").stream()]
+    rows.sort(key=lambda r: -(r["createdAt"] or 0))
+    for row in rows:
+        reds = db.collection("offerCodes").document(row["code"]).collection("redemptions").stream()
+        row["redemptions"] = sorted(
+            ({"email": d.get("email") or "", "at": _ms(d.get("redeemedAt")), "endsAt": d.get("endsAt")} for d in reds),
+            key=lambda x: -(x["at"] or 0),
+        )
+    return {"codes": rows}
+
+
+@https_fn.on_call()
+def admin_set_offer_code(req: https_fn.CallableRequest) -> dict:
+    """Turns a code off or back on, or deletes one nobody has redeemed. People who already redeemed it keep their plan."""
+    _require_admin(req)
+    data = req.data or {}
+    code = offers.clean_code(data.get("code"))
+    db = firestore.client()
+    ref = db.collection("offerCodes").document(code) if code else None
+    snap = ref.get() if ref else None
+    if not snap or not snap.exists:
+        raise _not_found("That code doesn't exist.")
+    if data.get("delete"):
+        if int(snap.get("uses") or 0) > 0:
+            raise _invalid("Someone has redeemed this code, so it can only be turned off, not deleted.")
+        ref.delete()
+        return {"deleted": True}
+    ref.update({"disabled": not bool(data.get("active")), "updatedAt": firestore.SERVER_TIMESTAMP})
+    return _offer_code_row(ref.get(), _now_ms())
+
+
+@https_fn.on_call()
+def check_offer_code(req: https_fn.CallableRequest) -> dict:
+    """No sign-in: the /join page checks a code before making the account, so an expired code says so up front."""
+    code = offers.clean_code((req.data or {}).get("code"))
+    if not code:
+        raise _invalid(offers.INVALID)
+    snap = firestore.client().collection("offerCodes").document(code).get()
+    offer = snap.to_dict() if snap.exists else None
+    try:
+        offers.check_offer(offer, _now_ms())
+    except AccessDenied as e:
+        raise _invalid(str(e))
+    return offers.public_offer(code, offer)
+
+
+@https_fn.on_call()
+def redeem_offer_code(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    code = offers.clean_code((req.data or {}).get("code"))
+    if not code:
+        raise _invalid(offers.INVALID)
+    db = firestore.client()
+    _load_account(db, req)  # makes the account if this is a brand new sign-in
+    admin = accounts.is_admin(req.auth.token)
+    offer_ref = db.collection("offerCodes").document(code)
+    used_ref = offer_ref.collection("redemptions").document(uid)
+    account_ref = _account_ref(db, uid)
+    email = (req.auth.token or {}).get("email", "")
+
+    @firestore.transactional
+    def run(transaction) -> dict:
+        offer_snap = offer_ref.get(transaction=transaction)
+        used = used_ref.get(transaction=transaction).exists
+        account = _txn_data(transaction, account_ref)
+        offer = offer_snap.to_dict() if offer_snap.exists else None
+        now = _now_ms()
+        offers.check_redeem(offer, account, used, admin, now)
+        promo = offers.promo_from(code, offer, now)
+        transaction.update(account_ref, {"promo": promo, "updatedAt": firestore.SERVER_TIMESTAMP})
+        transaction.set(used_ref, {"uid": uid, "email": email, "redeemedAt": firestore.SERVER_TIMESTAMP, "endsAt": promo["endsAt"]})
+        transaction.update(offer_ref, {"uses": firestore.Increment(1)})
+        return {"plan": promo["plan"], "planLabel": accounts.PLANS[promo["plan"]].label, "months": promo["months"], "endsAt": promo["endsAt"],
+                "basePlanLabel": accounts.PLANS[accounts.base_plan_id(account)].label}
+
+    try:
+        return run(db.transaction())
+    except AccessDenied as e:
+        raise _invalid(str(e))
+
+
+@https_fn.on_call()
+def accept_terms(req: https_fn.CallableRequest) -> dict:
+    uid = _require_user(req)
+    if (req.data or {}).get("version") != offers.TERMS_VERSION:
+        raise _invalid("These terms have been updated. Reload the page to see the latest version.")
+    db = firestore.client()
+    _load_account(db, req)
+    _account_ref(db, uid).set(_terms_fields("prompt"), merge=True)
+    return {"ok": True, "version": offers.TERMS_VERSION}
 
 
 @https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=300)

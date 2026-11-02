@@ -174,7 +174,10 @@ export interface AccountSummary {
   /** The plan without any promotion; it's back when the promotion ends. */
   basePlan: PlanId;
   planLabel: string;
-  promo: { plan: PlanId; planLabel: string; endsAt: number } | null;
+  /** A promotion or offer code in force; offerCode is set when it came from a code. */
+  promo: { plan: PlanId; planLabel: string; endsAt: number; offerCode?: string | null } | null;
+  /** False until the person agrees to the current Terms of Use (the admin is never asked). */
+  termsAccepted?: boolean;
   /** A promotion the admin offered that the user hasn't answered yet. */
   offer: PromotionOffer | null;
   /** Admin: reports waiting for a reply. Users: replies they haven't read. */
@@ -245,6 +248,42 @@ export interface PromotionOffer {
   months: number;
   note: string;
   createdAt: number | null;
+}
+
+/** An offer code the admin made for the /join link. */
+export interface OfferCode {
+  code: string;
+  plan: PlanId;
+  planLabel: string;
+  months: number;
+  /** The last moment it can be redeemed (end of that day, US Eastern). */
+  redeemBy: number;
+  redeemByDay: string;
+  /** 0 means no limit. */
+  maxUses: number;
+  uses: number;
+  note: string;
+  status: "active" | "expired" | "used_up" | "disabled";
+  createdAt: number | null;
+  redemptions?: { email: string; at: number | null; endsAt: number | null }[];
+}
+
+/** What anyone can see about a code before signing up. */
+export interface PublicOfferCode {
+  code: string;
+  plan: PlanId;
+  planLabel: string;
+  months: number;
+  redeemBy: number;
+}
+
+export interface RedeemedOffer {
+  plan: PlanId;
+  planLabel: string;
+  months: number;
+  endsAt: number;
+  /** The plan the account goes back to afterwards. */
+  basePlanLabel: string;
 }
 
 export interface ProblemReport {
