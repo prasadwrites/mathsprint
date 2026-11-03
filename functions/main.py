@@ -3074,6 +3074,9 @@ def admin_send_offer_code(req: https_fn.CallableRequest) -> dict:
         emails, bad = offers.parse_emails(data.get("emails"))
     except AccessDenied as e:
         raise _invalid(str(e))
+    emails, skipped = offers.drop_do_not_contact(emails)
+    if not emails:
+        raise _invalid("Everyone on that list asked not to be contacted.")
     note = _clean(data.get("note"), 300)
     with_account, without = [], []
     for i in range(0, len(emails), 100):
@@ -3098,7 +3101,7 @@ def admin_send_offer_code(req: https_fn.CallableRequest) -> dict:
             batch, n = db.batch(), 0
     if n:
         batch.commit()
-    return {"sent": len(emails), "withAccount": with_account, "withoutAccount": without, "invalid": bad}
+    return {"sent": len(emails), "withAccount": with_account, "withoutAccount": without, "invalid": bad, "doNotContact": skipped}
 
 
 def _shared_offers(db, req, account: dict) -> list[dict]:

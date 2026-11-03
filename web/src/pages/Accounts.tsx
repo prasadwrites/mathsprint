@@ -669,6 +669,9 @@ function SendOffer({ code, accounts, onSent }: { code: OfferCode; accounts: Admi
           </>
         )}
         {done.invalid.length > 0 && <span className="small error">Skipped, not email addresses: {done.invalid.join(", ")}</span>}
+        {(done.doNotContact?.length ?? 0) > 0 && (
+          <span className="small">Skipped, asked not to be contacted: {done.doNotContact!.join(", ")}</span>
+        )}
         <button type="button" className="btn-link" style={{ fontSize: 13, alignSelf: "flex-start" }} onClick={() => { setDone(null); setEmails(""); setCopied(false); }}>
           Send to more people
         </button>
