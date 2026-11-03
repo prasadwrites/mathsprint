@@ -59,6 +59,8 @@ export default function App() {
   // Pages anyone can open without signing in: a group member's test, a class link (which asks for Google sign-in
   // itself), a friend's challenge, a public test link, a question post, and the plan comparison.
   const { pathname } = useLocation();
+  // Time on site, for anyone signed in, on every page: link pages included.
+  useActivityHeartbeat();
   if (["/t/", "/class/", "/c/", "/play/", "/p/", "/quiz/", "/q/", "/question/"].some((p) => pathname.startsWith(p)) || pathname === "/plans") {
     return (
       <Routes>
@@ -86,7 +88,6 @@ function SignedInApp() {
   // A ref, since navigate changes on every route change and refresh must not.
   const navigate = useRef(useNavigate());
   useEffect(() => onAuthStateChanged(auth, setUser), []);
-  useActivityHeartbeat(!!user);
 
   const refresh = useCallback(() => {
     getAccount(pendingInvite()?.token, pendingRef() ?? undefined, pendingTerms() ?? undefined)

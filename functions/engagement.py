@@ -212,13 +212,19 @@ def build_all(
         link_play(link("challenge", a.get("challengeId"), owner, c.get("deckTitle"), c.get("createdAt")),
                   a.get("status") == "completed", a.get("claimedUid"), a.get("startedAtMs"))
 
-    # Group tests: each member's link is one link and one person reached.
+    # Group tests: each member's link is one link and one person reached. A class link is one link for the whole
+    # class, however many students open it.
+    class_links_counted: set = set()
     for t in takers:
         test = tests.get(t.get("testId"))
         if not test:
             continue
         owner, deck_id = test.get("ownerUid"), test.get("deckId")
-        add(owner, "group", deck_id, links=1, reached=1, completed=int(t.get("status") == "completed"))
+        one_link = 1
+        if test.get("classToken") or t.get("kind") == "class":
+            one_link = int(t.get("testId") not in class_links_counted)
+            class_links_counted.add(t.get("testId"))
+        add(owner, "group", deck_id, links=one_link, reached=1, completed=int(t.get("status") == "completed"))
         new_uid = by_email.get((t.get("email") or "").lower())
         signup(owner, "group", deck_id, new_uid, t.get("createdAt"))
         link_play(link("group", t.get("testId"), owner, test.get("deckTitle"), test.get("createdAt"), test.get("groupName") or ""),

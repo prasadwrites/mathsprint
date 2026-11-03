@@ -1,15 +1,21 @@
-import { useEffect } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { useEffect, useState } from "react";
 import { recordActivity } from "./db";
+import { auth } from "./firebase";
 
 const BEAT_MS = 60_000;
 /** Someone who hasn't touched the page for this long has probably walked away. */
 const IDLE_MS = 5 * 60_000;
 const INPUTS = ["pointerdown", "pointermove", "keydown", "scroll", "touchstart", "wheel"] as const;
 
-/** Counts the minutes this person spends actively using the app, for the admin's Accounts page. */
-export function useActivityHeartbeat(enabled: boolean) {
+/** Counts the minutes a signed-in person spends actively using the site, for the admin's Accounts and Engagement
+ * pages. It runs on every page, including the link pages (class links, group tests, challenges, public tests, question
+ * posts and plans), so a student who only ever takes tests from a link still gets their time counted. */
+export function useActivityHeartbeat() {
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => onAuthStateChanged(auth, (u) => setSignedIn(!!u)), []);
   useEffect(() => {
-    if (!enabled) return;
+    if (!signedIn) return;
     let lastInput = Date.now();
     const onInput = () => {
       lastInput = Date.now();
@@ -24,5 +30,5 @@ export function useActivityHeartbeat(enabled: boolean) {
       window.clearInterval(timer);
       INPUTS.forEach((e) => window.removeEventListener(e, onInput));
     };
-  }, [enabled]);
+  }, [signedIn]);
 }
