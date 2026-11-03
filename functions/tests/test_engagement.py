@@ -61,6 +61,20 @@ def test_group_test_member_who_signs_up_later():
     assert rows["teacher"]["completionRate"] == 0.5
 
 
+def test_a_class_link_is_one_link_however_many_students_take_it():
+    rows = build(
+        [user("teacher"), user("s1", created=NOW - DAY), user("s2", created=NOW - DAY)],
+        decks={"d1": {"ownerId": "teacher"}},
+        tests={"c1": {"ownerUid": "teacher", "deckId": "d1", "classToken": "abc"}},
+        takers=[
+            {"testId": "c1", "kind": "class", "email": "s1@example.com", "status": "completed", "createdAt": NOW - DAY + 5_000},
+            {"testId": "c1", "kind": "class", "email": "s2@example.com", "status": "started", "createdAt": NOW - DAY + 5_000},
+        ],
+    )
+    assert rows["teacher"]["channels"]["group"] == {"links": 1, "reached": 2, "completed": 1, "signups": 2}
+    assert rows["teacher"]["decks"][0]["links"] == 1
+
+
 def test_shared_deck_counts_as_finished_once_practiced():
     rows = build(
         [user("ann"), user("bo"), user("cy")],
