@@ -123,6 +123,12 @@ def test_parse_emails_splits_pasted_text_and_drops_repeats():
         offers.parse_emails([f"p{i}@x.com" for i in range(offers.MAX_SEND + 1)])
 
 
+def test_do_not_contact_addresses_are_skipped():
+    keep, skipped = offers.drop_do_not_contact(["a@x.com", "barriesouth@mathnasium.ca", "b@y.org"])
+    assert keep == ["a@x.com", "b@y.org"]
+    assert skipped == ["barriesouth@mathnasium.ca"]
+
+
 def test_send_id_is_stable_per_code_and_email():
     assert offers.send_id("FALL-2026", "A@x.com") == offers.send_id("FALL-2026", "a@x.com")
     assert offers.send_id("FALL-2026", "a@x.com") != offers.send_id("FALL-2026", "b@x.com")
