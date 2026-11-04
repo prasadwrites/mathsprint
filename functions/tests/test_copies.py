@@ -39,3 +39,7 @@ def test_copy_fields_belong_to_the_new_owner_and_leave_sharing_behind():
 def test_copy_of_a_saved_post_deck_is_a_plain_copy():
     out = copies.copy_fields({"title": "Post", "source": "ai", "fromPost": "p1"}, "d", "u")
     assert "fromPost" not in out and out["source"] == "copy"
+
+
+def test_a_copy_of_a_public_deck_starts_private():
+    assert "public" not in copies.copy_fields({"title": "Algebra", "public": True}, "d1", "admin")

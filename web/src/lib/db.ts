@@ -1,5 +1,7 @@
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -10,6 +12,7 @@ import {
   query,
   type QueryDocumentSnapshot,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -17,7 +20,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, SentOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, Question } from "./types";
+import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, SentOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, PublicDeckCard, Question } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -25,15 +28,58 @@ import { moveTo, opened, secondsOn } from "./timing";
 
 const toDate = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
 
-/** The student's own decks, newest first, then the decks other people shared with them. */
-export async function listDecks(uid: string): Promise<Deck[]> {
+/** The student's own decks, newest first, then the decks other people shared with them, then the admin's public
+ * decks (less the ones this student hid, which come back as `hidden`). A deck that is both shared and public shows once. */
+export async function listDecks(uid: string): Promise<{ decks: Deck[]; hidden: Deck[] }> {
   const toDeck = (d: QueryDocumentSnapshot) => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) }) as Deck;
-  const [own, shared] = await Promise.all([
+  const newest = (a: Deck, b: Deck) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0);
+  const [own, shared, pub, hidden] = await Promise.all([
     getDocs(query(collection(db, "decks"), where("ownerId", "==", uid), orderBy("createdAt", "desc"))),
     getDocs(query(collection(db, "decks"), where("sharedWith", "array-contains", uid))),
+    // Public decks are new: until the rules allowing them are deployed this read is refused, which shows none.
+    getDocs(query(collection(db, "decks"), where("public", "==", true))).catch(() => null),
+    hiddenDecks(uid),
   ]);
-  const sharedDecks = shared.docs.map(toDeck).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
-  return [...own.docs.map(toDeck), ...sharedDecks];
+  const seen = new Set<string>();
+  const once = (d: Deck) => !seen.has(d.id) && !!seen.add(d.id);
+  const publicDecks = pub?.docs.map(toDeck).filter((d) => d.ownerId !== uid).sort(newest) ?? [];
+  const decks = [
+    ...own.docs.map(toDeck),
+    ...shared.docs.map(toDeck).sort(newest),
+    ...publicDecks.filter((d) => !hidden.includes(d.id)),
+  ].filter(once);
+  return { decks, hidden: publicDecks.filter((d) => hidden.includes(d.id) && !seen.has(d.id)) };
+}
+
+/** The public decks this student took off their home page. */
+export async function hiddenDecks(uid: string): Promise<string[]> {
+  try {
+    const d = await getDoc(doc(db, "users", uid));
+    const ids = d.exists() ? d.data().hiddenDecks : null;
+    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Takes a public deck off this student's home page. The admin's deck, and the student's practice history, stay. */
+export function hidePublicDeck(uid: string, deckId: string) {
+  return setDoc(doc(db, "users", uid), { hiddenDecks: arrayUnion(deckId) }, { merge: true });
+}
+
+/** Puts every public deck this student hid back on their home page. */
+export function showHiddenDecks(uid: string, deckIds: string[]) {
+  return setDoc(doc(db, "users", uid), { hiddenDecks: arrayRemove(...deckIds) }, { merge: true });
+}
+
+/** Admin only (the rules check): makes one of the admin's decks public to everyone, or private again. */
+export function setDeckPublic(deckId: string, isPublic: boolean) {
+  return updateDoc(doc(db, "decks", deckId), { public: isPublic });
+}
+
+/** The public decks as the sign-in page lists them. Works signed out. */
+export async function listPublicDeckCards(): Promise<PublicDeckCard[]> {
+  return (await httpsCallable<object, { decks: PublicDeckCard[] }>(functions, "list_public_decks")({})).data.decks;
 }
 
 export async function getDeck(deckId: string): Promise<Deck | null> {

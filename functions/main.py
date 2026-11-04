@@ -101,6 +101,7 @@ import leaderboards
 import offers
 import payments
 import posts
+import public_decks
 import sharing
 import subjects
 from accounts import AccessDenied
@@ -419,7 +420,7 @@ def explain_step(req: https_fn.CallableRequest) -> dict:
         raise _denied("Your account is suspended.")
     deck_id, question_id = _clean(data.get("deckId"), 64), _clean(data.get("questionId"), 64)
     deck = db.collection("decks").document(deck_id).get()
-    if not deck.exists or (deck.get("ownerId") != uid and uid not in (deck.to_dict().get("sharedWith") or [])):
+    if not deck.exists or not public_decks.can_open(deck.to_dict(), uid):
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "Deck not found.")
     q = deck.reference.collection("questions").document(question_id).get()
     if not q.exists:
@@ -3297,6 +3298,15 @@ def delete_deck(req: https_fn.CallableRequest) -> dict:
     writer.close()
     db.recursive_delete(deck.reference)  # with its questions and share records
     return {"ok": True, "sessions": sum(1 for s in sessions if s.get("ownerId") == uid)}
+
+
+@https_fn.on_call(timeout_sec=30)
+def list_public_decks(req: https_fn.CallableRequest) -> dict:
+    """The decks the admin made public, for the sign-in page and its practice setup. Anyone can call it, signed in or
+    not, so it returns only what a deck card shows (no owner or sharing details, and no questions)."""
+    db = firestore.client()
+    rows = [(d.id, d.to_dict()) for d in db.collection("decks").where("public", "==", True).stream()]
+    return {"decks": public_decks.cards(rows)}
 
 
 @https_fn.on_call(timeout_sec=120)
