@@ -65,9 +65,9 @@ open_question_post, check_post_answer - No sign-in: anyone answers the posted qu
 save_post_deck        - A visitor who signs up (or is signed in) saves the post's whole deck to their account.
 question_post_page    - Serves /q/TOKEN with the question in its link preview, and /q/TOKEN/card.png, the question card.
 site_stats            - No sign-in: /api/stats, how many AI decks have been built and answers checked, for the tutors page.
-daily_reel            - Scheduled, 5 AM Eastern: Claude writes a short, fun Instagram Reel for tutors about one everyday
+admin_make_reel       - Admin only, on demand: Claude writes a short, fun Instagram Reel for tutors about one everyday
                         headache MathSprint takes care of, and it's animated with music into an MP4 (reels.py, reel_video.py).
-admin_make_reel, admin_list_reels - Admin only: another Reel today (on the next theme), and the latest Reels with captions.
+admin_list_reels      - Admin only: the latest Reels with captions.
 reel_file             - Serves /reel/TOKEN.mp4, a Reel's video, to play on the admin's home page or download (?download=1).
 """
 
@@ -86,7 +86,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from firebase_admin import auth, firestore, initialize_app
-from firebase_functions import https_fn, options, scheduler_fn
+from firebase_functions import https_fn, options
 from firebase_functions.params import IntParam, StringParam
 
 import accounts
@@ -3434,7 +3434,7 @@ def site_stats(req: https_fn.Request) -> https_fn.Response:
                              headers={"Cache-Control": "public, max-age=600, s-maxage=3600"})
 
 
-# The daily Instagram Reel for tutors (reels.py writes it, reel_video.py animates it). Admin only, except the video link,
+# The Instagram Reel for tutors, made on demand from the admin's home page (reels.py writes it, reel_video.py animates it). Admin only, except the video link,
 # which works for anyone who has its unguessable address, like a question post's card.
 REEL_TIMEZONE = "America/New_York"
 
@@ -3505,20 +3505,9 @@ def _prune_reels(db) -> None:
         db.recursive_delete(doc.reference)
 
 
-@scheduler_fn.on_schedule(schedule="0 5 * * *", timezone=scheduler_fn.Timezone(REEL_TIMEZONE), secrets=["ANTHROPIC_API_KEY"],
-                          timeout_sec=540, memory=options.MemoryOption.GB_2, cpu=2)
-def daily_reel(event: scheduler_fn.ScheduledEvent) -> None:
-    """5 AM Eastern every day: today's Reel, ready on the admin's home page."""
-    db = firestore.client()
-    today = _reels(db).where("day", "==", _reel_day()).stream()
-    if any(d.get("kind") == "daily" and d.get("status") == "ready" for d in today):
-        return  # a retry after the Reel was already made
-    _make_reel(db, "daily")
-
-
 @https_fn.on_call(secrets=["ANTHROPIC_API_KEY"], timeout_sec=540, memory=options.MemoryOption.GB_2, cpu=2)
 def admin_make_reel(req: https_fn.CallableRequest) -> dict:
-    """Admin only: another Reel today, on the next theme."""
+    """Admin only: a new Reel, made only when the admin asks (there's no daily schedule). A second one the same day gets the next theme."""
     from generator import GenerationError
 
     _require_admin(req)
