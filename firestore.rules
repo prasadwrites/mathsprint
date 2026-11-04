@@ -15,19 +15,25 @@ service cloud.firestore {
 
     // People a deck was shared with (by the share_deck function) can read it and practice it.
     function sharedWithMe(data) { return signedIn() && request.auth.uid in data.get("sharedWith", []) && active(); }
+    // Decks the admin made public: everyone signed in can read and practice them (each user can hide one for themselves,
+    // in users/{uid}.hiddenDecks). Anyone can see the list on the sign-in page, through list_public_decks.
+    function publicDeck(data) { return signedIn() && data.get("public", false) == true && active(); }
 
     // AI decks are written only by the generate_deck function (admin access), which
     // enforces the plan's limits. Students can add the sample deck themselves and
     // can see their own decks and the ones shared with them.
     match /decks/{deckId} {
-      allow read: if owns(resource.data) || sharedWithMe(resource.data);
+      allow read: if owns(resource.data) || sharedWithMe(resource.data) || publicDeck(resource.data);
       allow delete: if owns(resource.data);
       allow create: if owns(request.resource.data) && request.resource.data.source == "sample"
-        && !("sharedWith" in request.resource.data);
+        && !("sharedWith" in request.resource.data) && !("public" in request.resource.data);
       // Only the sharing functions change who a deck is shared with.
       // A new title (renaming) must be 1 to 80 characters.
       allow update: if owns(resource.data)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["ownerId", "source", "sharedWith", "sharedBy"])
+        // Only the admin makes their own decks public or private again.
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["public"])
+          || (isAdmin() && request.resource.data.public is bool))
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["title"])
           || (request.resource.data.title is string && request.resource.data.title.matches(".*[^ ].*")
             && request.resource.data.title.size() <= 80));
@@ -35,7 +41,8 @@ service cloud.firestore {
       match /questions/{questionId} {
         function deckPath() { return /databases/$(database)/documents/decks/$(deckId); }
         allow read: if signedIn() && active()
-          && (get(deckPath()).data.ownerId == request.auth.uid || request.auth.uid in get(deckPath()).data.get("sharedWith", []));
+          && (get(deckPath()).data.ownerId == request.auth.uid || request.auth.uid in get(deckPath()).data.get("sharedWith", [])
+            || get(deckPath()).data.get("public", false) == true);
         // getAfter, so a deck and its questions can be written in one batch. Only sample
         // decks are written from the app; AI decks come from the function.
         allow write: if signedIn() && active()

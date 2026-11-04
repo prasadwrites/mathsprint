@@ -1,5 +1,5 @@
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { pendingInvite } from "../lib/invite";
 import { pendingPublicClaim } from "../lib/publicTest";
@@ -9,10 +9,11 @@ import { auth, googleProvider } from "../lib/firebase";
 import { googleSignInProblem, type GoogleSignInProblem } from "../lib/googleSignIn";
 import GoogleSignInNote from "../components/GoogleSignInNote";
 import { TermsCheckbox } from "../components/Terms";
-import { checkOfferCode } from "../lib/db";
+import { checkOfferCode, listPublicDeckCards } from "../lib/db";
+import { publicDeckPath } from "../lib/publicDeck";
 import { cleanCode, codeFromUrl, holdOfferCode } from "../lib/offerCode";
 import { agreeTermsOnSignup } from "../lib/terms";
-import type { PublicOfferCode } from "../lib/types";
+import type { PublicDeckCard, PublicOfferCode } from "../lib/types";
 
 const longDate = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 const monthsLabel = (n: number) => `${n} ${n === 1 ? "month" : "months"}`;
@@ -24,7 +25,37 @@ function audience(ref: string | null) {
   return "Timed practice for high school and college math, SAT, ACT and AP: build a deck on any topic and see exactly where your time went.";
 }
 
-export default function Login() {
+/** The admin's public decks, which anyone can set up a practice on before signing in. Shows nothing if there are none
+ * or they can't be read. */
+function PublicDecks() {
+  const [decks, setDecks] = useState<PublicDeckCard[]>([]);
+  useEffect(() => {
+    listPublicDeckCards().then(setDecks).catch(() => {});
+  }, []);
+  if (!decks.length) return null;
+  return (
+    <section className="stack" style={{ gap: 10, paddingBottom: 40 }} aria-labelledby="public-decks">
+      <h2 id="public-decks" style={{ marginBottom: 0 }}>Try a ready-made deck</h2>
+      <p className="muted" style={{ margin: 0 }}>
+        Pick one to set up a timed practice. You'll sign in or create a free account to start it.
+      </p>
+      <div className="stack" style={{ gap: 8 }}>
+        {decks.map((d) => (
+          <Link key={d.id} className="panel deck-card public-deck" to={publicDeckPath(d.id)}>
+            <b>{d.title}</b>
+            <span className="meta">
+              {d.subject} · {d.level} · {d.difficulty} · {d.questionCount} questions
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** With startDeck, the visitor set up a practice on a public deck and pressed Start: they sign in or sign up here,
+ * and the practice starts once they have. */
+export default function Login({ startDeck }: { startDeck?: { title: string; onBack: () => void } } = {}) {
   const invite = pendingInvite();
   const board = pendingPublicClaim();
   // /join?code=CODE: the sign-up link sent with an offer code.
@@ -34,7 +65,7 @@ export default function Login() {
   const [code, setCode] = useState(join ? codeFromUrl() : "");
   const [offer, setOffer] = useState<PublicOfferCode | null>(null);
   const [agreed, setAgreed] = useState(false);
-  const [mode, setMode] = useState<"signin" | "signup">(join || invite || board || pendingRef() ? "signup" : "signin");
+  const [mode, setMode] = useState<"signin" | "signup">(join || invite || board || startDeck || pendingRef() ? "signup" : "signin");
   const [error, setError] = useState("");
   // Where to show the error: next to the Google button when that's what was pressed.
   const [errorAtGoogle, setErrorAtGoogle] = useState(false);
@@ -100,7 +131,18 @@ export default function Login() {
     <div className="wrap" style={{ maxWidth: 440 }}>
       <div className="stack" style={{ paddingTop: "10vh" }}>
         <Brand />
-        {join ? (
+        {startDeck ? (
+          <>
+            <h1>Sign in to start your practice.</h1>
+            <p className="muted">
+              Create a free account or sign in, and your practice on <b>{startDeck.title}</b> starts right away with the settings you picked. Your first 5
+              decks of your own are free too.{" "}
+              <button type="button" className="btn-link" style={{ padding: 0 }} onClick={startDeck.onBack}>
+                Change the settings
+              </button>
+            </p>
+          </>
+        ) : join ? (
           <>
             <h1>Join MathSprint with your offer code.</h1>
             <p className="muted">
@@ -206,6 +248,7 @@ export default function Login() {
           </button>
           {error && !errorAtGoogle && <p className="error">{error}</p>}
         </form>
+        {!join && !startDeck && !invite && !board && <PublicDecks />}
       </div>
     </div>
   );

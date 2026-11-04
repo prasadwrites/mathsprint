@@ -6,10 +6,11 @@ import DeleteDeck from "../components/DeleteDeck";
 import RenameDeck from "../components/RenameDeck";
 import DuplicateDeck, { CopyNamePrompt } from "../components/DuplicateDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
+import HidePublicDeck from "../components/HidePublicDeck";
 import PromotionOffer from "../components/PromotionOffer";
 import SharedOfferCard from "../components/SharedOfferCard";
 import DailyReel from "../components/DailyReel";
-import { addSampleDeck, listChallenges, listDecks, listSessions } from "../lib/db";
+import { addSampleDeck, listChallenges, listDecks, listSessions, showHiddenDecks } from "../lib/db";
 import { paceSummary, weakestConcepts } from "../lib/insights";
 import { formatClock } from "../lib/pace";
 import { filterSubjects, listSubjects, sameSubject, subjectOf } from "../lib/subjects";
@@ -122,6 +123,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { hash } = useLocation();
   const [decks, setDecks] = useState<Deck[] | null>(null);
+  // Public decks this student deleted from their home page, which they can bring back.
+  const [hidden, setHidden] = useState<Deck[]>([]);
+  const [restoring, setRestoring] = useState(false);
   // A copy just made with Duplicate, which asks whether to change its name.
   const [copied, setCopied] = useState<string | null>(null);
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
@@ -132,7 +136,10 @@ export default function Dashboard() {
   const [filter, setFilter] = useState(storedFilter);
 
   useEffect(() => {
-    listDecks(user.uid).then(setDecks);
+    listDecks(user.uid).then((r) => {
+      setDecks(r.decks);
+      setHidden(r.hidden);
+    });
     listSessions(user.uid).then(setSessions);
     listSubjects().then(setListed);
   }, [user.uid]);
@@ -271,6 +278,8 @@ export default function Dashboard() {
               {shown.map((d) => {
                 const b = best(d.id);
                 const mine = d.ownerId === user.uid;
+                // Someone else's public deck (the admin's), unless it was also shared with this student.
+                const fromAdmin = !mine && d.public && !d.sharedWith?.includes(user.uid);
                 const drop = () => setDecks((all) => all?.filter((x) => x.id !== d.id) ?? null);
                 const rename = (title: string) => setDecks((all) => all?.map((x) => (x.id === d.id ? { ...x, title } : x)) ?? null);
                 // The copy goes first, as the newest of your decks.
@@ -288,7 +297,12 @@ export default function Dashboard() {
                         {d.level} · {d.difficulty} · {d.questionCount} questions
                       </div>
                       {mine ? (
-                        !!d.sharedWith?.length && <div className="meta">Shared with {d.sharedWith.length} {d.sharedWith.length === 1 ? "person" : "people"}</div>
+                        <>
+                          {d.public && <div className="meta">Public: on everyone's home page</div>}
+                          {!!d.sharedWith?.length && <div className="meta">Shared with {d.sharedWith.length} {d.sharedWith.length === 1 ? "person" : "people"}</div>}
+                        </>
+                      ) : fromAdmin ? (
+                        <div className="meta">From MathSprint</div>
                       ) : (
                         <div className="meta">Shared with you{d.sharedBy ? ` by ${d.sharedBy}` : ""}</div>
                       )}
@@ -314,6 +328,14 @@ export default function Dashboard() {
                           <DuplicateDeck deck={d} onDuplicated={duplicated} />
                           <DeleteDeck deck={d} onDeleted={drop} />
                         </>
+                      ) : fromAdmin ? (
+                        <HidePublicDeck
+                          deck={d}
+                          onHidden={() => {
+                            drop();
+                            setHidden((h) => [d, ...h]);
+                          }}
+                        />
                       ) : (
                         <RemoveSharedDeck deck={d} onRemoved={drop} />
                       )}
@@ -323,6 +345,29 @@ export default function Dashboard() {
                 );
               })}
             </div>
+          )}
+          {hidden.length > 0 && (
+            <p className="muted" style={{ margin: 0 }}>
+              You deleted {hidden.length} MathSprint {hidden.length === 1 ? "deck" : "decks"} from your home page.{" "}
+              <button
+                type="button"
+                className="btn-link"
+                style={{ padding: 0 }}
+                disabled={restoring}
+                onClick={async () => {
+                  setRestoring(true);
+                  try {
+                    await showHiddenDecks(user.uid, hidden.map((d) => d.id));
+                    setDecks((all) => [...(all ?? []), ...hidden]);
+                    setHidden([]);
+                  } finally {
+                    setRestoring(false);
+                  }
+                }}
+              >
+                {restoring ? "Bringing back…" : hidden.length === 1 ? "Bring it back" : "Bring them back"}
+              </button>
+            </p>
           )}
         </section>
 

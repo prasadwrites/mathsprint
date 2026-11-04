@@ -112,6 +112,21 @@ export interface Deck {
   sharedBy?: string;
   /** Built as multiple choice only, so questions added to it are multiple choice too. */
   choicesOnly?: boolean;
+  /** Made public by the admin: on every user's home page and on the sign-in page. */
+  public?: boolean;
+}
+
+/** A public deck as the sign-in page shows it (list_public_decks), without its questions or owner. */
+export interface PublicDeckCard {
+  id: string;
+  title: string;
+  subject: string;
+  level: string;
+  difficulty: string;
+  topics: string[];
+  questionCount: number;
+  choicesOnly: boolean;
+  createdAt: number;
 }
 
 /** Someone a deck is shared with, as its owner sees them. */

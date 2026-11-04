@@ -38,6 +38,8 @@ import Upgrade from "./pages/Upgrade";
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
+/** null when signed out: only for the pages that also work signed out (a public deck's practice setup). */
+export const useMaybeUser = () => useContext(UserContext);
 
 /** null while loading, or if the account couldn't be read (the server still enforces every limit). */
 const AccountContext = createContext<{ account: AccountSummary | null; refresh: () => void }>({ account: null, refresh: () => {} });
@@ -83,6 +85,7 @@ export default function App() {
 }
 
 function SignedInApp() {
+  const location = useLocation();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [account, setAccount] = useState<AccountSummary | null>(null);
   // A ref, since navigate changes on every route change and refresh must not.
@@ -137,7 +140,18 @@ function SignedInApp() {
       </div>
     );
   }
-  if (!user) return <Login />;
+  if (!user) {
+    // A public deck's practice setup, opened from the sign-in page's list, works signed out. It asks the visitor to
+    // sign in or sign up when they start, and starts the practice once they have.
+    if (/^\/decks\/[^/]+\/practice\/?$/.test(location.pathname)) {
+      return (
+        <Routes>
+          <Route path="/decks/:deckId/practice" element={<PracticeSetup />} />
+        </Routes>
+      );
+    }
+    return <Login />;
+  }
   if (account && account.termsAccepted === false) return <TermsGate onAccepted={refresh} />;
 
   return (

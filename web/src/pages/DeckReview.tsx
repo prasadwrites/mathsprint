@@ -8,6 +8,8 @@ import DuplicateDeck, { CopyNamePrompt } from "../components/DuplicateDeck";
 import AssignTest from "../components/AssignTest";
 import ShareDeck from "../components/ShareDeck";
 import RemoveSharedDeck from "../components/RemoveSharedDeck";
+import HidePublicDeck from "../components/HidePublicDeck";
+import PublicDeckToggle from "../components/PublicDeckToggle";
 import PublicTestLinks from "../components/PublicTestLinks";
 import QuestionPosts from "../components/QuestionPosts";
 import { useIsAdmin, useUser } from "../App";
@@ -56,6 +58,8 @@ export default function DeckReview() {
   if (deck === null) return <><TopBar back={back} /><main className="page"><p>This deck doesn't exist or isn't yours.</p></main></>;
 
   const mine = deck.ownerId === user.uid;
+  // One of the admin's public decks, not shared with this student too.
+  const fromAdmin = !mine && !!deck.public && !deck.sharedWith?.includes(user.uid);
   const dropped = Number(params.get("dropped") || 0);
   // Just made with Duplicate: ask whether to change the copy's name.
   const copied = mine && params.has("copied");
@@ -84,7 +88,7 @@ export default function DeckReview() {
             <div className="eyebrow">
               {subjectOf(deck)} · {deck.level} · {deck.difficulty}
               {deck.createdAt && ` · Created ${deck.createdAt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`}
-              {!mine && ` · Shared with you${deck.sharedBy ? ` by ${deck.sharedBy}` : ""}`}
+              {fromAdmin ? " · From MathSprint" : !mine && ` · Shared with you${deck.sharedBy ? ` by ${deck.sharedBy}` : ""}`}
             </div>
             <h1>{deck.title}</h1>
           </div>
@@ -103,6 +107,8 @@ export default function DeckReview() {
                 <DuplicateDeck deck={deck} onDuplicated={(c) => navigate(`/decks/${c.deckId}?copied=1`)} />
                 <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
               </>
+            ) : fromAdmin ? (
+              <HidePublicDeck deck={deck} onHidden={() => navigate("/#decks", { replace: true })} />
             ) : (
               <RemoveSharedDeck deck={deck} onRemoved={() => navigate("/#decks", { replace: true })} />
             )}
@@ -128,6 +134,7 @@ export default function DeckReview() {
           </div>
         </div>
 
+        {mine && admin && <PublicDeckToggle deck={{ ...deck, questionCount: questions.length }} onChanged={(on) => setDeck({ ...deck, public: on })} />}
         {mine && <ShareDeck deck={deck} />}
         {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} typed={typed} />}
         {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} typed={typed} />}
