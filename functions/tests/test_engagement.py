@@ -175,3 +175,29 @@ def test_top_links_rank_by_finishes_and_new_accounts():
     c = top["active"][1]
     assert c["title"] == "Algebra" and (c["reached"], c["completed"], c["signups"]) == (3, 2, 1)
     assert {l["id"] for l in top["signups"]} == {"t1", "c1"}
+
+
+def test_every_link_is_listed_with_its_owner_played_or_not():
+    _, links = engagement.build_all(
+        [user("ann"), user("bo"), user("cy", admin=True)],
+        account_docs={}, decks={"d1": {"ownerId": "ann"}, "d2": {"ownerId": "bo"}},
+        sessions=[{"id": "s1", "ownerId": "ann", "deckId": "d1", "status": "completed"}],
+        challenges={"c1": {"challengerUid": "ann", "sessionId": "s1", "deckTitle": "Algebra", "createdAt": NOW - 3 * DAY}},
+        attempts=[],
+        tests={
+            "t1": {"ownerUid": "bo", "deckId": "d2", "deckTitle": "Geometry", "groupName": "Period 3", "createdAt": NOW - 2 * DAY},
+            "k1": {"ownerUid": "bo", "deckId": "d2", "deckTitle": "Geometry", "classToken": "abc", "open": False, "createdAt": NOW - DAY},
+            "gone": {"ownerUid": "deleted-user", "deckTitle": "Old"},
+        },
+        takers=[{"testId": "k1", "kind": "class", "email": "x@example.com", "status": "completed", "createdAt": NOW}],
+        public_tests={"p1": {"ownerUid": "cy", "deckId": "d9", "deckTitle": "Fractions", "createdAt": NOW}},
+        public_attempts=[], posts=[{"id": "q1", "ownerUid": "cy", "deckId": "d9", "deckTitle": "Fractions", "answers": 4, "createdAt": NOW - 4 * DAY}],
+        invites=[], now_ms=NOW,
+    )
+    rows = engagement.all_links(links)
+    assert [(l["kind"], l["id"]) for l in rows] == [("public", "p1"), ("class", "k1"), ("group", "t1"), ("challenge", "c1"), ("post", "q1")]
+    by = {l["id"]: l for l in rows}
+    assert by["c1"]["token"] == "c1" and by["c1"]["deckId"] == "d1" and by["c1"]["reached"] == 0 and by["c1"]["ownerEmail"] == "ann@example.com"
+    assert by["k1"]["token"] == "abc" and by["k1"]["open"] is False and (by["k1"]["reached"], by["k1"]["completed"]) == (1, 1)
+    assert by["t1"]["token"] == "" and by["t1"]["label"] == "Period 3" and by["t1"]["open"] is True
+    assert by["p1"]["ownerIsAdmin"] and by["q1"]["reached"] == 4

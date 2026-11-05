@@ -582,12 +582,8 @@ def _rows(collection, fields: list[str]) -> list[dict]:
     return out
 
 
-@https_fn.on_call(timeout_sec=300, memory=options.MemoryOption.GB_1)
-def admin_engagement(req: https_fn.CallableRequest) -> dict:
-    """Admin only. Without a uid: everyone ranked by score. With one: that person's row with their decks."""
-    _require_admin(req)
-    db = firestore.client()
-    data = req.data or {}
+def _engagement(db) -> tuple[dict[str, dict], list[dict]]:
+    """Everyone's engagement rows and every quiz link with its owner, read from all the collections at once."""
     users = []
     for user in auth.list_users().iterate_all():
         meta = user.user_metadata
@@ -600,14 +596,14 @@ def admin_engagement(req: https_fn.CallableRequest) -> dict:
             "isAdmin": accounts.is_admin({"email": user.email or "", "email_verified": user.email_verified}),
         })
     by_id = lambda rows: {r["id"]: r for r in rows}  # noqa: E731
-    rows, links = engagement.build_all(
+    return engagement.build_all(
         users,
         account_docs={d.id: d.to_dict() for d in db.collection("accounts").select(["activeSeconds", "activeDays", "lastBeatAt", "decksCreated"]).stream()},
         decks=by_id(_rows(db.collection("decks"), ["ownerId", "title", "subject", "createdAt", "sharedWith", "fromPost", "source"])),
         sessions=_rows(db.collection("sessions"), ["ownerId", "deckId", "status"]),
         challenges=by_id(_rows(db.collection("challenges"), ["challengerUid", "sessionId", "deckTitle", "createdAt"])),
         attempts=_rows(db.collection("challengeAttempts"), ["challengeId", "status", "claimedUid", "startedAtMs"]),
-        tests=by_id(_rows(db.collection("tests"), ["ownerUid", "deckId", "deckTitle", "groupName", "createdAt", "classToken"])),
+        tests=by_id(_rows(db.collection("tests"), ["ownerUid", "deckId", "deckTitle", "groupName", "createdAt", "classToken", "open"])),
         takers=_rows(db.collection("testTakers"), ["testId", "email", "status", "createdAt", "kind"]),
         public_tests=by_id(_rows(db.collection("publicTests"), ["ownerUid", "deckId", "deckTitle", "createdAt"])),
         public_attempts=_rows(db.collection("publicAttempts"), ["testId", "status", "claimedUid", "startedAtMs"]),
@@ -615,6 +611,24 @@ def admin_engagement(req: https_fn.CallableRequest) -> dict:
         invites=_rows(db.collection("invites"), ["inviterUid", "status", "joinedUid"]),
         now_ms=_now_ms(),
     )
+
+
+@https_fn.on_call(timeout_sec=300, memory=options.MemoryOption.GB_1)
+def admin_list_links(req: https_fn.CallableRequest) -> dict:
+    """Admin only: every quiz link anyone has made (challenges, class links, group tests, public tests, question posts),
+    newest first, with its owner and how far it went."""
+    _require_admin(req)
+    _, links = _engagement(firestore.client())
+    return {"links": engagement.all_links(links)}
+
+
+@https_fn.on_call(timeout_sec=300, memory=options.MemoryOption.GB_1)
+def admin_engagement(req: https_fn.CallableRequest) -> dict:
+    """Admin only. Without a uid: everyone ranked by score. With one: that person's row with their decks."""
+    _require_admin(req)
+    db = firestore.client()
+    data = req.data or {}
+    rows, links = _engagement(db)
     uid = _clean(data.get("uid"), 128)
     if uid:
         if uid not in rows:

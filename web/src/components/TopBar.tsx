@@ -210,6 +210,11 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
                   Engagement
                 </Link>
               )}
+              {admin && (
+                <Link to="/admin/links" aria-current={pathname === "/admin/links" ? "page" : undefined}>
+                  Links
+                </Link>
+              )}
             </nav>
             <ProfileMenu />
           </>

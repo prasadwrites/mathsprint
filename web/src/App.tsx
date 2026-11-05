@@ -14,6 +14,7 @@ import { TermsGate } from "./components/Terms";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
 import Accounts from "./pages/Accounts";
+import AdminLinks from "./pages/AdminLinks";
 import CreateDeck from "./pages/CreateDeck";
 import Dashboard from "./pages/Dashboard";
 import DeckReview from "./pages/DeckReview";
@@ -173,6 +174,7 @@ function SignedInApp() {
         <Route path="/sessions/:sessionId/results" element={<Results />} />
         <Route path="/admin" element={<AdminOnly><Accounts /></AdminOnly>} />
         <Route path="/admin/engagement" element={<AdminOnly><Engagement /></AdminOnly>} />
+        <Route path="/admin/links" element={<AdminOnly><AdminLinks /></AdminOnly>} />
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="/invite" element={<Invite />} />
         <Route path="/join" element={<Join />} />
