@@ -453,6 +453,11 @@ export async function adminEngagement() {
   return (await httpsCallable<object, EngagementMeta & { users: EngagementUser[]; links: { active: EngagementLink[]; signups: EngagementLink[] } }>(functions, "admin_engagement", { timeout: 300_000 })({})).data;
 }
 
+/** Admin: every quiz link anyone has made, newest first, with its owner. */
+export async function adminListLinks() {
+  return (await httpsCallable<object, { links: EngagementLink[] }>(functions, "admin_list_links", { timeout: 300_000 })({})).data.links;
+}
+
 export async function adminUserEngagement(uid: string) {
   return (await httpsCallable<{ uid: string }, EngagementMeta & { user: EngagementUser }>(functions, "admin_engagement", { timeout: 300_000 })({ uid })).data;
 }

@@ -411,13 +411,18 @@ export interface EngagementUser {
   decks?: EngagementDeck[];
 }
 
-/** One quiz link and how far it went: a challenge, a group test, a public test or a question post. */
+/** One quiz link and how far it went: a challenge, a class link, a group test, a public test or a question post. */
 export interface EngagementLink {
-  kind: "challenge" | "group" | "public" | "post";
+  kind: "challenge" | "class" | "group" | "public" | "post";
   id: string;
+  /** What goes in the link's address; empty for a group test, whose links belong to each member. */
+  token: string;
   title: string;
   /** The group's name, for a group test. */
   label: string;
+  deckId: string | null;
+  /** False once a class link is closed to new students. */
+  open: boolean;
   createdAt: number | null;
   ownerUid: string;
   ownerName: string;

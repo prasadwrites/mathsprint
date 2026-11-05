@@ -93,7 +93,7 @@ def build_all(
     now_ms: int,
 ) -> tuple[dict[str, dict], list[dict]]:
     """One row per user, keyed by uid, with their own usage, each channel's numbers, their decks and the score; and one
-    row per quiz link (challenge, group test, public test, question post) with its plays, finishes and new accounts.
+    row per quiz link (challenge, class link, group test, public test, question post), played or not, with its plays, finishes and new accounts.
 
     users: {uid, email, displayName, createdAt, lastSignInAt, isAdmin}, from Firebase Auth.
     Every timestamp is in milliseconds. Records for people who are no longer users are skipped.
@@ -109,14 +109,24 @@ def build_all(
 
     links: dict[tuple, dict] = {}
 
-    def link(kind: str, link_id: str, owner: object, title: object, created_at: object, label: str = "") -> dict | None:
+    def link(kind: str, link_id: str, owner: object, title: object, created_at: object, label: str = "", deck_id: object = None,
+             token: str = "", is_open: bool = True) -> dict | None:
+        """Every link is listed from when it's made, played or not. token is what goes in its address (none for a group
+        test, whose links belong to each member)."""
         if owner not in rows:
             return None
         key = (kind, link_id)
         if key not in links:
-            links[key] = {"kind": kind, "id": link_id, "ownerUid": owner, "title": title or "Untitled deck", "label": label,
+            links[key] = {"kind": kind, "id": link_id, "token": token, "ownerUid": owner, "title": title or "Untitled deck",
+                          "label": label, "deckId": deck_id if isinstance(deck_id, str) else None, "open": bool(is_open),
                           "createdAt": created_at, "reached": 0, "completed": 0, "signups": 0, "_new": set()}
         return links[key]
+
+    def test_link(test_id: str, test: dict) -> dict | None:
+        """A class link is one address for the whole class; a group test is one link per member."""
+        kind = "class" if test.get("classToken") else "group"
+        return link(kind, test_id, test.get("ownerUid"), test.get("deckTitle"), test.get("createdAt"), test.get("groupName") or "",
+                    test.get("deckId"), str(test.get("classToken") or ""), test.get("open", True) is not False)
 
     def link_play(l: dict | None, completed: bool, new_uid: object = None, since_ms: object = None) -> None:
         if l is None:
@@ -202,6 +212,7 @@ def build_all(
     # Challenge links.
     for cid, c in challenges.items():
         add(c.get("challengerUid"), "challenge", session_deck.get(c.get("sessionId")), links=1)
+        link("challenge", cid, c.get("challengerUid"), c.get("deckTitle"), c.get("createdAt"), deck_id=session_deck.get(c.get("sessionId")), token=cid)
     for a in attempts:
         c = challenges.get(a.get("challengeId"))
         if not c:
@@ -209,12 +220,14 @@ def build_all(
         owner, deck_id = c.get("challengerUid"), session_deck.get(c.get("sessionId"))
         add(owner, "challenge", deck_id, reached=1, completed=int(a.get("status") == "completed"))
         signup(owner, "challenge", deck_id, a.get("claimedUid"), a.get("startedAtMs"))
-        link_play(link("challenge", a.get("challengeId"), owner, c.get("deckTitle"), c.get("createdAt")),
+        link_play(links.get(("challenge", a.get("challengeId"))),
                   a.get("status") == "completed", a.get("claimedUid"), a.get("startedAtMs"))
 
     # Group tests: each member's link is one link and one person reached. A class link is one link for the whole
     # class, however many students open it.
     class_links_counted: set = set()
+    for test_id, test in tests.items():
+        test_link(test_id, test)
     for t in takers:
         test = tests.get(t.get("testId"))
         if not test:
@@ -227,7 +240,7 @@ def build_all(
         add(owner, "group", deck_id, links=one_link, reached=1, completed=int(t.get("status") == "completed"))
         new_uid = by_email.get((t.get("email") or "").lower())
         signup(owner, "group", deck_id, new_uid, t.get("createdAt"))
-        link_play(link("group", t.get("testId"), owner, test.get("deckTitle"), test.get("createdAt"), test.get("groupName") or ""),
+        link_play(test_link(t.get("testId"), test),
                   t.get("status") == "completed", new_uid, t.get("createdAt"))
 
     # Decks shared by email. The people already have accounts; finishing means they finished a practice session on it.
@@ -241,6 +254,7 @@ def build_all(
     # Public test links.
     for tid, t in public_tests.items():
         add(t.get("ownerUid"), "public", t.get("deckId"), links=1)
+        link("public", tid, t.get("ownerUid"), t.get("deckTitle"), t.get("createdAt"), deck_id=t.get("deckId"), token=tid)
     for a in public_attempts:
         t = public_tests.get(a.get("testId"))
         if not t:
@@ -248,7 +262,7 @@ def build_all(
         owner, deck_id = t.get("ownerUid"), t.get("deckId")
         add(owner, "public", deck_id, reached=1, completed=int(a.get("status") == "completed"))
         signup(owner, "public", deck_id, a.get("claimedUid"), a.get("startedAtMs"))
-        link_play(link("public", a.get("testId"), owner, t.get("deckTitle"), t.get("createdAt")),
+        link_play(links.get(("public", a.get("testId"))),
                   a.get("status") == "completed", a.get("claimedUid"), a.get("startedAtMs"))
 
     # Question posts: an answer to the posted question counts as finishing it. A visitor who saves the deck to a new
@@ -256,7 +270,7 @@ def build_all(
     post_by_id = {p["id"]: p for p in posts}
     for p in posts:
         add(p.get("ownerUid"), "post", p.get("deckId"), links=1, reached=int(p.get("answers") or 0), completed=int(p.get("answers") or 0))
-        l = link("post", p["id"], p.get("ownerUid"), p.get("deckTitle"), p.get("createdAt"))
+        l = link("post", p["id"], p.get("ownerUid"), p.get("deckTitle"), p.get("createdAt"), deck_id=p.get("deckId"), token=p["id"])
         if l is not None:
             l["reached"] += int(p.get("answers") or 0)
             l["completed"] += int(p.get("answers") or 0)
@@ -301,6 +315,11 @@ def top_links(link_rows: list[dict], n: int = TOP_LINKS) -> dict[str, list[dict]
     active = sorted((l for l in link_rows if l["reached"]), key=lambda l: (-l["completed"], -l["reached"], -l["signups"], -(l["createdAt"] or 0)))
     signups = sorted((l for l in link_rows if l["signups"]), key=lambda l: (-l["signups"], -l["completed"], -(l["createdAt"] or 0)))
     return {"active": active[:n], "signups": signups[:n]}
+
+
+def all_links(link_rows: list[dict]) -> list[dict]:
+    """Every link, newest first."""
+    return sorted(link_rows, key=lambda l: (-(l["createdAt"] or 0), l["kind"], l["id"]))
 
 
 def ranked(rows: dict[str, dict], include_admin: bool = False) -> list[dict]:

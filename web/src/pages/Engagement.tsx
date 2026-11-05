@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import TopBar, { Chip } from "../components/TopBar";
 import { adminEngagement, adminUserEngagement } from "../lib/db";
+import { KIND_LABELS, linkUrl } from "../lib/links";
 import type { EngagementChannel, EngagementLink, EngagementUser, ScoreRule } from "../lib/types";
 import { duration } from "./Accounts";
 import { when } from "./Upgrade";
@@ -195,16 +196,6 @@ function UserDetail({ uid, scoring, channels, onClose }: { uid: string; scoring:
     </section>
   );
 }
-
-const KIND_LABELS: Record<EngagementLink["kind"], string> = {
-  challenge: "Challenge",
-  group: "Group test",
-  public: "Public test",
-  post: "Question post",
-};
-
-/** Where the admin can open a link. Group tests belong to their owner, so they have none. */
-const linkUrl = (l: EngagementLink) => ({ challenge: `/c/${l.id}`, public: `/p/${l.id}`, post: `/q/${l.id}`, group: "" })[l.kind];
 
 /** A top-10 list of quiz links with their owners. */
 function TopLinks({ title, note, links, by, onOwner }: { title: string; note: string; links: EngagementLink[]; by: "completed" | "signups"; onOwner: (uid: string) => void }) {
@@ -433,7 +424,8 @@ export default function Engagement() {
               Links count challenge links, each group-test member's link, decks shared by email, public test links, question posts and invites. A new
               account counts when someone signs up after getting one of their links (once per person). A shared deck counts as finished once the person
               finishes a practice session on it, and a question post answer counts as finishing it. Time on site has only been counted since the
-              heartbeat went live on Oct 17, 2026, so time before that is missing. <Link to="/admin">Back to Accounts</Link>
+              heartbeat went live on Oct 17, 2026, so time before that is missing. <Link to="/admin/links">See every link</Link> ·{" "}
+              <Link to="/admin">Back to Accounts</Link>
             </p>
           </section>
         )}
