@@ -42,3 +42,22 @@ export const saveAttempt = (token: string, attempt: string) => write(publicAttem
 export const rememberPublicClaim = (claim: PendingPublicClaim) => write(CLAIM, claim);
 export const pendingPublicClaim = () => read<PendingPublicClaim>(CLAIM);
 export const clearPublicClaim = () => write(CLAIM, null);
+
+/** A player who pressed "make my own quiz" after a public test: once they've signed up (or in), they land on the deck
+ * builder instead of back on the leaderboard. */
+const MAKE_QUIZ = "ms.public.makeQuiz";
+
+export interface PendingMakeQuiz {
+  title: string;
+}
+
+export const rememberMakeQuiz = (intent: PendingMakeQuiz) => write(MAKE_QUIZ, intent);
+export const pendingMakeQuiz = () => read<PendingMakeQuiz>(MAKE_QUIZ);
+export const clearMakeQuiz = () => write(MAKE_QUIZ, null);
+
+/** What the deck builder shows a player who came from a public test. */
+export interface FromPublicTest {
+  title: string;
+  /** Their place, when their score went on the leaderboard as they signed up. */
+  rank?: number;
+}

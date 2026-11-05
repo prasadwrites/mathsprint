@@ -27,3 +27,12 @@ export function clearRef() {
     // nothing to clear
   }
 }
+
+/** Tags the account about to be made from inside the app (like "public-test"), unless a campaign link already did. */
+export function tagSignupRef(ref: string) {
+  try {
+    if (!localStorage.getItem(KEY)) localStorage.setItem(KEY, ref.slice(0, 40));
+  } catch {
+    // Storage blocked: the account just won't be tagged.
+  }
+}

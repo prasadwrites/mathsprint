@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Figure from "../components/Figure";
 import Leaderboard from "../components/Leaderboard";
 import ShareButtons from "../components/ShareButtons";
@@ -8,7 +8,8 @@ import { Brand, Chip, Icon } from "../components/TopBar";
 import { openPublicTest, submitPublicTest } from "../lib/db";
 import { auth } from "../lib/firebase";
 import { formatClock } from "../lib/pace";
-import { publicStoreKey, publicTestCard, publicTestLink, rememberPublicClaim, saveAttempt, savedAttempt } from "../lib/publicTest";
+import { type FromPublicTest, publicStoreKey, publicTestCard, publicTestLink, rememberMakeQuiz, rememberPublicClaim, saveAttempt, savedAttempt } from "../lib/publicTest";
+import { tagSignupRef } from "../lib/signupRef";
 import type { OpenPublicTest, PublicTestResult } from "../lib/types";
 
 const ordinal = (n: number) => {
@@ -16,6 +17,68 @@ const ordinal = (n: number) => {
   const v = n % 100;
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
+
+/** Shown right under the score: the invitation to make a quiz of their own and send it to friends. Making one needs a
+ * free account, so a signed-out player signs up first (which also puts their score on the leaderboard) and then lands
+ * on the deck builder. */
+function MakeYourOwn({ t, result }: { t: OpenPublicTest; result: PublicTestResult }) {
+  const navigate = useNavigate();
+  const from: FromPublicTest = { title: t.title, rank: result.claimed ? result.rank : undefined };
+  // Signed in with the score on the board: straight to the deck builder.
+  const ready = result.claimed && !!auth.currentUser;
+  const signUp = (makeQuiz: boolean) => {
+    if (makeQuiz) rememberMakeQuiz({ title: t.title });
+    tagSignupRef("public-test");
+    navigate("/");
+  };
+  return (
+    <section className="panel stack cta-panel make-own" aria-labelledby="make-own">
+      <div>
+        <div className="eyebrow">Your turn</div>
+        <h2 id="make-own" style={{ marginTop: 4 }}>Create your own quiz and share it with friends</h2>
+        <p className="muted" style={{ marginTop: 6 }}>
+          Pick any topic, or upload a worksheet, and MathSprint writes a timed quiz with every answer checked. Take it once, then send your friends a
+          link to see who can beat your score.
+        </p>
+      </div>
+      <ol className="make-own-steps">
+        <li><b>Pick a topic</b><span>Like "SAT linear equations" or "AP Calc limits"</span></li>
+        <li><b>Take your quiz</b><span>Set the score your friends have to beat</span></li>
+        <li><b>Share the link</b><span>Friends play from their phone, no setup</span></li>
+      </ol>
+      {ready ? (
+        <div>
+          <Link className="btn btn-primary btn-big" to="/create" state={{ fromPublicTest: from }}>
+            <Icon name="sparkle" /> Make my quiz
+          </Link>
+        </div>
+      ) : (
+        <>
+          <p style={{ margin: 0 }}>
+            {result.claimed ? (
+              <>Sign in to MathSprint to make your quiz. Your first 5 quizzes are free.</>
+            ) : (
+              <>
+                You'll need a free MathSprint account, no card needed. Signing up also puts <b>{result.name}</b> on this leaderboard
+                {result.rank <= 10 ? `, in ${ordinal(result.rank)} place right now` : ""}.
+              </>
+            )}
+          </p>
+          <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-primary btn-big" onClick={() => signUp(true)}>
+              <Icon name="sparkle" /> {result.claimed ? "Sign in and make my quiz" : "Sign up free and make my quiz"}
+            </button>
+            {!result.claimed && (
+              <button type="button" className="btn-link" onClick={() => signUp(false)}>
+                Just claim my spot
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 
 function Result({ token, t, result }: { token: string; t: OpenPublicTest; result: PublicTestResult }) {
   const placeText = result.claimed
@@ -48,21 +111,7 @@ function Result({ token, t, result }: { token: string; t: OpenPublicTest; result
         </div>
       </div>
 
-      {!result.claimed && (
-        <div className="panel stack cta-panel">
-          <h2>Put {result.name} on the leaderboard</h2>
-          <p>
-            Only players with a free MathSprint account go on the leaderboard. Sign up (or sign in) and your score goes up as {result.name}
-            {result.rank <= 10 ? `, in ${ordinal(result.rank)} place right now` : ""}. Then build your own decks and keep practicing.
-          </p>
-          <div>
-            <Link className="btn btn-primary btn-big" to="/">
-              <Icon name="sparkle" /> Sign up and claim my spot
-            </Link>
-          </div>
-        </div>
-      )}
-
+      <MakeYourOwn t={t} result={result} />
       <section className="panel stack">
         <div className="row spread">
           <h2>Leaderboard</h2>

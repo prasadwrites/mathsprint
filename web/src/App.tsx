@@ -4,7 +4,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { useActivityHeartbeat } from "./lib/activity";
 import { claimChallenge, claimPublicTest, getAccount, redeemOfferCode, savePostDeck } from "./lib/db";
 import { clearClaim, pendingClaim } from "./lib/challenge";
-import { clearPublicClaim, pendingPublicClaim } from "./lib/publicTest";
+import { clearMakeQuiz, clearPublicClaim, pendingMakeQuiz, pendingPublicClaim, type FromPublicTest } from "./lib/publicTest";
 import { clearPostSave, pendingPostSave } from "./lib/questionPost";
 import { clearInvite, pendingInvite } from "./lib/invite";
 import { clearRef, pendingRef } from "./lib/signupRef";
@@ -116,12 +116,19 @@ function SignedInApp() {
         const pub = pendingPublicClaim();
         clearPublicClaim();
         const placed = pub && (await claimPublicTest(pub.token, pub.attempt).catch(() => null));
+        // They pressed "make my own quiz" after that test: open the deck builder once they're in.
+        const makeQuiz = pendingMakeQuiz();
+        clearMakeQuiz();
         // A question post's deck the visitor asked to keep when they signed up: save it, then open it.
         const post = pendingPostSave();
         clearPostSave();
         const kept = post && (await savePostDeck(post.token).catch(() => null));
         setAccount(a);
         if (joined) return navigate.current("/join", { state: joined });
+        if (makeQuiz) {
+          const from: FromPublicTest = { title: makeQuiz.title, rank: placed && (placed.saved || placed.already) ? placed.rank : undefined };
+          return navigate.current("/create", { state: { fromPublicTest: from } });
+        }
         // Already on that leaderboard from an earlier try: the link shows them that result, not this one.
         if (pub && (placed?.saved || placed?.already)) navigate.current(`/p/${pub.token}`);
         else if (kept) navigate.current(`/decks/${kept.deckId}`);

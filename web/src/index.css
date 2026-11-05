@@ -377,6 +377,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .faceoff-vs { font-family: var(--f-display); font-weight: 800; color: var(--muted); }
 @media (max-width: 480px) { .faceoff-side .big { font-size: 40px; } }
 .cta-panel { border-color: var(--accent); }
+.make-own { border-width: 2px; }
+.make-own-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.make-own-steps li { counter-increment: step; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.make-own-steps li::before { content: counter(step); display: inline-grid; place-items: center; width: 24px; height: 24px; margin-bottom: 4px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; }
+.make-own-steps span { color: var(--muted); font-size: 14px; }
+@media (max-width: 640px) { .make-own-steps { grid-template-columns: 1fr; } }
 .challenge-share { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .challenge-share input { flex: 1 1 220px; min-width: 0; }
 .share-buttons { display: flex; flex-wrap: wrap; gap: 8px; }

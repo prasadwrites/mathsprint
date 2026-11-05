@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAccount, useIsAdmin } from "../App";
 import SubjectEditor from "../components/SubjectEditor";
 import TopBar, { Chip, Icon } from "../components/TopBar";
 import { type DeckProgress, clearDeckProgress, generateDeck, newProgressId, watchDeckProgress } from "../lib/db";
 import { formatClock } from "../lib/pace";
 import { DEFAULT_SUBJECT, STARTER_SUBJECTS, cleanSubjects, isMath, listSubjects, sameSubject } from "../lib/subjects";
+import type { FromPublicTest } from "../lib/publicTest";
 import type { Difficulty } from "../lib/types";
 
 const CODE_KEY = "ms.accessCode";
@@ -26,6 +27,12 @@ function storeCode(code: string | null) {
     /* storage unavailable */
   }
 }
+
+const ordinal = (n: number) => {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
 
 // Matches the server's limit; base64 makes the upload a third bigger, still well inside a function request.
 const MAX_PDF_MB = 10;
@@ -138,6 +145,8 @@ export default function CreateDeck() {
   const [level, setLevel] = useState("");
   const [notes, setNotes] = useState(params.get("notes") ?? "");
   const [choicesOnly, setChoicesOnly] = useState(false);
+  // Just signed up from a public test's "make your own quiz" invitation.
+  const fromTest = (useLocation().state as { fromPublicTest?: FromPublicTest } | null)?.fromPublicTest;
   const [accessCode, setAccessCode] = useState(storedCode);
   // Set when the server asks for a code the account summary didn't know about yet.
   const [codeAsked, setCodeAsked] = useState(false);
@@ -270,7 +279,15 @@ export default function CreateDeck() {
     <>
       <TopBar back={{ to: "/", label: "Home" }} />
       <main className="page">
-        <h1>Create a practice deck</h1>
+        <h1>{fromTest ? "Create your own quiz" : "Create a practice deck"}</h1>
+        {fromTest && (
+          <p className="notice" role="status" style={{ display: "block" }}>
+            <b>Welcome to MathSprint!</b>{" "}
+            {fromTest.rank ? `Your ${fromTest.title} score is on the leaderboard in ${ordinal(fromTest.rank)} place. ` : ""}
+            Now pick a topic below to build your quiz. When it's ready, take it once, then use <b>Challenge a friend</b> on your results to send your
+            friends a link to beat your score.
+          </p>
+        )}
         <div className="two-col">
           <div className="main stack">
             <div className="panel chat">

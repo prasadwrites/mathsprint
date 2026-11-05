@@ -2,7 +2,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithP
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { pendingInvite } from "../lib/invite";
-import { pendingPublicClaim } from "../lib/publicTest";
+import { pendingMakeQuiz, pendingPublicClaim } from "../lib/publicTest";
 import { pendingRef } from "../lib/signupRef";
 import { Brand } from "../components/TopBar";
 import { auth, googleProvider } from "../lib/firebase";
@@ -58,6 +58,8 @@ function PublicDecks() {
 export default function Login({ startDeck }: { startDeck?: { title: string; onBack: () => void } } = {}) {
   const invite = pendingInvite();
   const board = pendingPublicClaim();
+  // Pressed "make my quiz" after a public test: they sign up here, then go straight to the deck builder.
+  const makeQuiz = pendingMakeQuiz();
   // /join?code=CODE: the sign-up link sent with an offer code.
   const join = useLocation().pathname.replace(/\/+$/, "") === "/join";
   const [email, setEmail] = useState(invite?.email ?? "");
@@ -150,6 +152,14 @@ export default function Login({ startDeck }: { startDeck?: { title: string; onBa
               added to it.
             </p>
           </>
+        ) : makeQuiz ? (
+          <>
+            <h1>{mode === "signup" ? "Sign up to make your own quiz." : "Sign in to make your own quiz."}</h1>
+            <p className="muted">
+              Create a free account and you'll go straight to making a quiz on any topic, ready to share with your friends. Your first 5 quizzes are free,
+              no card needed.
+            </p>
+          </>
         ) : mode === "signup" ? (
           <>
             {/* Every "Start free" button on the landing pages lands here, so this repeats their promise. */}
@@ -175,7 +185,15 @@ export default function Login({ startDeck }: { startDeck?: { title: string; onBa
         )}
         {board && (
           <p className="notice" role="status">
-            <b>Sign up to claim your spot on the {board.title} leaderboard.</b> Already have an account? Sign in and it goes on the board too.
+            {makeQuiz ? (
+              <>
+                <b>Your {board.title} score goes on the leaderboard too.</b> Already have an account? Sign in and it's added there.
+              </>
+            ) : (
+              <>
+                <b>Sign up to claim your spot on the {board.title} leaderboard.</b> Already have an account? Sign in and it goes on the board too.
+              </>
+            )}
           </p>
         )}
         {join && (
