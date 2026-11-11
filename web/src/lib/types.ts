@@ -315,6 +315,7 @@ export interface SentOffer {
   withAccount: string[];
   withoutAccount: string[];
   invalid: string[];
+  doNotContact?: string[];
 }
 
 export interface RedeemedOffer {

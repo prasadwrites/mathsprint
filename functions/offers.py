@@ -175,6 +175,12 @@ def terms_accepted(account: dict) -> bool:
 # Stored in offerSends/{send_id}, one per code and email, so sending the same code to someone again just shows it again.
 
 MAX_SEND = 500
+
+# People who asked not to hear from MathSprint again. Sends skip them, and so should any outreach list.
+# Lower case. Add to it whenever someone unsubscribes.
+DO_NOT_CONTACT = frozenset({
+    "barriesouth@mathnasium.ca",  # asked 2026-11-03
+})
 _EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
 
 
@@ -200,6 +206,12 @@ def parse_emails(value: object) -> tuple[list[str], list[str]]:
     if len(good) > MAX_SEND:
         raise AccessDenied(f"Send to at most {MAX_SEND} people at a time.")
     return good, bad
+
+
+def drop_do_not_contact(emails: list[str]) -> tuple[list[str], list[str]]:
+    """Splits addresses into (keep, skipped), where skipped are the ones on DO_NOT_CONTACT. Order is kept."""
+    keep = [e for e in emails if e.lower() not in DO_NOT_CONTACT]
+    return keep, [e for e in emails if e.lower() in DO_NOT_CONTACT]
 
 
 def send_id(code: str, email: str) -> str:
