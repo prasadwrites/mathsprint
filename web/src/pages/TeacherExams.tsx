@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useMaybeUser } from "../App";
-import TopBar, { Brand, Icon } from "../components/TopBar";
-import { listTeacherExams } from "../lib/db";
+import { useAccount, useIsAdmin } from "../App";
+import TopBar, { Icon } from "../components/TopBar";
+import { listTeacherExams, setTeacher } from "../lib/db";
 import { publicDeckPath } from "../lib/publicDeck";
 import type { PublicDeckCard, TeacherExam, TeacherExamsCatalog } from "../lib/types";
 
-const ADMIN_EMAIL = "prasad.writes@gmail.com";
 const STATE_KEY = "ms.teacherState";
 /** Admin only: every exam at once, to build decks for any of them. */
 const ALL = "ALL";
@@ -36,11 +35,63 @@ function rememberState(code: string) {
   }
 }
 
-/** The math teacher certification section: a teacher picks their state and sees its exams, each with its content
- * categories and the ready-made practice decks for it. Works signed out; starting a practice asks them to sign in. */
+/** The math teacher certification section, for teacher accounts (and the admin): a teacher picks their state and sees
+ * its exams, each with its content categories and the ready-made practice decks for it. */
 export default function TeacherExams() {
-  const user = useMaybeUser();
-  const admin = !!user && user.emailVerified && user.email?.toLowerCase() === ADMIN_EMAIL;
+  const admin = useIsAdmin();
+  const { account, refresh } = useAccount();
+  if (!account && !admin) {
+    return (
+      <>
+        <TopBar />
+        <main className="page narrow"><span className="spinner" /></main>
+      </>
+    );
+  }
+  if (!admin && !account?.isTeacher) return <NotATeacher onTurnedOn={refresh} />;
+  return <TeacherExamsPage admin={admin} />;
+}
+
+/** For an account that hasn't said it's a teacher's: what the section is, and a way to turn teacher tools on. */
+function NotATeacher({ onTurnedOn }: { onTurnedOn: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <>
+      <TopBar />
+      <main className="page narrow stack">
+        <h1 style={{ margin: 0 }}>Teacher tools</h1>
+        <p className="muted" style={{ margin: 0 }}>
+          Teacher exam prep, for math teacher certification exams such as Praxis, TExES and CSET, is part of the teacher tools. They're only added to
+          teacher accounts. If you're a teacher, or training to be one, add them to your account.
+        </p>
+        <div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                await setTeacher(true);
+                onTurnedOn();
+              } catch (e) {
+                setError((e as Error).message || "That didn't save. Try again.");
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Saving…" : "I'm a teacher: add teacher tools"}
+          </button>
+        </div>
+        {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
+      </main>
+    </>
+  );
+}
+
+function TeacherExamsPage({ admin }: { admin: boolean }) {
   const [params, setParams] = useSearchParams();
   const [catalog, setCatalog] = useState<TeacherExamsCatalog | null>(null);
   const [failed, setFailed] = useState(false);
@@ -64,19 +115,7 @@ export default function TeacherExams() {
         ? (chosen.exams.length ? chosen.exams : ["praxis-5165", "praxis-5164"]).map((id) => byId.get(id)).filter((e): e is TeacherExam => !!e)
         : [];
 
-  const bar = user ? (
-    <TopBar />
-  ) : (
-    <header className="appbar">
-      <div className="appbar-inner">
-        <Link className="back" to="/">
-          <Icon name="back" /> Sign in
-        </Link>
-        <div style={{ flexGrow: 1 }} />
-        <Brand small />
-      </div>
-    </header>
-  );
+  const bar = <TopBar />;
 
   return (
     <>

@@ -10,11 +10,12 @@ def is_public(deck: dict | None) -> bool:
     return bool(deck) and deck.get("public") is True
 
 
-def can_open(deck: dict | None, uid: str) -> bool:
-    """Whether this signed-in user may read the deck: their own, shared with them, or public."""
+def can_open(deck: dict | None, uid: str, teacher: bool = False) -> bool:
+    """Whether this signed-in user may read the deck: their own, shared with them, or public. A public teacher exam deck
+    is only for teacher accounts (and the admin, who owns them)."""
     if not deck:
         return False
-    return deck.get("ownerId") == uid or uid in (deck.get("sharedWith") or []) or is_public(deck)
+    return deck.get("ownerId") == uid or uid in (deck.get("sharedWith") or []) or (is_cert(deck) and teacher) or (is_public(deck) and not is_cert(deck))
 
 
 def card(deck_id: str, deck: dict) -> dict:
@@ -41,7 +42,7 @@ def is_cert(deck: dict | None) -> bool:
 
 
 def cards(rows: list[tuple[str, dict]]) -> list[dict]:
-    """Public decks that have questions, newest first."""
-    out = [card(i, d) for i, d in rows if is_public(d) and int(d.get("questionCount") or 0) > 0]
+    """Public decks that have questions, newest first. Teacher exam decks aren't listed: they're for teacher accounts."""
+    out = [card(i, d) for i, d in rows if is_public(d) and not is_cert(d) and int(d.get("questionCount") or 0) > 0]
     out.sort(key=lambda c: c["createdAt"], reverse=True)
     return out[:MAX_LISTED]

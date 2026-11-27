@@ -240,6 +240,10 @@ export interface AccountSummary {
   maxDecks: number;
   maxQuestions: number;
   isAdmin: boolean;
+  /** The owner said they're a teacher: teacher tools (the teacher exams section) are on. */
+  isTeacher?: boolean;
+  /** False only for a new account that hasn't answered "Are you a teacher?" yet. */
+  teacherAsked?: boolean;
   /** True when the admin gave this account its own access code. */
   hasOwnCode: boolean;
   /** Everyone's first 5 decks need no access code. */

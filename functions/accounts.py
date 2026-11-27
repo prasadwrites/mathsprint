@@ -90,7 +90,13 @@ def code_free_decks(account: dict) -> int:
 
 
 def new_account(email: str, name: str) -> dict:
-    return {"email": email, "displayName": name, "plan": DEFAULT_PLAN, "status": "active", "decksCreated": 0}
+    # teacherAsked False: the app asks a brand new account straight away whether its owner is a teacher.
+    return {"email": email, "displayName": name, "plan": DEFAULT_PLAN, "status": "active", "decksCreated": 0, "teacherAsked": False}
+
+
+def is_teacher(account: dict | None) -> bool:
+    """Whether this account turned on teacher tools (the teacher certification exams section)."""
+    return bool(account) and account.get("isTeacher") is True
 
 
 def summary(account: dict, admin: bool) -> dict:
@@ -113,6 +119,9 @@ def summary(account: dict, admin: bool) -> dict:
         "bonusDecks": bonus_decks(account),
         "maxQuestions": plan.max_questions,
         "isAdmin": admin,
+        "isTeacher": is_teacher(account),
+        # Accounts made before the question existed were never asked; they turn teacher tools on from the profile menu.
+        "teacherAsked": admin or account.get("teacherAsked", True) is not False,
         "needsCode": needs_code(account, admin),
         "codeFreeLeft": 0 if admin else max(0, code_free_decks(account) - int(account.get("decksCreated", 0))),
     }

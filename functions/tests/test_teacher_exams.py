@@ -101,3 +101,23 @@ def test_cert_decks_are_marked_on_their_cards():
     assert card["certExam"] == "praxis-5165"
     assert "certExam" not in public_decks.card("d2", {"title": "Algebra", "public": True})
     assert public_decks.is_cert({"certExam": "texes-235"}) and not public_decks.is_cert({"public": True})
+
+
+def test_new_accounts_are_asked_and_old_ones_are_not():
+    import accounts
+    assert accounts.new_account("a@b.c", "A")["teacherAsked"] is False
+    assert accounts.summary(accounts.new_account("a@b.c", "A"), False)["teacherAsked"] is False
+    old = {"plan": "free", "decksCreated": 2}
+    assert accounts.summary(old, False)["teacherAsked"] is True and accounts.summary(old, False)["isTeacher"] is False
+    assert accounts.summary({**old, "isTeacher": True, "teacherAsked": True}, False)["isTeacher"] is True
+
+
+def test_cert_decks_are_only_for_teachers_and_never_on_the_public_list():
+    cert = {"ownerId": "admin", "certExam": "praxis-5165", "questionCount": 3}
+    assert not public_decks.can_open(cert, "student")
+    assert public_decks.can_open(cert, "teacher", teacher=True)
+    assert public_decks.can_open(cert, "admin")
+    old_public_cert = {**cert, "public": True}
+    assert not public_decks.can_open(old_public_cert, "student")
+    assert public_decks.cards([("c", old_public_cert), ("p", {"public": True, "questionCount": 2})])[0]["id"] == "p"
+    assert len(public_decks.cards([("c", old_public_cert)])) == 0
