@@ -1,4 +1,5 @@
 import {
+  deleteField,
   addDoc,
   arrayRemove,
   arrayUnion,
@@ -20,7 +21,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
-import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, SentOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, PublicDeckCard, Question } from "./types";
+import type { AccountSummary, ClaudeCredit, DailyReel, Challenge, OpenChallenge, OpenPublicTest, OpenQuestionPost, PostAnswer, QuestionPost, PublicPlayer, PublicTest, PlayedChallenge, SentChallenge, AdminAccount, EngagementChannel, EngagementLink, EngagementUser, ScoreRule, Group, OfferCode, ProblemReport, PromotionOffer, PublicOfferCode, RedeemedOffer, SentOffer, GroupTest, Invite, OpenClassTest, OpenTest, TestResults, TestTaker, UpgradeRequest, ConceptStat, Deck, DeckShare, Difficulty, EndReason, Mode, PlanId, PlanLimits, PracticeSession, PublicDeckCard, Question, TeacherExam, TeacherExamsCatalog } from "./types";
 import { isCorrect } from "./grading";
 import { SAMPLE_DECK } from "./sampleDeck";
 import type { SampleRow } from "./samplePlayers";
@@ -42,7 +43,8 @@ export async function listDecks(uid: string): Promise<{ decks: Deck[]; hidden: D
   ]);
   const seen = new Set<string>();
   const once = (d: Deck) => !seen.has(d.id) && !!seen.add(d.id);
-  const publicDecks = pub?.docs.map(toDeck).filter((d) => d.ownerId !== uid).sort(newest) ?? [];
+  // Teacher exam decks are public too, but they belong on the teacher exams page, not on everyone's home page.
+  const publicDecks = pub?.docs.map(toDeck).filter((d) => d.ownerId !== uid && !d.certExam).sort(newest) ?? [];
   const decks = [
     ...own.docs.map(toDeck),
     ...shared.docs.map(toDeck).sort(newest),
@@ -77,6 +79,20 @@ export function setDeckPublic(deckId: string, isPublic: boolean) {
   return updateDoc(doc(db, "decks", deckId), { public: isPublic });
 }
 
+/** Admin only (the rules check): puts one of the admin's decks on the teacher exams page for an exam (which also
+ * makes it public, so every teacher can practice it), or takes it off and makes it private again. */
+export function setDeckCertExam(deckId: string, exam: TeacherExam | null) {
+  return updateDoc(
+    doc(db, "decks", deckId),
+    exam ? { certExam: exam.id, examPace: exam.minutesPerQuestion, public: true } : { certExam: deleteField(), examPace: deleteField(), public: false },
+  );
+}
+
+/** The teacher certification exams page: exams, states and their decks. Works signed out. */
+export async function listTeacherExams(): Promise<TeacherExamsCatalog> {
+  return (await httpsCallable<object, TeacherExamsCatalog>(functions, "list_teacher_exams")({})).data;
+}
+
 /** The public decks as the sign-in page lists them. Works signed out. */
 export async function listPublicDeckCards(): Promise<PublicDeckCard[]> {
   return (await httpsCallable<object, { decks: PublicDeckCard[] }>(functions, "list_public_decks")({})).data.decks;
@@ -107,6 +123,9 @@ export interface GenerateInput {
   choicesOnly?: boolean;
   /** Where the server reports how far it has got; see `watchDeckProgress`. */
   progressId?: string;
+  /** Admin only: a teacher certification exam deck, all of the exam (focus null) or one content category by index. */
+  certExam?: string;
+  certFocus?: number | null;
 }
 
 /** How far a deck being built has got. `written` counts questions Claude has finished writing, `checked` those

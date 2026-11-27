@@ -64,6 +64,8 @@ create_question_post, list_question_posts, delete_question_post - Admin only: a 
 open_question_post, check_post_answer - No sign-in: anyone answers the posted question, then more from the same deck.
 save_post_deck        - A visitor who signs up (or is signed in) saves the post's whole deck to their account.
 question_post_page    - Serves /q/TOKEN with the question in its link preview, and /q/TOKEN/card.png, the question card.
+list_teacher_exams    - No sign-in: the /teacher-exams page's state-by-state math teacher certification exams and their
+                        decks (teacher_exams.py). generate_deck with certExam (admin only) builds those decks.
 site_stats            - No sign-in: /api/stats, how many AI decks have been built and answers checked, for the tutors page.
 admin_make_reel       - Admin only, on demand: Claude writes a short, fun Instagram Reel for tutors about one everyday
                         headache MathSprint takes care of, and it's animated with music into an MP4 (reels.py, reel_video.py).
@@ -102,6 +104,7 @@ import offers
 import payments
 import posts
 import public_decks
+import teacher_exams
 import sharing
 import subjects
 from accounts import AccessDenied
@@ -254,6 +257,16 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
     code_valid = accounts.code_ok(data.get("accessCode"), account_code, os.environ.get("DECK_ACCESS_CODE"), admin)
     topic = _clean(data.get("topic"), 200)
     pdf = _pdf_bytes(data.get("pdf"))
+    # The admin builds the teacher certification exam decks: questions written to the exam's content categories.
+    exam = data.get("certExam")
+    if exam is not None:
+        if not admin:
+            raise _denied("Only the admin builds teacher exam decks.")
+        if not teacher_exams.is_exam(exam):
+            raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "That exam isn't on the list.")
+        pdf = None
+        focus = data.get("certFocus")
+        topic = teacher_exams.deck_title(exam, focus)
     if not topic and pdf is None:
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.INVALID_ARGUMENT, "Tell me what to practice.")
     try:
@@ -274,6 +287,11 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
         subject=subjects.pick(data.get("subject"), _subject_list(db)),
         choices_only=bool(data.get("choicesOnly")),
     )
+    if exam is not None:
+        request.subject = subjects.DEFAULT
+        request.level = f"{teacher_exams.exam_label(exam)} teacher certification"
+        request.exam = teacher_exams.brief(exam)
+        request.exam_plan = teacher_exams.plan(exam, focus, count)
     progress_ref = _progress_ref(db, uid, data.get("progressId"), count, pdf is not None)
     if progress_ref is not None:
         request.progress = Progress(count, lambda snap: progress_ref.set({**snap, "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True))
@@ -290,7 +308,10 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             if request.progress:
                 request.progress.set_stage("writing")
         request.level = request.level or "High school or college"
-        result = _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "")
+        # An exam deck goes straight to the teacher exams page (public, so every teacher can practice it), under a
+        # title naming the exam.
+        cert = {"certExam": exam, "examPace": teacher_exams.minutes_per_question(exam), "public": True, "title": topic} if exam is not None else None
+        result = _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "", cert)
         if request.progress:
             request.progress.end(deckId=result["deckId"], dropped=result["dropped"])
         return result
@@ -348,7 +369,7 @@ def _subject_list(db) -> list[str]:
     return subjects.listed(snap.get("names") if snap.exists else subjects.STARTERS)
 
 
-def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name: str = "") -> dict:
+def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name: str = "", extra: dict | None = None) -> dict:
     from figures import diagram_doc, figure_doc
     from generator import GenerationError, generate_deck as _generate
 
@@ -399,6 +420,7 @@ def _build_and_save(db, uid: str, topic: str, difficulty: str, request, pdf_name
         "source": "ai",
         **({"sourcePdf": pdf_name or "PDF"} if request.source else {}),
         **({"choicesOnly": True} if request.choices_only else {}),
+        **(extra or {}),
         "createdAt": firestore.SERVER_TIMESTAMP,
     })
     for d in docs:
@@ -3321,6 +3343,18 @@ def list_public_decks(req: https_fn.CallableRequest) -> dict:
     db = firestore.client()
     rows = [(d.id, d.to_dict()) for d in db.collection("decks").where("public", "==", True).stream()]
     return {"decks": public_decks.cards(rows)}
+
+
+@https_fn.on_call()
+def list_teacher_exams(req: https_fn.CallableRequest) -> dict:
+    """The teacher certification exams page: every exam with its content categories, which exams each state uses, and
+    the decks the admin built for them. Anyone can call it, signed in or not."""
+    db = firestore.client()
+    rows = [(d.id, d.to_dict()) for d in db.collection("decks").where("public", "==", True).stream()]
+    decks = [public_decks.card(i, d) for i, d in rows
+             if public_decks.is_cert(d) and teacher_exams.is_exam(d.get("certExam")) and int(d.get("questionCount") or 0) > 0]
+    decks.sort(key=lambda c: c["createdAt"])  # oldest first, so an exam's decks keep their order as more are added
+    return {**teacher_exams.catalog(), "decks": decks}
 
 
 @https_fn.on_call(timeout_sec=120)

@@ -496,3 +496,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 /* The sign-in page's public decks: whole cards are links. */
 .public-deck { gap: 4px; padding: 14px 16px; color: var(--ink); text-decoration: none; }
 .public-deck:hover, .public-deck:focus-visible { border-color: var(--accent); }
+
+/* Teacher certification exams page */
+.exam-cats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.exam-cats li { display: flex; flex-direction: column; gap: 4px; }

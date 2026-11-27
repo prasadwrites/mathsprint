@@ -248,6 +248,10 @@ class DeckRequest:
     choices_only: bool = False
     part: int = 1
     parts: int = 1
+    # A teacher certification exam deck (teacher_exams.py): who it's for, and (category, what it covers, how many
+    # questions) for this deck or part. Its teaching-knowledge choice questions may go without a SymPy check.
+    exam: str = ""
+    exam_plan: list[tuple[str, str, int]] = field(default_factory=list)
     # Shared by every part of the deck; None when nobody is watching.
     progress: Progress | None = field(default=None, compare=False, repr=False)
 
@@ -342,7 +346,22 @@ def _initial_prompt(req: DeckRequest) -> str:
         if req.difficulty == "Mixed"
         else f"all at {req.difficulty} difficulty"
     )
-    if subjects.is_math(req.subject):
+    if req.exam_plan:
+        lines = [
+            req.exam.strip(),
+            f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
+            f"Level: {req.level}. Difficulty: {mix}.",
+            "Cover the exam's content categories with exactly these numbers of questions, and set each question's "
+            "`concept` to its category name exactly as written here:",
+            *[f"- {n} on {name} (covers {covers})" for name, covers, n in req.exam_plan],
+            "Use mostly 'choice' questions with four options, as on the exam, plus some 'numeric' ones. "
+            "A computation always gets a SymPy check as usual. Only a choice question that no program can solve "
+            "(which statement is true, which student error explains a wrong answer, which task, representation or "
+            "next step best fits a teaching goal) may use a check of kind 'none' with expression '' and variable '': "
+            "another reviewer answers it again without the key, so exactly one option must be clearly best.",
+            "Add a figure to each question about a graph and a diagram to each question about a shape; leave both '' for the rest.",
+        ]
+    elif subjects.is_math(req.subject):
         lines = [
             f"Write a practice deck of exactly {req.count} questions on: {req.topic}.",
             f"Level: {req.level}. Difficulty: {mix}.",
@@ -446,11 +465,29 @@ def _repair_prompt(req: DeckRequest, failed: list[tuple[GeneratedQuestion, str]]
         "and on the same concept. Make sure the answer and the check agree.\n\n"
         + json.dumps(items, indent=2)
         + "\n\nReturn them as a deck; the title and topics fields can repeat the original deck's."
+        + ("\nKeep each question's concept. A choice question no program can solve may keep a check of kind 'none'; "
+           "then exactly one option must be clearly best." if req.exam_plan else "")
     )
 
 
 def _difficulty_ok(req: DeckRequest, q: GeneratedQuestion) -> bool:
     return req.difficulty == "Mixed" or q.difficulty == req.difficulty
+
+
+def exam_parts(plan: list[tuple[str, str, int]], sizes: list[int]) -> list[list[tuple[str, str, int]]]:
+    """Shares an exam deck's categories out over its parts, in order, so each part writes its own categories' questions."""
+    slots = [(name, covers) for name, covers, n in plan for _ in range(n)]
+    out, start = [], 0
+    for size in sizes:
+        chunk: list[tuple[str, str, int]] = []
+        for name, covers in slots[start : start + size]:
+            if chunk and chunk[-1][0] == name:
+                chunk[-1] = (name, covers, chunk[-1][2] + 1)
+            else:
+                chunk.append((name, covers, 1))
+        out.append(chunk)
+        start += size
+    return out
 
 
 def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -> DeckResult:
@@ -459,7 +496,8 @@ def generate_deck(req: DeckRequest, client: anthropic.Anthropic | None = None) -
         return _generate_part(req, client)
 
     sizes = [BATCH_SIZE] * (req.count // BATCH_SIZE) + ([req.count % BATCH_SIZE] if req.count % BATCH_SIZE else [])
-    parts = [replace(req, count=n, part=i + 1, parts=len(sizes)) for i, n in enumerate(sizes)]
+    plans = exam_parts(req.exam_plan, sizes) if req.exam_plan else [[] for _ in sizes]
+    parts = [replace(req, count=n, part=i + 1, parts=len(sizes), exam_plan=p) for i, (n, p) in enumerate(zip(sizes, plans))]
 
     def run(part: DeckRequest) -> DeckResult | Exception:
         try:
@@ -541,9 +579,11 @@ def _sort(client: anthropic.Anthropic, req: DeckRequest, questions: list[Generat
     math = subjects.is_math(req.subject)
     reasons = []
     for q in questions:
-        result = check_question(q, math)
+        # On an exam deck a choice question about teaching may go without a SymPy check; it's reviewed below instead.
+        unchecked = bool(req.exam_plan) and q.type == "choice" and q.check.kind == "none"
+        result = check_question(q, math and not unchecked)
         reasons.append("" if result.ok and _difficulty_ok(req, q) else result.reason or f"difficulty should be {req.difficulty}")
-    if not math:
+    if not math or req.exam_plan:
         passed = [i for i, r in enumerate(reasons) if not r]
         for i, r in zip(passed, _review(client, req, [questions[i] for i in passed])):
             reasons[i] = r

@@ -114,6 +114,10 @@ export interface Deck {
   choicesOnly?: boolean;
   /** Made public by the admin: on every user's home page and on the sign-in page. */
   public?: boolean;
+  /** A teacher certification exam deck (with public true): on the teacher exams page instead of home pages. */
+  certExam?: string;
+  /** That exam's pace, in minutes per question, for the practice's time limit. */
+  examPace?: number | null;
 }
 
 /** A public deck as the sign-in page shows it (list_public_decks), without its questions or owner. */
@@ -126,7 +130,39 @@ export interface PublicDeckCard {
   topics: string[];
   questionCount: number;
   choicesOnly: boolean;
+  /** A teacher certification exam deck, listed on the teacher exams page rather than the sign-in page. */
+  certExam?: string;
+  examPace?: number;
   createdAt: number;
+}
+
+/** One math teacher certification exam and its content categories, from its official framework. */
+export interface TeacherExam {
+  id: string;
+  label: string;
+  program: string;
+  name: string;
+  code: string;
+  grades: string;
+  format: string;
+  teaching: string;
+  source: string;
+  minutesPerQuestion: number | null;
+  categories: { name: string; percent: number; covers: string }[];
+}
+
+/** A state and its math teacher exams; none when we haven't confirmed them yet. */
+export interface TeacherState {
+  code: string;
+  name: string;
+  exams: string[];
+  note: string;
+}
+
+export interface TeacherExamsCatalog {
+  exams: TeacherExam[];
+  states: TeacherState[];
+  decks: PublicDeckCard[];
 }
 
 /** Someone a deck is shared with, as its owner sees them. */

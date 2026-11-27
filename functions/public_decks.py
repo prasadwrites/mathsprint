@@ -29,8 +29,15 @@ def card(deck_id: str, deck: dict) -> dict:
         "topics": [str(t) for t in (deck.get("topics") or [])][:8],
         "questionCount": int(deck.get("questionCount") or 0),
         "choicesOnly": bool(deck.get("choicesOnly")),
+        # A teacher certification exam deck: listed on /teacher-exams, not with the students' ready-made decks.
+        **({"certExam": deck["certExam"]} if isinstance(deck.get("certExam"), str) else {}),
+        **({"examPace": float(deck["examPace"])} if isinstance(deck.get("examPace"), (int, float)) and deck["examPace"] > 0 else {}),
         "createdAt": int(created.timestamp() * 1000) if hasattr(created, "timestamp") else 0,
     }
+
+
+def is_cert(deck: dict | None) -> bool:
+    return bool(deck) and isinstance(deck.get("certExam"), str) and bool(deck.get("certExam"))
 
 
 def cards(rows: list[tuple[str, dict]]) -> list[dict]:

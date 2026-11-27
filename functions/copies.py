@@ -10,7 +10,7 @@ MAX_TITLE = 80  # the same limit as renaming (firestore.rules, web/src/lib/db.ts
 SUFFIX = " (copy)"
 
 # Who the deck is shared with, and when it was made, belong to the original only.
-NOT_COPIED = {"sharedWith", "sharedBy", "createdAt", "ownerId", "source", "copiedFrom", "fromPost", "public"}
+NOT_COPIED = {"sharedWith", "sharedBy", "createdAt", "ownerId", "source", "copiedFrom", "fromPost", "public", "certExam", "examPace"}
 
 
 def copy_title(title: object) -> str:

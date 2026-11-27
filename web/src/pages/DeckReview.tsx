@@ -11,6 +11,7 @@ import RemoveSharedDeck from "../components/RemoveSharedDeck";
 import HidePublicDeck from "../components/HidePublicDeck";
 import PublicDeckToggle from "../components/PublicDeckToggle";
 import PublicTestLinks from "../components/PublicTestLinks";
+import TeacherExamToggle from "../components/TeacherExamToggle";
 import QuestionPosts from "../components/QuestionPosts";
 import { useIsAdmin, useUser } from "../App";
 import TopBar, { Chip, Icon } from "../components/TopBar";
@@ -107,6 +108,8 @@ export default function DeckReview() {
                 <DuplicateDeck deck={deck} onDuplicated={(c) => navigate(`/decks/${c.deckId}?copied=1`)} />
                 <DeleteDeck deck={deck} onDeleted={() => navigate("/#decks", { replace: true })} />
               </>
+            ) : deck.certExam ? (
+              <Link className="btn" to="/teacher-exams">More teacher exam decks</Link>
             ) : fromAdmin ? (
               <HidePublicDeck deck={deck} onHidden={() => navigate("/#decks", { replace: true })} />
             ) : (
@@ -134,7 +137,13 @@ export default function DeckReview() {
           </div>
         </div>
 
-        {mine && admin && <PublicDeckToggle deck={{ ...deck, questionCount: questions.length }} onChanged={(on) => setDeck({ ...deck, public: on })} />}
+        {mine && admin && !deck.certExam && <PublicDeckToggle deck={{ ...deck, questionCount: questions.length }} onChanged={(on) => setDeck({ ...deck, public: on })} />}
+        {mine && admin && (
+          <TeacherExamToggle
+            deck={{ ...deck, questionCount: questions.length }}
+            onChanged={(exam) => setDeck({ ...deck, certExam: exam?.id, examPace: exam?.minutesPerQuestion, public: !!exam })}
+          />
+        )}
         {mine && <ShareDeck deck={deck} />}
         {mine && <AssignTest deck={deck} suggestedSec={questions.length * 90} typed={typed} />}
         {mine && admin && <PublicTestLinks deck={deck} total={questions.length} suggestedSec={questions.length * 90} typed={typed} />}
