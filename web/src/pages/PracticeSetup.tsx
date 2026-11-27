@@ -37,7 +37,13 @@ const fromCard = (c: PublicDeckCard): Deck => ({
   source: "ai",
   createdAt: c.createdAt ? new Date(c.createdAt) : null,
   public: true,
+  certExam: c.certExam,
+  examPace: c.examPace,
 });
+
+/** Default time for `count` questions: a teacher exam deck's exam pace, otherwise a minute and a half each. */
+const defaultMinutes = (count: number, examPace?: number | null) =>
+  examPace ? Math.min(180, Math.max(1, Math.round(count * examPace * 2) / 2)) : Math.min(30, Math.max(1, Math.round(count * 1.5)));
 
 /** Signed out, this page works for the admin's public decks: the visitor sets up a practice from the sign-in page's
  * list, and signs in or signs up to start it. The practice then starts as soon as they're signed in. */
@@ -67,7 +73,7 @@ export default function PracticeSetup() {
           if (!card) return setMissing(true);
           const count = Math.min(10, card.questionCount);
           setN(count);
-          setMinutes(Math.min(30, Math.max(1, Math.round(count * 1.5))));
+          setMinutes(defaultMinutes(count, card.examPace));
           setDeck(fromCard(card));
         })
         .catch(() => setMissing(true));
@@ -92,7 +98,7 @@ export default function PracticeSetup() {
         const preset = params.get("select") === "missed" ? missedLastTime(hs).length : 0;
         const count = preset || Math.min(10, qs.length);
         setN(count);
-        setMinutes(Math.min(30, Math.max(1, Math.round(count * 1.5))));
+        setMinutes(defaultMinutes(count, d?.examPace));
         setQuestions(qs);
       })
       .catch(() => setMissing(true));
@@ -101,15 +107,17 @@ export default function PracticeSetup() {
   const guestBar = (
     <header className="appbar">
       <div className="appbar-inner">
-        <Link className="back" to="/">
-          <Icon name="back" /> Sign in
+        <Link className="back" to={deck?.certExam ? "/teacher-exams" : "/"}>
+          <Icon name="back" /> {deck?.certExam ? "Teacher exams" : "Sign in"}
         </Link>
         <div style={{ flexGrow: 1 }} />
         <Brand small />
       </div>
     </header>
   );
-  const bar = user ? <TopBar back={{ to: deck ? `/decks/${deck.id}` : `/decks/${deckId}`, label: deck?.title ?? "Deck" }} /> : guestBar;
+  // A teacher exam deck goes back to the teacher exams page, where it was picked.
+  const back = deck?.certExam ? { to: "/teacher-exams", label: "Teacher exams" } : { to: deck ? `/decks/${deck.id}` : `/decks/${deckId}`, label: deck?.title ?? "Deck" };
+  const bar = user ? <TopBar back={back} /> : guestBar;
 
   if (missing) {
     return (
@@ -232,6 +240,11 @@ export default function PracticeSetup() {
                 <div>
                   <label htmlFor="minutes">Time available (minutes)</label>
                   <input id="minutes" type="number" min={0.5} max={180} step={0.5} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+                  {!!deck.examPace && (
+                    <button type="button" className="btn-link small" onClick={() => setMinutes(defaultMinutes(count, deck.examPace))}>
+                      Use the exam's pace ({defaultMinutes(count, deck.examPace)} min for {count})
+                    </button>
+                  )}
                   <div className="quick" style={{ marginTop: 8 }} aria-label="Quick picks">
                     {[10, 15, 20, 30].map((m) => (
                       <button key={m} type="button" aria-pressed={minutes === m} onClick={() => setMinutes(m)}>

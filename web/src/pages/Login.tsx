@@ -30,9 +30,10 @@ function audience(ref: string | null) {
 function PublicDecks() {
   const [decks, setDecks] = useState<PublicDeckCard[]>([]);
   useEffect(() => {
-    listPublicDeckCards().then(setDecks).catch(() => {});
+    // Teacher certification exam decks have their own page, linked below.
+    listPublicDeckCards().then((all) => setDecks(all.filter((d) => !d.certExam))).catch(() => {});
   }, []);
-  if (!decks.length) return null;
+  if (!decks.length) return <TeacherExamsLink standalone />;
   return (
     <section className="stack" style={{ gap: 10, paddingBottom: 40 }} aria-labelledby="public-decks">
       <h2 id="public-decks" style={{ marginBottom: 0 }}>Try a ready-made deck</h2>
@@ -49,7 +50,18 @@ function PublicDecks() {
           </Link>
         ))}
       </div>
+      <TeacherExamsLink />
     </section>
+  );
+}
+
+/** The way into the teacher certification exams section, which works signed out. */
+function TeacherExamsLink({ standalone }: { standalone?: boolean }) {
+  return (
+    <Link className="panel deck-card public-deck" to="/teacher-exams" style={standalone ? { marginBottom: 40 } : undefined}>
+      <b>Becoming a math teacher?</b>
+      <span className="meta">Practice for your state's teacher certification exam: Praxis, TExES, CSET and more, middle school and high school.</span>
+    </Link>
   );
 }
 

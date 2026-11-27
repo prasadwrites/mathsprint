@@ -26,7 +26,8 @@ service cloud.firestore {
       allow read: if owns(resource.data) || sharedWithMe(resource.data) || publicDeck(resource.data);
       allow delete: if owns(resource.data);
       allow create: if owns(request.resource.data) && request.resource.data.source == "sample"
-        && !("sharedWith" in request.resource.data) && !("public" in request.resource.data);
+        && !("sharedWith" in request.resource.data) && !("public" in request.resource.data)
+        && !("certExam" in request.resource.data) && !("examPace" in request.resource.data);
       // Only the sharing functions change who a deck is shared with.
       // A new title (renaming) must be 1 to 80 characters.
       allow update: if owns(resource.data)
@@ -34,6 +35,10 @@ service cloud.firestore {
         // Only the admin makes their own decks public or private again.
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["public"])
           || (isAdmin() && request.resource.data.public is bool))
+        // Only the admin puts their own decks on the teacher certification exams page (certExam, with the exam's pace
+        // in minutes per question), or takes them off.
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["certExam", "examPace"])
+          || (isAdmin() && (!("certExam" in request.resource.data) || request.resource.data.certExam is string)))
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["title"])
           || (request.resource.data.title is string && request.resource.data.title.matches(".*[^ ].*")
             && request.resource.data.title.size() <= 80));

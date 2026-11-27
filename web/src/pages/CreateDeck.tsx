@@ -7,6 +7,7 @@ import { type DeckProgress, clearDeckProgress, generateDeck, newProgressId, watc
 import { formatClock } from "../lib/pace";
 import { DEFAULT_SUBJECT, STARTER_SUBJECTS, cleanSubjects, isMath, listSubjects, sameSubject } from "../lib/subjects";
 import type { FromPublicTest } from "../lib/publicTest";
+import type { CertBuild } from "./TeacherExams";
 import type { Difficulty } from "../lib/types";
 
 const CODE_KEY = "ms.accessCode";
@@ -138,15 +139,19 @@ export default function CreateDeck() {
   const outOfDecks = !!account && !account.isAdmin && account.decksCreated >= account.maxDecks;
   const suspended = account?.status === "suspended";
   const [params] = useSearchParams();
-  const [topic, setTopic] = useState(params.get("topic") ?? "");
-  const [asked, setAsked] = useState(!!params.get("topic"));
-  const [count, setCount] = useState(10);
+  const routeState = useLocation().state as { fromPublicTest?: FromPublicTest; certBuild?: CertBuild } | null;
+  // Admin only: a deck for a teacher certification exam, started from the teacher exams page. The server writes it to
+  // the exam's content categories and puts it on that page.
+  const cert = isAdmin ? routeState?.certBuild : undefined;
+  const [topic, setTopic] = useState(cert?.title ?? params.get("topic") ?? "");
+  const [asked, setAsked] = useState(!!cert || !!params.get("topic"));
+  const [count, setCount] = useState(cert ? 20 : 10);
   const [difficulty, setDifficulty] = useState<Difficulty>("Medium");
   const [level, setLevel] = useState("");
   const [notes, setNotes] = useState(params.get("notes") ?? "");
   const [choicesOnly, setChoicesOnly] = useState(false);
   // Just signed up from a public test's "make your own quiz" invitation.
-  const fromTest = (useLocation().state as { fromPublicTest?: FromPublicTest } | null)?.fromPublicTest;
+  const fromTest = routeState?.fromPublicTest;
   const [accessCode, setAccessCode] = useState(storedCode);
   // Set when the server asks for a code the account summary didn't know about yet.
   const [codeAsked, setCodeAsked] = useState(false);
@@ -259,6 +264,7 @@ export default function CreateDeck() {
       choicesOnly,
       progressId,
       ...(pdf && { pdf: pdf.data, pdfName: pdf.name }),
+      ...(cert && { certExam: cert.exam, certFocus: cert.focus }),
     })
       .then((res) => succeed(res.deckId, res.dropped))
       .catch((e: Error) => {
@@ -277,9 +283,9 @@ export default function CreateDeck() {
 
   return (
     <>
-      <TopBar back={{ to: "/", label: "Home" }} />
+      <TopBar back={cert ? { to: "/teacher-exams", label: "Teacher exams" } : { to: "/", label: "Home" }} />
       <main className="page">
-        <h1>{fromTest ? "Create your own quiz" : "Create a practice deck"}</h1>
+        <h1>{cert ? "Build a teacher exam deck" : fromTest ? "Create your own quiz" : "Create a practice deck"}</h1>
         {fromTest && (
           <p className="notice" role="status" style={{ display: "block" }}>
             <b>Welcome to MathSprint!</b>{" "}
@@ -292,7 +298,7 @@ export default function CreateDeck() {
           <div className="main stack">
             <div className="panel chat">
               <div className="bubble bot">What would you like to practice?</div>
-              <div className="stack" style={{ gap: 8 }}>
+              {!cert && <div className="stack" style={{ gap: 8 }}>
                 <div className="row" style={{ gap: 10 }}>
                   <label htmlFor="subject" style={{ margin: 0 }}>
                     Subject
@@ -319,10 +325,18 @@ export default function CreateDeck() {
                     }}
                   />
                 )}
-              </div>
+              </div>}
               {asked ? (
                 <>
-                  {pdf ? (
+                  {cert ? (
+                    <>
+                      <div className="bubble me">{cert.title}</div>
+                      <div className="bubble bot">
+                        I'll write original questions for the {cert.examLabel}, {cert.focus === null ? "spread over its content categories by their weight on the exam" : "all in this content category"}, with
+                        teaching questions where the exam has them. It goes on the teacher exams page when it's done.
+                      </div>
+                    </>
+                  ) : pdf ? (
                     <>
                       <div className="bubble me row" style={{ gap: 6 }}>
                         <Icon name="file" /> {pdf.name}
@@ -418,10 +432,10 @@ export default function CreateDeck() {
                       {account && !account.isAdmin && ` on the ${account.planLabel} plan`}
                     </p>
                   </div>
-                  <div>
+                  {!cert && <div>
                     <label htmlFor="level">Grade or level</label>
                     <input id="level" type="text" placeholder={pdf ? "Taken from the PDF if left blank" : `e.g. ${ex.level}`} value={level} onChange={(e) => setLevel(e.target.value)} />
-                  </div>
+                  </div>}
                 </div>
                 <div>
                   <label>Difficulty</label>
@@ -433,7 +447,7 @@ export default function CreateDeck() {
                     ))}
                   </div>
                 </div>
-                <div>
+                {!cert && <><div>
                   <label className="radio" htmlFor="choices-only">
                     <input id="choices-only" type="checkbox" checked={choicesOnly} onChange={(e) => setChoicesOnly(e.target.checked)} /> Multiple choice only
                   </label>
@@ -449,7 +463,7 @@ export default function CreateDeck() {
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                   />
-                </div>
+                </div></>}
                 {needsCode && (
                 <div>
                   <label htmlFor="access">Access code</label>
@@ -499,7 +513,9 @@ export default function CreateDeck() {
                     <Icon name="sparkle" /> Generate deck
                   </button>
                   <span className="muted small">Takes a minute or two, longer for big decks</span>
-                  <button
+                  {cert ? (
+                    <Link to={`/teacher-exams?exam=${cert.exam}`}>Back to teacher exams</Link>
+                  ) : <button
                       type="button"
                       className="btn-link"
                       onClick={() => {
@@ -509,7 +525,7 @@ export default function CreateDeck() {
                       }}
                     >
                       {pdf ? "Choose another file" : "Change topic"}
-                  </button>
+                  </button>}
                 </div>
                 {error && <p className="error">{error}</p>}
               </form>

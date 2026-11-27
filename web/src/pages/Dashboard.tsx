@@ -298,7 +298,9 @@ export default function Dashboard() {
                       </div>
                       {mine ? (
                         <>
-                          {d.public && <div className="meta">Public: on everyone's home page</div>}
+                          {d.certExam ? (
+                            <div className="meta">On the teacher exams page</div>
+                          ) : d.public && <div className="meta">Public: on everyone's home page</div>}
                           {!!d.sharedWith?.length && <div className="meta">Shared with {d.sharedWith.length} {d.sharedWith.length === 1 ? "person" : "people"}</div>}
                         </>
                       ) : fromAdmin ? (

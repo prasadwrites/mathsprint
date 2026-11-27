@@ -30,6 +30,7 @@ import PlayPublicTest from "./pages/PlayPublicTest";
 import PlayQuestionPost from "./pages/PlayQuestionPost";
 import Results from "./pages/Results";
 import TakeTest from "./pages/TakeTest";
+import TeacherExams from "./pages/TeacherExams";
 import ClassTest from "./pages/ClassTest";
 import TestResults from "./pages/TestResults";
 import MemberResult from "./pages/MemberResult";
@@ -151,6 +152,14 @@ function SignedInApp() {
   if (!user) {
     // A public deck's practice setup, opened from the sign-in page's list, works signed out. It asks the visitor to
     // sign in or sign up when they start, and starts the practice once they have.
+    // The teacher certification exams page works signed out too, and so does a practice setup opened from it.
+    if (/^\/teacher-exams\/?$/.test(location.pathname)) {
+      return (
+        <Routes>
+          <Route path="/teacher-exams" element={<TeacherExams />} />
+        </Routes>
+      );
+    }
     if (/^\/decks\/[^/]+\/practice\/?$/.test(location.pathname)) {
       return (
         <Routes>
@@ -179,6 +188,7 @@ function SignedInApp() {
         <Route path="/invite" element={<Invite />} />
         <Route path="/join" element={<Join />} />
         <Route path="/groups" element={<Groups />} />
+        <Route path="/teacher-exams" element={<TeacherExams />} />
         <Route path="/report" element={<Report />} />
         <Route path="/tests/:testId" element={<TestResults />} />
         <Route path="/tests/:testId/m/:token" element={<MemberResult />} />

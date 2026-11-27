@@ -48,6 +48,7 @@
       { "source": "/invite", "destination": "/app.html" },
       { "source": "/join", "destination": "/app.html" },
       { "source": "/groups", "destination": "/app.html" },
+      { "source": "/teacher-exams", "destination": "/app.html" },
       { "source": "/report", "destination": "/app.html" },
       { "source": "/tests/**", "destination": "/app.html" }
     ]
