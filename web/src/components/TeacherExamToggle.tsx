@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { listTeacherExams, setDeckCertExam } from "../lib/db";
 import type { Deck, TeacherExam } from "../lib/types";
 
-/** Admin only, on the admin's own deck page: lists the deck on the teacher certification exams page under one exam
- * (which makes it public, so every teacher can practice it, but keeps it off students' home pages), or takes it off. */
+/** Admin only, on the admin's own deck page: lists the deck on the teacher certification exams page under one exam,
+ * for every teacher account (it stops being public, so students never see it), or takes it off. */
 export default function TeacherExamToggle({ deck, onChanged }: { deck: Pick<Deck, "id" | "certExam" | "questionCount">; onChanged: (exam: TeacherExam | null) => void }) {
   const [exams, setExams] = useState<TeacherExam[]>([]);
   const [pick, setPick] = useState(deck.certExam ?? "");
@@ -33,8 +33,8 @@ export default function TeacherExamToggle({ deck, onChanged }: { deck: Pick<Deck
       </div>
       <p className="muted" style={{ margin: 0 }}>
         {deck.certExam
-          ? `Teachers see this deck under ${current?.label ?? deck.certExam} on the teacher exams page, signed in or not. It isn't on students' home pages.`
-          : "List this deck under a teacher certification exam. Teachers in every state that uses the exam see it, and it stays off students' home pages."}
+          ? `Teacher accounts see this deck under ${current?.label ?? deck.certExam} on the teacher exams page. Students don't see it.`
+          : "List this deck under a teacher certification exam for teacher accounts in every state that uses the exam. Students don't see it, so listing it makes it private."}
       </p>
       <div className="row" style={{ gap: 8 }}>
         <label htmlFor="teacher-exam-pick" className="sr-only">Exam</label>

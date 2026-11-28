@@ -18,12 +18,18 @@ service cloud.firestore {
     // Decks the admin made public: everyone signed in can read and practice them (each user can hide one for themselves,
     // in users/{uid}.hiddenDecks). Anyone can see the list on the sign-in page, through list_public_decks.
     function publicDeck(data) { return signedIn() && data.get("public", false) == true && active(); }
+    // Teacher exam decks (certExam, built by the admin) are only for accounts that said they're teachers, and the admin.
+    // They aren't public, so they never turn up in students' public deck lists.
+    function certDeck(data) {
+      return signedIn() && active() && data.get("certExam", "") != ""
+        && (isAdmin() || get(/databases/$(database)/documents/accounts/$(request.auth.uid)).data.get("isTeacher", false) == true);
+    }
 
     // AI decks are written only by the generate_deck function (admin access), which
     // enforces the plan's limits. Students can add the sample deck themselves and
     // can see their own decks and the ones shared with them.
     match /decks/{deckId} {
-      allow read: if owns(resource.data) || sharedWithMe(resource.data) || publicDeck(resource.data);
+      allow read: if owns(resource.data) || sharedWithMe(resource.data) || publicDeck(resource.data) || certDeck(resource.data);
       allow delete: if owns(resource.data);
       allow create: if owns(request.resource.data) && request.resource.data.source == "sample"
         && !("sharedWith" in request.resource.data) && !("public" in request.resource.data)
@@ -47,7 +53,7 @@ service cloud.firestore {
         function deckPath() { return /databases/$(database)/documents/decks/$(deckId); }
         allow read: if signedIn() && active()
           && (get(deckPath()).data.ownerId == request.auth.uid || request.auth.uid in get(deckPath()).data.get("sharedWith", [])
-            || get(deckPath()).data.get("public", false) == true);
+            || get(deckPath()).data.get("public", false) == true || certDeck(get(deckPath()).data));
         // getAfter, so a deck and its questions can be written in one batch. Only sample
         // decks are written from the app; AI decks come from the function.
         allow write: if signedIn() && active()

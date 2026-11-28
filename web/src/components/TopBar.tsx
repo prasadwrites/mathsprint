@@ -2,7 +2,7 @@ import { signOut } from "firebase/auth";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAccount, useIsAdmin, useUser } from "../App";
-import { adminSetCredit } from "../lib/db";
+import { adminSetCredit, setTeacher } from "../lib/db";
 import { auth } from "../lib/firebase";
 import type { ClaudeCredit } from "../lib/types";
 
@@ -143,6 +143,7 @@ function ProfileMenu() {
           <Link role="menuitem" className="menu-link" to="/plans" onClick={() => setOpen(false)}>
             Compare plans
           </Link>
+          {account && !admin && <TeacherSwitch on={!!account.isTeacher} onChanged={refresh} />}
           {!admin && (
             <Link role="menuitem" className="menu-link" to="/report" state={{ from: location.pathname }} onClick={() => setOpen(false)}>
               Report a problem {!!account?.reports?.unread && <span className="badge">{account.reports.unread}</span>}
@@ -190,7 +191,9 @@ export default function TopBar({ back }: { back?: { to: string; label: string } 
               <Link to="/#decks" aria-current={current("#decks")}>My decks</Link>
               <Link to="/#progress" aria-current={current("#progress")}>Progress</Link>
               <Link to="/groups" aria-current={pathname === "/groups" ? "page" : undefined}>Groups</Link>
-              <Link to="/teacher-exams" aria-current={pathname === "/teacher-exams" ? "page" : undefined}>Teacher exams</Link>
+              {(admin || account?.isTeacher) && (
+                <Link to="/teacher-exams" aria-current={pathname === "/teacher-exams" ? "page" : undefined}>Teacher exams</Link>
+              )}
               {!admin && (
                 <>
                   <Link to="/upgrade" aria-current={pathname === "/upgrade" ? "page" : undefined}>
@@ -231,5 +234,28 @@ export function Chip({ tone, children }: { tone?: "good" | "warn" | "bad" | "neu
     <span className={`chip ${tone && tone !== "neutral" && tone !== "miss" ? tone : ""}`} style={style}>
       {children}
     </span>
+  );
+}
+
+/** In the profile menu: turns teacher tools (the teacher exams section) on or off for this account. */
+function TeacherSwitch({ on, onChanged }: { on: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      role="menuitemcheckbox"
+      aria-checked={on}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await setTeacher(!on);
+          onChanged();
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {busy ? "Saving…" : on ? "Teacher tools: on (turn off)" : "I'm a teacher: add teacher tools"}
+    </button>
   );
 }

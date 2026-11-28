@@ -79,18 +79,23 @@ export function setDeckPublic(deckId: string, isPublic: boolean) {
   return updateDoc(doc(db, "decks", deckId), { public: isPublic });
 }
 
-/** Admin only (the rules check): puts one of the admin's decks on the teacher exams page for an exam (which also
- * makes it public, so every teacher can practice it), or takes it off and makes it private again. */
+/** Admin only (the rules check): puts one of the admin's decks on the teacher exams page for an exam, where every
+ * teacher account can practice it, or takes it off. It isn't public, so students never see it. */
 export function setDeckCertExam(deckId: string, exam: TeacherExam | null) {
   return updateDoc(
     doc(db, "decks", deckId),
-    exam ? { certExam: exam.id, examPace: exam.minutesPerQuestion, public: true } : { certExam: deleteField(), examPace: deleteField(), public: false },
+    exam ? { certExam: exam.id, examPace: exam.minutesPerQuestion, public: false } : { certExam: deleteField(), examPace: deleteField() },
   );
 }
 
-/** The teacher certification exams page: exams, states and their decks. Works signed out. */
+/** The teacher certification exams page: exams, states and their decks. Teacher accounts and the admin only. */
 export async function listTeacherExams(): Promise<TeacherExamsCatalog> {
   return (await httpsCallable<object, TeacherExamsCatalog>(functions, "list_teacher_exams")({})).data;
+}
+
+/** Says whether this account's owner is a teacher, which turns teacher tools on or off. */
+export async function setTeacher(isTeacher: boolean) {
+  return (await httpsCallable<{ isTeacher: boolean }, { isTeacher: boolean }>(functions, "set_teacher")({ isTeacher })).data;
 }
 
 /** The public decks as the sign-in page lists them. Works signed out. */

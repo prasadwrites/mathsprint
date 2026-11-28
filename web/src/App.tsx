@@ -11,6 +11,7 @@ import { clearRef, pendingRef } from "./lib/signupRef";
 import { clearTerms, pendingTerms } from "./lib/terms";
 import { clearOfferCode, pendingOfferCode } from "./lib/offerCode";
 import { TermsGate } from "./components/Terms";
+import { TeacherGate } from "./components/TeacherGate";
 import { auth } from "./lib/firebase";
 import type { AccountSummary } from "./lib/types";
 import Accounts from "./pages/Accounts";
@@ -152,14 +153,6 @@ function SignedInApp() {
   if (!user) {
     // A public deck's practice setup, opened from the sign-in page's list, works signed out. It asks the visitor to
     // sign in or sign up when they start, and starts the practice once they have.
-    // The teacher certification exams page works signed out too, and so does a practice setup opened from it.
-    if (/^\/teacher-exams\/?$/.test(location.pathname)) {
-      return (
-        <Routes>
-          <Route path="/teacher-exams" element={<TeacherExams />} />
-        </Routes>
-      );
-    }
     if (/^\/decks\/[^/]+\/practice\/?$/.test(location.pathname)) {
       return (
         <Routes>
@@ -170,6 +163,8 @@ function SignedInApp() {
     return <Login />;
   }
   if (account && account.termsAccepted === false) return <TermsGate onAccepted={refresh} />;
+  // A brand new account answers this first: teacher accounts get teacher tools.
+  if (account && account.teacherAsked === false) return <TeacherGate onAnswered={refresh} />;
 
   return (
     <UserContext.Provider value={user}>

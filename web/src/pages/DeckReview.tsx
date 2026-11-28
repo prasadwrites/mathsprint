@@ -141,7 +141,7 @@ export default function DeckReview() {
         {mine && admin && (
           <TeacherExamToggle
             deck={{ ...deck, questionCount: questions.length }}
-            onChanged={(exam) => setDeck({ ...deck, certExam: exam?.id, examPace: exam?.minutesPerQuestion, public: !!exam })}
+            onChanged={(exam) => setDeck({ ...deck, certExam: exam?.id, examPace: exam?.minutesPerQuestion, public: exam ? false : deck.public })}
           />
         )}
         {mine && <ShareDeck deck={deck} />}

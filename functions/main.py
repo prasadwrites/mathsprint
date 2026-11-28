@@ -64,7 +64,8 @@ create_question_post, list_question_posts, delete_question_post - Admin only: a 
 open_question_post, check_post_answer - No sign-in: anyone answers the posted question, then more from the same deck.
 save_post_deck        - A visitor who signs up (or is signed in) saves the post's whole deck to their account.
 question_post_page    - Serves /q/TOKEN with the question in its link preview, and /q/TOKEN/card.png, the question card.
-list_teacher_exams    - No sign-in: the /teacher-exams page's state-by-state math teacher certification exams and their
+set_teacher           - The owner marks their account as a teacher's (asked right after sign-up) or not.
+list_teacher_exams    - Teacher accounts and the admin: the /teacher-exams page's state-by-state math teacher certification exams and their
                         decks (teacher_exams.py). generate_deck with certExam (admin only) builds those decks.
 site_stats            - No sign-in: /api/stats, how many AI decks have been built and answers checked, for the tutors page.
 admin_make_reel       - Admin only, on demand: Claude writes a short, fun Instagram Reel for tutors about one everyday
@@ -308,9 +309,8 @@ def generate_deck(req: https_fn.CallableRequest) -> dict:
             if request.progress:
                 request.progress.set_stage("writing")
         request.level = request.level or "High school or college"
-        # An exam deck goes straight to the teacher exams page (public, so every teacher can practice it), under a
-        # title naming the exam.
-        cert = {"certExam": exam, "examPace": teacher_exams.minutes_per_question(exam), "public": True, "title": topic} if exam is not None else None
+        # An exam deck goes straight to the teacher exams page, for every teacher account, under a title naming the exam.
+        cert = {"certExam": exam, "examPace": teacher_exams.minutes_per_question(exam), "title": topic} if exam is not None else None
         result = _build_and_save(db, uid, request.topic, difficulty, request, _clean(data.get("pdfName"), 120) if pdf is not None else "", cert)
         if request.progress:
             request.progress.end(deckId=result["deckId"], dropped=result["dropped"])
@@ -442,7 +442,8 @@ def explain_step(req: https_fn.CallableRequest) -> dict:
         raise _denied("Your account is suspended.")
     deck_id, question_id = _clean(data.get("deckId"), 64), _clean(data.get("questionId"), 64)
     deck = db.collection("decks").document(deck_id).get()
-    if not deck.exists or not public_decks.can_open(deck.to_dict(), uid):
+    teacher = accounts.is_teacher(account.to_dict() if account.exists else None)
+    if not deck.exists or not public_decks.can_open(deck.to_dict(), uid, teacher):
         raise https_fn.HttpsError(https_fn.FunctionsErrorCode.NOT_FOUND, "Deck not found.")
     q = deck.reference.collection("questions").document(question_id).get()
     if not q.exists:
@@ -3346,11 +3347,34 @@ def list_public_decks(req: https_fn.CallableRequest) -> dict:
 
 
 @https_fn.on_call()
+def set_teacher(req: https_fn.CallableRequest) -> dict:
+    """The account owner says whether they're a teacher: asked right after sign-up, and changed any time from the
+    profile menu. A teacher account gets teacher tools, starting with the teacher certification exams section."""
+    _require_user(req)
+    db = firestore.client()
+    _load_account(db, req)  # creates the account if this is its first call
+    on = (req.data or {}).get("isTeacher") is True
+    _account_ref(db, req.auth.uid).set({"isTeacher": on, "teacherAsked": True, "teacherSetAt": firestore.SERVER_TIMESTAMP}, merge=True)
+    return {"isTeacher": on}
+
+
+@https_fn.on_call()
 def list_teacher_exams(req: https_fn.CallableRequest) -> dict:
     """The teacher certification exams page: every exam with its content categories, which exams each state uses, and
-    the decks the admin built for them. Anyone can call it, signed in or not."""
+    the decks the admin built for them. Only for teacher accounts and the admin."""
+    _require_user(req)
     db = firestore.client()
-    rows = [(d.id, d.to_dict()) for d in db.collection("decks").where("public", "==", True).stream()]
+    account = _load_account(db, req)
+    if not (accounts.is_teacher(account) or accounts.is_admin(req.auth.token)):
+        raise _denied("Teacher exam prep is for teacher accounts. Turn on teacher tools in your profile menu.")
+    if account.get("status") == "suspended":
+        raise _denied("Your account is suspended.")
+    rows = [(d.id, d.to_dict()) for d in db.collection("decks").where("certExam", ">", "").stream()]
+    if accounts.is_admin(req.auth.token):
+        # Exam decks used to be public too; they're teacher-only now, so take them off students' public lists.
+        for i, d in rows:
+            if d.get("public") is True:
+                db.collection("decks").document(i).update({"public": False})
     decks = [public_decks.card(i, d) for i, d in rows
              if public_decks.is_cert(d) and teacher_exams.is_exam(d.get("certExam")) and int(d.get("questionCount") or 0) > 0]
     decks.sort(key=lambda c: c["createdAt"])  # oldest first, so an exam's decks keep their order as more are added
